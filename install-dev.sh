@@ -64,6 +64,7 @@ HAS_DOCKER=false        # true if docker is installed
 # User inputs
 INSTALLATION_MODE=""    # "local" or "remote"
 SERVER_IP=""            # IP address or domain (for Matrix)
+SERVER_IS_IP=""         # "true" if SERVER_IP is an IP address, "false" if domain
 SERVER_USER=""          # SSH username
 SERVER_PORT=""          # SSH port
 SSH_HOST=""             # SSH host (for ansible_host, defaults to SERVER_IP)
@@ -375,6 +376,38 @@ generate_password() {
 }
 
 # ===========================================
+# FUNCTION: is_ip_address
+# Description: Check if input is an IP address (IPv4 or IPv6)
+# Arguments:
+#   $1 - String to check
+# Returns: 0 if IP, 1 if domain
+# ===========================================
+is_ip_address() {
+    local input="$1"
+
+    # Check if it's an IPv4 address
+    if [[ "$input" =~ ^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}$ ]]; then
+        # Validate each octet is 0-255
+        local IFS='.'
+        local -a octets=($input)
+        for octet in "${octets[@]}"; do
+            if ((octet < 0 || octet > 255)); then
+                return 1
+            fi
+        done
+        return 0
+    fi
+
+    # Check if it's an IPv6 address (simplified check)
+    if [[ "$input" =~ ^[0-9a-fA-F:]+$ ]] && [[ "$input" == *:* ]]; then
+        return 0
+    fi
+
+    # Not an IP address, treat as domain
+    return 1
+}
+
+# ===========================================
 # FUNCTION: create_root_ca
 # Description: Create a new Root CA certificate
 # Sets global variable: SSL_CA_PATH
@@ -644,6 +677,46 @@ matrix_server_fqn_element: "${server_ip}"
 # Important: Disable redirect when using IP instead of domain
 matrix_synapse_container_labels_public_client_root_enabled: false
 
+# -------------------------------------------
+# Federation Configuration
+# -------------------------------------------
+
+EOF
+
+    # Add federation-specific configuration based on deployment type
+    if [[ "$SERVER_IS_IP" == "true" ]]; then
+        cat >> "$VARS_YML_PATH" <<EOF
+# IP-based federation configuration
+# Enable federation and allow communication with IP addresses
+matrix_synapse_federation_enabled: true
+
+# Empty the IP range blacklist to allow federation with local/private IPs
+# This enables federation between servers using IP addresses
+matrix_synapse_federation_ip_range_blacklist: []
+
+# For self-signed certificates, you may need to disable certificate verification
+# WARNING: Only use this in trusted internal networks!
+matrix_synapse_federation_verify_certificates: false
+
+EOF
+    else
+        cat >> "$VARS_YML_PATH" <<EOF
+# Domain-based federation configuration
+# Standard federation settings for domain-based deployment
+matrix_synapse_federation_enabled: true
+
+# Use default IP range blacklist (blocks local/private IPs from federation)
+# This is the default and recommended for public domains
+# matrix_synapse_federation_ip_range_blacklist: <default>
+
+# For production with proper certificates, certificate verification should be enabled
+# If using self-signed certificates in a trusted network, you can set this to false
+# matrix_synapse_federation_verify_certificates: true
+
+EOF
+    fi
+
+    cat >> "$VARS_YML_PATH" <<EOF
 # -------------------------------------------
 # SSL/TLS Configuration (Self-signed)
 # -------------------------------------------
@@ -1193,7 +1266,21 @@ MATRIX INSTALLATION COMPLETE
     echo -e "${BLUE}Server Information:${NC}
   - IP/Domain: ${SERVER_IP}
   - Installation Mode: ${INSTALLATION_MODE}
+  - Deployment Type: $([[ "$SERVER_IS_IP" == "true" ]] && echo "IP-based" || echo "Domain-based")
 "
+
+    if [[ "$SERVER_IS_IP" == "true" ]]; then
+        echo -e "${BLUE}Federation:${NC}
+  - Mode: IP-based (local/private network)
+  - Certificate verification: Disabled (for self-signed certs)
+  - IP range blacklist: Disabled (allows local IP federation)
+"
+    else
+        echo -e "${BLUE}Federation:${NC}
+  - Mode: Domain-based (standard)
+  - Certificate verification: Enabled (recommended)
+"
+    fi
 
     echo -e "${BLUE}Admin User:${NC}
   - Username: ${ADMIN_USERNAME}
@@ -1302,9 +1389,33 @@ EOF
                     if [[ "$(prompt_yes_no "Use '$SERVER_IP' as server IP?" "y")" == "yes" ]]; then
                         print_message "info" "Server IP: $SERVER_IP"
                     else
-                        SERVER_IP="$(prompt_user "Enter server IP address")"
-                        print_message "info" "Server IP: $SERVER_IP"
+                        SERVER_IP="$(prompt_user "Enter server IP address or domain")"
+                        print_message "info" "Server address: $SERVER_IP"
                     fi
+                fi
+
+                # Detect if using IP address or domain
+                if is_ip_address "$SERVER_IP"; then
+                    SERVER_IS_IP="true"
+                    echo ""
+                    local input
+                    input="$(prompt_user "IP address detected. Use domain name instead for better federation support? [y/n/Domain]")"
+                    input="$(echo "$input" | tr '[:upper:]' '[:lower:]' | xargs)"
+
+                    if [[ "$input" == "n" ]] || [[ -z "$input" ]]; then
+                        # Continue with IP
+                        :
+                    elif [[ "$input" == "y" ]]; then
+                        # User wants to enter domain name
+                        SERVER_IP="$(prompt_user "Enter server domain name")"
+                        is_ip_address "$SERVER_IP" && SERVER_IS_IP="true" || SERVER_IS_IP="false"
+                    else
+                        # User entered a domain name directly
+                        SERVER_IP="$input"
+                        SERVER_IS_IP="false"
+                    fi
+                else
+                    SERVER_IS_IP="false"
                 fi
 
                 # Sudo password setup
@@ -1326,6 +1437,31 @@ EOF
                 # Get server details
                 SERVER_IP="$(prompt_user "Enter server IP address or domain")"
                 SERVER_USER="$(prompt_user "SSH username" "$DEFAULT_SSH_USER")"
+
+                # Detect if using IP address or domain
+                if is_ip_address "$SERVER_IP"; then
+                    SERVER_IS_IP="true"
+                    echo ""
+                    local input
+                    input="$(prompt_user "IP address detected. Use domain name instead for better federation support? [y/n/Domain]")"
+                    input="$(echo "$input" | tr '[:upper:]' '[:lower:]' | xargs)"
+
+                    if [[ "$input" == "n" ]] || [[ -z "$input" ]]; then
+                        # Continue with IP
+                        :
+                    elif [[ "$input" == "y" ]]; then
+                        # User wants to enter domain name
+                        SERVER_IP="$(prompt_user "Enter server domain name")"
+                        is_ip_address "$SERVER_IP" && SERVER_IS_IP="true" || SERVER_IS_IP="false"
+                    else
+                        # User entered a domain name directly
+                        SERVER_IP="$input"
+                        SERVER_IS_IP="false"
+                    fi
+                else
+                    SERVER_IS_IP="false"
+                fi
+
                 SSH_HOST="$(prompt_user "SSH host" "$SERVER_IP")"
                 SERVER_PORT="$(prompt_user "SSH port" "22")"
 
