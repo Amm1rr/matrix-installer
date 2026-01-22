@@ -699,14 +699,45 @@ create_traefik_directories() {
     print_message "info" "Creating Traefik directories (workaround for playbook bug)..."
 
     if [[ "$mode" == "local" ]]; then
-        # Create directories locally
-        sudo mkdir -p /matrix/traefik/ssl
-        sudo mkdir -p /matrix/traefik/config
-        sudo chown -R matrix:matrix /matrix/ 2>/dev/null || true
+        # Create directories locally using ansible (avoids sudo password prompt)
+        cd_playbook_and_setup_direnv || return 1
+
+        # Set environment variables for ansible password authentication
+        if [[ -n "$SSH_PASSWORD" ]]; then
+            export ANSIBLE_SSH_PASS="$SSH_PASSWORD"
+        fi
+        if [[ -n "$SUDO_PASSWORD" ]]; then
+            export ANSIBLE_BECOME_PASS="$SUDO_PASSWORD"
+        fi
+
+        if ! ansible -i inventory/hosts localhost -m shell \
+            -a "mkdir -p /matrix/traefik/ssl /matrix/traefik/config" \
+            --become 2>/dev/null; then
+            print_message "error" "Failed to create directories via ansible"
+            print_message "info" "Please check:"
+            print_message "info" "  - User has sudo permissions"
+            print_message "info" "  - Sudo password is correct (if required)"
+            return 1
+        fi
+
+        if ! ansible -i inventory/hosts localhost -m shell \
+            -a "chown -R matrix:matrix /matrix/ || true" \
+            --become 2>/dev/null; then
+            print_message "warning" "Failed to set ownership, but directories created"
+        fi
+
         print_message "success" "Traefik directories created locally"
     else
         # Create directories on remote server using ansible ad-hoc command
         cd_playbook_and_setup_direnv || return 1
+
+        # Set environment variables for ansible password authentication
+        if [[ -n "$SSH_PASSWORD" ]]; then
+            export ANSIBLE_SSH_PASS="$SSH_PASSWORD"
+        fi
+        if [[ -n "$SUDO_PASSWORD" ]]; then
+            export ANSIBLE_BECOME_PASS="$SUDO_PASSWORD"
+        fi
 
         if ! ansible -i inventory/hosts all -m shell -a "mkdir -p /matrix/traefik/ssl /matrix/traefik/config" --become 2>/dev/null; then
             print_message "error" "Failed to create directories via ansible"
