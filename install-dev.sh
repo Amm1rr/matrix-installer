@@ -839,8 +839,8 @@ create_admin_user() {
         return 0
     fi
 
-    # Check for successful execution
-    if [[ $exit_code -eq 0 ]] && echo "$output" | grep -q "changed=0.*failed=0"; then
+    # Check for successful execution (exit code 0 AND no failures)
+    if [[ $exit_code -eq 0 ]] && ! echo "$output" | grep -q "failed=[1-9]"; then
         print_message "success" "Admin user created successfully"
         print_message "info" "  - Username: $username"
         return 0
