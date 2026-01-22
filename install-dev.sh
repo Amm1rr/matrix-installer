@@ -1285,6 +1285,28 @@ EOF
     fi
 
     # ============================================
+    # PHASE 8.5: Final Confirmation
+    # ============================================
+    print_message "info" "=== PHASE 8.5: Final Confirmation ==="
+
+    echo ""
+    print_message "info" "All configurations have been applied and pre-flight check passed."
+    print_message "warning" "Installation will take 10-20 minutes."
+
+    if [[ "$(prompt_yes_no "Start installation now?" "y")" != "yes" ]]; then
+        print_message "info" "Installation cancelled by user"
+        print_message "info" "All configurations are in place."
+        print_message "info" "You can run the installation manually:"
+        print_message "info" "  cd $PLAYBOOK_DIR"
+        print_message "info" "  ansible-playbook -i inventory/hosts setup.yml --tags=install-all,start"
+        print_message "info" ""
+        print_message "info" "Or create admin user:"
+        print_message "info" "  cd $PLAYBOOK_DIR"
+        print_message "info" "  ansible-playbook -i inventory/hosts setup.yml --extra-vars=\"username=<user> password=<pass> admin=yes\" --tags=register-user"
+        exit 0
+    fi
+
+    # ============================================
     # PHASE 9: Run Installation
     # ============================================
     print_message "info" "=== PHASE 9: Installation ==="
