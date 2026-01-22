@@ -919,6 +919,124 @@ cleanup_existing_postgres_data() {
 }
 
 # ===========================================
+# FUNCTION: cleanup_matrix_services
+# Description: Aggressively stop and remove all Matrix services and containers
+# Arguments:
+#   $1 - Installation mode: "local" or "remote"
+# ===========================================
+cleanup_matrix_services() {
+    local mode="$1"
+
+    cd_playbook_and_setup_direnv || return 1
+
+    # Set environment variables for ansible password authentication
+    if [[ -n "$SSH_PASSWORD" ]]; then
+        export ANSIBLE_SSH_PASS="$SSH_PASSWORD"
+    fi
+    if [[ -n "$SUDO_PASSWORD" ]]; then
+        export ANSIBLE_BECOME_PASS="$SUDO_PASSWORD"
+    fi
+
+    # Determine target (use SERVER_IP for local, 'all' for remote)
+    local target="$SERVER_IP"
+    if [[ "$mode" == "remote" ]]; then
+        target="all"
+    fi
+
+    # Check if any Matrix services exist
+    print_message "info" "Checking for existing Matrix services..."
+
+    local check_output
+    check_output=$(ansible -i inventory/hosts "$target" -m shell \
+        -a "systemctl list-units --all | grep -E 'matrix-.*\.service' | grep -v 'not found'" \
+        --become 2>/dev/null | grep -v "$target |")
+
+    if [[ -z "$check_output" ]] && [[ "$check_output" != *"matrix-"* ]]; then
+        print_message "info" "No existing Matrix services found"
+        return 0
+    fi
+
+    # Matrix services exist - warn user
+    echo ""
+    print_message "warning" "Existing Matrix services detected!"
+    print_message "info" "The following services will be STOPPED and DISABLED:"
+    echo "$check_output" | grep -oE "matrix-[^ ]+" | sort -u | while read -r svc; do
+        print_message "info" "  - $svc"
+    done
+    echo ""
+
+    # Also check for Docker containers
+    local docker_check
+    docker_check=$(ansible -i inventory/hosts "$target" -m shell \
+        -a 'docker ps -a --format "{{"{{"}}.Names{{"}}"}}" 2>/dev/null | grep "^matrix-" || true' \
+        --become 2>/dev/null | grep -v "$target |")
+
+    if [[ -n "$docker_check" ]]; then
+        print_message "warning" "Existing Matrix Docker containers detected:"
+        echo "$docker_check" | while read -r container; do
+            print_message "info" "  - $container"
+        done
+        echo ""
+    fi
+
+    print_message "warning" "This will STOP and DISABLE all Matrix services and REMOVE containers!"
+    print_message "info" "Data in /matrix/postgres has already been cleaned separately."
+
+    if [[ "$(prompt_yes_no "Stop and remove all Matrix services and containers?" "y")" != "yes" ]]; then
+        print_message "info" "Cleanup cancelled by user"
+        return 1
+    fi
+
+    # Stop and disable all Matrix services
+    print_message "info" "Stopping Matrix services..."
+
+    ansible -i inventory/hosts "$target" -m shell \
+        -a "systemctl stop matrix-*.service 2>/dev/null || true" \
+        --become 2>/dev/null
+
+    ansible -i inventory/hosts "$target" -m shell \
+        -a "systemctl disable matrix-*.service 2>/dev/null || true" \
+        --become 2>/dev/null
+
+    print_message "success" "Matrix services stopped and disabled"
+
+    # Remove Docker containers
+    print_message "info" "Removing Matrix Docker containers..."
+
+    ansible -i inventory/hosts "$target" -m shell \
+        -a 'docker ps -a --format "{{"{{"}}.Names{{"}}"}}" | grep "^matrix-" | xargs -r docker rm -f 2>/dev/null || true' \
+        --become 2>/dev/null
+
+    print_message "success" "Matrix Docker containers removed"
+
+    # Optional: Remove Docker volumes (more aggressive)
+    print_message "info" "Checking for Matrix Docker volumes..."
+
+    local volumes_output
+    volumes_output=$(ansible -i inventory/hosts "$target" -m shell \
+        -a 'docker volume ls --format "{{"{{"}}.Name{{"}}"}}" 2>/dev/null | grep "^matrix-" || true' \
+        --become 2>/dev/null | grep -v "$target |")
+
+    if [[ -n "$volumes_output" ]]; then
+        print_message "warning" "Matrix Docker volumes found:"
+        echo "$volumes_output" | while read -r vol; do
+            print_message "info" "  - $vol"
+        done
+        echo ""
+
+        if [[ "$(prompt_yes_no "Remove Matrix Docker volumes as well? This may delete additional data." "n")" == "yes" ]]; then
+            ansible -i inventory/hosts "$target" -m shell \
+                -a 'docker volume ls --format "{{"{{"}}.Name{{"}}"}}" | grep "^matrix-" | xargs -r docker volume rm -f 2>/dev/null || true' \
+                --become 2>/dev/null
+            print_message "success" "Matrix Docker volumes removed"
+        fi
+    fi
+
+    print_message "success" "Matrix services cleanup completed"
+    return 0
+}
+
+# ===========================================
 # FUNCTION: prompt_user
 # Description: Prompt user for input with a default value
 # Arguments:
@@ -1198,6 +1316,18 @@ EOF
                         print_message "info" "Server IP: $SERVER_IP"
                     fi
                 fi
+
+                # Sudo password setup
+                echo ""
+                if [[ "$(prompt_yes_no "Does your user need sudo password?" "y")" == "yes" ]]; then
+                    SUDO_PASSWORD="$(prompt_user "Sudo password")"
+                    print_message "info" "Sudo password will be used"
+                else
+                    SUDO_PASSWORD=""
+                    print_message "info" "Assuming passwordless sudo"
+                fi
+
+                print_message "info" "Target server: localhost (Matrix on $SERVER_IP)"
                 break
                 ;;
             2)
@@ -1427,6 +1557,16 @@ EOF
         print_message "error" "Failed to cleanup existing data"
         print_message "info" "Please manually remove /matrix/postgres on the target server"
         exit 1
+    fi
+
+    # ============================================
+    # PHASE 8.7: Cleanup Matrix Services (if any)
+    # ============================================
+    print_message "info" "=== PHASE 8.7: Cleanup Matrix Services ==="
+
+    if ! cleanup_matrix_services "$INSTALLATION_MODE"; then
+        print_message "warning" "Matrix services cleanup was cancelled or failed"
+        print_message "info" "Installation will continue, but may encounter issues"
     fi
 
     # ============================================
