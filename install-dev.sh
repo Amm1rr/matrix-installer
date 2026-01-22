@@ -1212,22 +1212,12 @@ MATRIX INSTALLATION COMPLETE
   - Root CA: ${SSL_CA_PATH}
 "
 
-    echo -e "${BLUE}SSL Certificate:${NC}
-  To trust the self-signed certificate in your browser:
-  1. Open: chrome://settings/certificates (Chrome/Edge)
-  2. Go to \"Authorities\" tab
-  3. Import: ${SSL_CA_PATH}
-"
-
     echo -e "${BLUE}Next Steps:${NC}
-  1. Import the Root CA certificate into your browser
-  2. Access https://${SERVER_IP}/ in your browser
-  3. Log in with your admin credentials
+  1. Access https://${SERVER_IP}/ in your browser
+  2. Log in with your admin credentials
 "
 
     echo -e "${YELLOW}Note:${NC} Save this information securely!
-      The Root CA certificate is required for
-      federation between servers.
 "
 
     echo -e "${GREEN}========================================${NC}
