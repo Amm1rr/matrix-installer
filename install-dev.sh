@@ -8,6 +8,7 @@
 
 set -e  # Exit on error
 set -u  # Exit on undefined variable
+set -o pipefail  # Catch errors in pipes
 
 # ===========================================
 # CONFIGURATION SECTION
@@ -710,7 +711,7 @@ create_traefik_directories() {
             export ANSIBLE_BECOME_PASS="$SUDO_PASSWORD"
         fi
 
-        if ! ansible -i inventory/hosts localhost -m shell \
+        if ! ansible -i inventory/hosts "$SERVER_IP" -m shell \
             -a "mkdir -p /matrix/traefik/ssl /matrix/traefik/config" \
             --become 2>/dev/null; then
             print_message "error" "Failed to create directories via ansible"
@@ -720,7 +721,7 @@ create_traefik_directories() {
             return 1
         fi
 
-        if ! ansible -i inventory/hosts localhost -m shell \
+        if ! ansible -i inventory/hosts "$SERVER_IP" -m shell \
             -a "chown -R matrix:matrix /matrix/ || true" \
             --become 2>/dev/null; then
             print_message "warning" "Failed to set ownership, but directories created"
@@ -824,15 +825,95 @@ create_admin_user() {
     export LC_ALL=C.UTF-8
     export LANG=C.UTF-8
 
-    if ansible-playbook -i inventory/hosts setup.yml \
+    # Run playbook and capture output (also save to log file)
+    local output
+    output=$(ansible-playbook -i inventory/hosts setup.yml \
         --extra-vars="username=${username} password=${password} admin=yes" \
-        --tags=register-user 2>&1 | tee -a "$LOG_FILE"; then
+        --tags=register-user 2>&1 | tee -a "$LOG_FILE")
+    local exit_code=$?
+
+    # Check if user already exists (not a fatal error)
+    if echo "$output" | grep -q "User ID already taken"; then
+        print_message "warning" "Admin user '$username' already exists (skipping creation)"
+        print_message "info" "  - Username: $username"
+        return 0
+    fi
+
+    # Check for successful execution
+    if [[ $exit_code -eq 0 ]] && echo "$output" | grep -q "changed=0.*failed=0"; then
         print_message "success" "Admin user created successfully"
         print_message "info" "  - Username: $username"
         return 0
+    fi
+
+    # Actual failure
+    print_message "error" "Failed to create admin user"
+    print_message "info" "You can create it manually later"
+    return 1
+}
+
+# ===========================================
+# FUNCTION: cleanup_existing_postgres_data
+# Description: Remove existing PostgreSQL data to prevent password mismatch
+# Arguments:
+#   $1 - Installation mode: "local" or "remote"
+# ===========================================
+cleanup_existing_postgres_data() {
+    local mode="$1"
+
+    cd_playbook_and_setup_direnv || return 1
+
+    # Set environment variables for ansible password authentication
+    if [[ -n "$SSH_PASSWORD" ]]; then
+        export ANSIBLE_SSH_PASS="$SSH_PASSWORD"
+    fi
+    if [[ -n "$SUDO_PASSWORD" ]]; then
+        export ANSIBLE_BECOME_PASS="$SUDO_PASSWORD"
+    fi
+
+    # Determine target (use SERVER_IP for local, 'all' for remote)
+    local target="$SERVER_IP"
+    if [[ "$mode" == "remote" ]]; then
+        target="all"
+    fi
+
+    # Check if postgres data directory exists
+    print_message "info" "Checking for existing PostgreSQL data..."
+
+    local check_output
+    check_output=$(ansible -i inventory/hosts "$target" -m shell \
+        -a "test -d /matrix/postgres && echo 'EXISTS' || echo 'NOT_FOUND'" \
+        --become 2>/dev/null | grep -v "$target |")
+
+    if [[ "$check_output" != *"EXISTS"* ]]; then
+        print_message "info" "No existing PostgreSQL data found (clean installation)"
+        return 0
+    fi
+
+    # PostgreSQL data exists - warn user and ask for confirmation
+    echo ""
+    print_message "warning" "Existing PostgreSQL data found on target server!"
+    print_message "warning" "This will cause installation to fail due to password mismatch."
+    print_message "info" "The existing data must be removed before installation."
+    echo ""
+    print_message "info" "WARNING: This will DELETE all existing Matrix database data!"
+    print_message "info" "Including: users, messages, rooms, settings"
+
+    if [[ "$(prompt_yes_no "Delete existing PostgreSQL data and continue?" "n")" != "yes" ]]; then
+        print_message "info" "Installation cancelled by user"
+        exit 0
+    fi
+
+    # Remove postgres data
+    print_message "info" "Removing existing PostgreSQL data..."
+
+    if ansible -i inventory/hosts "$target" -m shell \
+        -a "rm -rf /matrix/postgres" \
+        --become 2>/dev/null; then
+        print_message "success" "PostgreSQL data removed successfully"
+        return 0
     else
-        print_message "error" "Failed to create admin user"
-        print_message "info" "You can create it manually later"
+        print_message "error" "Failed to remove PostgreSQL data"
         return 1
     fi
 }
@@ -1338,6 +1419,17 @@ EOF
     fi
 
     # ============================================
+    # PHASE 8.6: Cleanup Existing Data (if any)
+    # ============================================
+    print_message "info" "=== PHASE 8.6: Cleanup Existing Data ==="
+
+    if ! cleanup_existing_postgres_data "$INSTALLATION_MODE"; then
+        print_message "error" "Failed to cleanup existing data"
+        print_message "info" "Please manually remove /matrix/postgres on the target server"
+        exit 1
+    fi
+
+    # ============================================
     # PHASE 9: Run Installation
     # ============================================
     print_message "info" "=== PHASE 9: Installation ==="
@@ -1349,7 +1441,10 @@ EOF
     # ============================================
     print_message "info" "=== PHASE 10: Create Admin User ==="
 
-    create_admin_user "$ADMIN_USERNAME" "$ADMIN_PASSWORD"
+    if ! create_admin_user "$ADMIN_USERNAME" "$ADMIN_PASSWORD"; then
+        print_message "warning" "Admin user creation failed, but installation is complete"
+        print_message "info" "You can create the admin user manually later"
+    fi
 
     # ============================================
     # PHASE 11: Summary
