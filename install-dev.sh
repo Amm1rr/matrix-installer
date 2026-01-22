@@ -899,7 +899,7 @@ cleanup_existing_postgres_data() {
     print_message "info" "WARNING: This will DELETE all existing Matrix database data!"
     print_message "info" "Including: users, messages, rooms, settings"
 
-    if [[ "$(prompt_yes_no "Delete existing PostgreSQL data and continue?" "n")" != "yes" ]]; then
+    if [[ "$(prompt_yes_no "Delete existing PostgreSQL data and continue?" "y")" != "yes" ]]; then
         print_message "info" "Installation cancelled by user"
         exit 0
     fi
