@@ -518,7 +518,7 @@ OU = Server
 CN = ${server_ip}
 
 [v3_req]
-keyUsage = keyEncipherment, dataEncipherment
+keyUsage = digitalSignature, keyEncipherment
 extendedKeyUsage = serverAuth
 subjectAltName = @alt_names
 
@@ -585,6 +585,12 @@ configure_inventory() {
     local inventory_file="${PLAYBOOK_DIR}/inventory/hosts"
     local inventory_dir
     inventory_dir="$(dirname "$inventory_file")"
+
+    # Remove old hosts file for fresh configuration
+    if [[ -f "$inventory_file" ]]; then
+        rm -f "$inventory_file"
+        print_message "info" "Removed old hosts file for fresh configuration"
+    fi
 
     # Create inventory directory if it doesn't exist
     mkdir -p "$inventory_dir"
@@ -660,8 +666,16 @@ configure_vars_yml() {
 
     print_message "info" "Configuring vars.yml..."
 
-    # Create host_vars directory
+    # Define host_vars directory
     HOST_VARS_DIR="${PLAYBOOK_DIR}/inventory/host_vars/${server_ip}"
+
+    # Remove old host_vars directory for fresh configuration
+    if [[ -d "$HOST_VARS_DIR" ]]; then
+        rm -rf "$HOST_VARS_DIR"
+        print_message "info" "Removed old host_vars directory for fresh configuration"
+    fi
+
+    # Create host_vars directory
     mkdir -p "$HOST_VARS_DIR"
 
     VARS_YML_PATH="${HOST_VARS_DIR}/vars.yml"
@@ -739,6 +753,9 @@ matrix_synapse_configuration_extension_yaml: |
   federation_verify_certificates: false
   suppress_key_server_warning: true
   report_stats: false
+  key_server:
+    accept_keys_insecurely: true
+  trusted_key_servers: []
 
 EOF
     else
@@ -958,6 +975,107 @@ configure_firewall() {
 }
 
 # ===========================================
+# FUNCTION: install_root_ca_on_system
+# Description: Install Root CA in system trust store for federation
+# Arguments:
+#   $1 - Installation mode: "local" or "remote"
+# ===========================================
+install_root_ca_on_system() {
+    local mode="$1"
+
+    print_message "info" "Installing Root CA in system trust store..."
+
+    cd_playbook_and_setup_direnv || return 1
+
+    # Set environment variables for ansible password authentication
+    if [[ -n "$SSH_PASSWORD" ]]; then
+        export ANSIBLE_SSH_PASS="$SSH_PASSWORD"
+    fi
+    if [[ -n "$SUDO_PASSWORD" ]]; then
+        export ANSIBLE_BECOME_PASS="$SUDO_PASSWORD"
+    fi
+
+    # Determine target (use SERVER_IP for local, 'all' for remote)
+    local target="$SERVER_IP"
+    if [[ "$mode" == "remote" ]]; then
+        target="all"
+    fi
+
+    # Copy Root CA to system trust store
+    local copy_output
+    copy_output=$(ansible -i inventory/hosts "$target" -m copy \
+        -a "src=${CA_DIR}/rootCA.crt dest=/usr/local/share/ca-certificates/matrix-root-ca.crt mode=0644" \
+        --become 2>&1)
+    local copy_status=$?
+
+    if [[ $copy_status -ne 0 ]]; then
+        print_message "warning" "Failed to copy Root CA to system trust store"
+        print_message "info" "$copy_output"
+        print_message "info" "Continuing anyway (federation_verify_certificates: false is set)"
+        return 0
+    fi
+
+    # Update CA certificates
+    local update_output
+    update_output=$(ansible -i inventory/hosts "$target" -m command \
+        -a "update-ca-certificates" \
+        --become 2>&1)
+    local update_status=$?
+
+    if [[ $update_status -ne 0 ]]; then
+        print_message "warning" "Failed to update CA certificates"
+        print_message "info" "$update_output"
+        print_message "info" "Continuing anyway (federation_verify_certificates: false is set)"
+        return 0
+    fi
+
+    print_message "success" "Root CA installed in system trust store"
+    print_message "info" "  - Location: /usr/local/share/ca-certificates/matrix-root-ca.crt"
+    return 0
+}
+
+# ===========================================
+# FUNCTION: remove_root_ca_from_system
+# Description: Remove Root CA from system trust store (cleanup)
+# Arguments:
+#   $1 - Installation mode: "local" or "remote"
+# ===========================================
+remove_root_ca_from_system() {
+    local mode="$1"
+
+    print_message "info" "Removing Root CA from system trust store..."
+
+    cd_playbook_and_setup_direnv || return 1
+
+    # Set environment variables for ansible password authentication
+    if [[ -n "$SSH_PASSWORD" ]]; then
+        export ANSIBLE_SSH_PASS="$SSH_PASSWORD"
+    fi
+    if [[ -n "$SUDO_PASSWORD" ]]; then
+        export ANSIBLE_BECOME_PASS="$SUDO_PASSWORD"
+    fi
+
+    # Determine target
+    local target="$SERVER_IP"
+    if [[ "$mode" == "remote" ]]; then
+        target="all"
+    fi
+
+    # Remove Root CA file
+    ansible -i inventory/hosts "$target" -m file \
+        -a "path=/usr/local/share/ca-certificates/matrix-root-ca.crt state=absent" \
+        --become >/dev/null 2>&1
+
+    # Update CA certificates
+    ansible -i inventory/hosts "$target" -m command \
+        -a "update-ca-certificates" \
+        --become >/dev/null 2>&1
+
+    print_message "success" "Root CA removed from system trust store"
+    return 0
+}
+
+# ===========================================
 # FUNCTION: install_ansible_roles
 # Description: Install Ansible roles from requirements.yml
 # ===========================================
@@ -1088,19 +1206,11 @@ cleanup_existing_postgres_data() {
         return 0
     fi
 
-    # PostgreSQL data exists - warn user and ask for confirmation
+    # PostgreSQL data exists - auto-remove with warning
     echo ""
     print_message "warning" "Existing PostgreSQL data found on target server!"
-    print_message "warning" "This will cause installation to fail due to password mismatch."
-    print_message "info" "The existing data must be removed before installation."
+    print_message "info" "Automatically removing PostgreSQL data for clean installation..."
     echo ""
-    print_message "info" "WARNING: This will DELETE all existing Matrix database data!"
-    print_message "info" "Including: users, messages, rooms, settings"
-
-    if [[ "$(prompt_yes_no "Delete existing PostgreSQL data and continue?" "y")" != "yes" ]]; then
-        print_message "info" "Installation cancelled by user"
-        exit 0
-    fi
 
     # Remove postgres data
     print_message "info" "Removing existing PostgreSQL data..."
@@ -1179,11 +1289,8 @@ cleanup_matrix_services() {
 
     print_message "warning" "This will STOP and DISABLE all Matrix services and REMOVE containers!"
     print_message "info" "Data in /matrix/postgres has already been cleaned separately."
-
-    if [[ "$(prompt_yes_no "Stop and remove all Matrix services and containers?" "y")" != "yes" ]]; then
-        print_message "info" "Cleanup cancelled by user"
-        return 1
-    fi
+    echo ""
+    print_message "info" "Automatically stopping and removing all Matrix services..."
 
     # Stop and disable all Matrix services
     print_message "info" "Stopping Matrix services..."
@@ -1216,18 +1323,12 @@ cleanup_matrix_services() {
         --become 2>/dev/null | grep -v "$target |")
 
     if [[ -n "$volumes_output" ]]; then
-        print_message "warning" "Matrix Docker volumes found:"
+        print_message "warning" "Matrix Docker volumes found (will be preserved):"
         echo "$volumes_output" | while read -r vol; do
             print_message "info" "  - $vol"
         done
         echo ""
-
-        if [[ "$(prompt_yes_no "Remove Matrix Docker volumes as well? This may delete additional data." "n")" == "yes" ]]; then
-            ansible -i inventory/hosts "$target" -m shell \
-                -a 'docker volume ls --format "{{"{{"}}.Name{{"}}"}}" | grep "^matrix-" | xargs -r docker volume rm -f 2>/dev/null || true' \
-                --become 2>/dev/null
-            print_message "success" "Matrix Docker volumes removed"
-        fi
+        print_message "info" "Docker volumes will NOT be removed (use manual cleanup if needed)"
     fi
 
     print_message "success" "Matrix services cleanup completed"
@@ -1553,15 +1654,10 @@ EOF
                     SERVER_IS_IP="false"
                 fi
 
-                # Sudo password setup
+                # Sudo password (always required)
                 echo ""
-                if [[ "$(prompt_yes_no "Does your user need sudo password?" "y")" == "yes" ]]; then
-                    SUDO_PASSWORD="$(prompt_user "Sudo password")"
-                    print_message "info" "Sudo password will be used"
-                else
-                    SUDO_PASSWORD=""
-                    print_message "info" "Assuming passwordless sudo"
-                fi
+                SUDO_PASSWORD="$(prompt_user "Sudo password")"
+                print_message "info" "Sudo password will be used"
 
                 print_message "info" "Target server: localhost (Matrix on $SERVER_IP)"
                 break
@@ -1627,15 +1723,10 @@ EOF
                     fi
                 fi
 
-                # Sudo password setup
+                # Sudo password (always required)
                 echo ""
-                if [[ "$(prompt_yes_no "Does ${SERVER_USER} need sudo password?" "y")" == "yes" ]]; then
-                    SUDO_PASSWORD="$(prompt_user "Sudo password")"
-                    print_message "info" "Sudo password will be used"
-                else
-                    SUDO_PASSWORD=""
-                    print_message "info" "Assuming passwordless sudo"
-                fi
+                SUDO_PASSWORD="$(prompt_user "Sudo password")"
+                print_message "info" "Sudo password will be used"
 
                 print_message "info" "Target server: ${SERVER_USER}@${SSH_HOST}:${SERVER_PORT} → Matrix on ${SERVER_IP}"
                 break
@@ -1679,15 +1770,17 @@ EOF
     # MODE: Matrix Installation (local or remote)
     # ============================================
 
-    # Configuration
+    # Configuration (auto defaults)
     echo ""
     print_message "info" "Configuration options:"
 
-    ipv6_answer="$(prompt_yes_no "Enable IPv6 support?" "$DEFAULT_IPV6_ENABLED")"
-    IPV6_ENABLED="$([ "$ipv6_answer" == "yes" ] && echo "true" || echo "false")"
+    # IPv6 enabled by default
+    IPV6_ENABLED="true"
+    print_message "info" "IPv6 support: enabled (default)"
 
-    element_answer="$(prompt_yes_no "Enable Element Web?" "$DEFAULT_ELEMENT_ENABLED")"
-    ELEMENT_ENABLED="$([ "$element_answer" == "yes" ] && echo "true" || echo "false")"
+    # Element Web enabled by default
+    ELEMENT_ENABLED="true"
+    print_message "info" "Element Web: enabled (default)"
 
     # Admin user
     echo ""
@@ -1762,6 +1855,7 @@ EOF
     configure_vars_yml "$SERVER_IP" "$IPV6_ENABLED" "$ELEMENT_ENABLED" || exit 1
     create_traefik_directories "$INSTALLATION_MODE" || exit 1
     configure_firewall "$INSTALLATION_MODE" || print_message "warning" "Firewall configuration failed, but continuing..."
+    install_root_ca_on_system "$INSTALLATION_MODE" || print_message "warning" "Root CA installation failed, but continuing..."
 
     # ============================================
     # PHASE 7: Install Ansible Roles
@@ -1829,6 +1923,15 @@ EOF
     if ! cleanup_matrix_services "$INSTALLATION_MODE"; then
         print_message "warning" "Matrix services cleanup was cancelled or failed"
         print_message "info" "Installation will continue, but may encounter issues"
+    fi
+
+    # ============================================
+    # PHASE 8.8: Cleanup Root CA from System (if re-installing)
+    # ============================================
+    print_message "info" "=== PHASE 8.8: Cleanup Root CA ==="
+
+    if ! remove_root_ca_from_system "$INSTALLATION_MODE"; then
+        print_message "warning" "Root CA cleanup failed, but continuing..."
     fi
 
     # ============================================
