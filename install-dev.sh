@@ -694,9 +694,11 @@ matrix_synapse_federation_enabled: true
 # This enables federation between servers using IP addresses
 matrix_synapse_federation_ip_range_blacklist: []
 
-# For self-signed certificates, you may need to disable certificate verification
+# For self-signed certificates, disable certificate verification
 # WARNING: Only use this in trusted internal networks!
-matrix_synapse_federation_verify_certificates: false
+matrix_synapse_configuration_extension_yaml: |
+  federation_verify_certificates: false
+  suppress_key_server_warning: true
 
 EOF
     else
@@ -710,8 +712,9 @@ matrix_synapse_federation_enabled: true
 # matrix_synapse_federation_ip_range_blacklist: <default>
 
 # For production with proper certificates, certificate verification should be enabled
-# If using self-signed certificates in a trusted network, you can set this to false
-# matrix_synapse_federation_verify_certificates: true
+# If using self-signed certificates in a trusted network, you can use:
+# matrix_synapse_configuration_extension_yaml: |
+#   federation_verify_certificates: false
 
 EOF
     fi
@@ -1386,10 +1389,20 @@ EOF
                     echo "Detected IP addresses:"
                     ip -br addr 2>/dev/null || ifconfig 2>/dev/null | grep "inet "
                     echo ""
-                    if [[ "$(prompt_yes_no "Use '$SERVER_IP' as server IP?" "y")" == "yes" ]]; then
-                        print_message "info" "Server IP: $SERVER_IP"
-                    else
+                    local input
+                    input="$(prompt_user "Use '$SERVER_IP' as server address? [y/n/IP/Domain]")"
+                    input="$(echo "$input" | tr '[:upper:]' '[:lower:]' | xargs)"
+
+                    if [[ "$input" == "y" ]] || [[ -z "$input" ]]; then
+                        # Use detected IP
+                        print_message "info" "Server address: $SERVER_IP"
+                    elif [[ "$input" == "n" ]]; then
+                        # Ask for new address
                         SERVER_IP="$(prompt_user "Enter server IP address or domain")"
+                        print_message "info" "Server address: $SERVER_IP"
+                    else
+                        # User entered an address directly
+                        SERVER_IP="$input"
                         print_message "info" "Server address: $SERVER_IP"
                     fi
                 fi
