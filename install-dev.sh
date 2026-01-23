@@ -485,47 +485,86 @@ create_ssl_certificates() {
         fi
     fi
 
-    # Generate Server certificate
+    # Generate Server certificate with proper SAN for Matrix federation
     print_message "info" "Generating server certificate for $server_ip..."
 
-    # Generate Server private key
-    openssl genrsa -out "server-${server_ip}.key" 4096 2>/dev/null
+    # Determine the domain to use in certificate (for SAN)
+    # If server_ip is actually an IP, use matrix.local as domain
+    # If server_ip is a domain, use it as both domain and CN
+    local cert_domain="$server_ip"
+    local cert_ip="$server_ip"
 
-    # Generate CSR (Certificate Signing Request)
-    openssl req -new -key "server-${server_ip}.key" -out "server-${server_ip}.csr" \
-        -subj "/C=${SSL_COUNTRY}/ST=${SSL_STATE}/L=${SSL_CITY}/O=Matrix/OU=Server/CN=${server_ip}" \
-        2>/dev/null
+    if is_ip_address "$server_ip"; then
+        cert_domain="matrix.local"
+        cert_ip="$server_ip"
+    else
+        cert_domain="$server_ip"
+        cert_ip=""  # Will be resolved or left empty for domain-only certs
+    fi
 
-    # Create config file for Subject Alternative Names (SAN)
-    cat > "server-${server_ip}.cnf" <<EOF
-authorityKeyIdentifier=keyid,issuer
-basicConstraints=CA:FALSE
-keyUsage = digitalSignature, nonRepudiation, keyEncipherment, dataEncipherment
+    # Create OpenSSL configuration file with proper SAN
+    cat > openssl.cnf <<EOF
+[req]
+distinguished_name = req_distinguished_name
+req_extensions = v3_req
+prompt = no
+
+[req_distinguished_name]
+C = ${SSL_COUNTRY}
+ST = ${SSL_STATE}
+L = ${SSL_CITY}
+O = Matrix
+OU = Server
+CN = ${server_ip}
+
+[v3_req]
+keyUsage = keyEncipherment, dataEncipherment
+extendedKeyUsage = serverAuth
 subjectAltName = @alt_names
 
 [alt_names]
-DNS.1 = matrix.local
-DNS.2 = localhost
-IP.1 = ${server_ip}
-IP.2 = 127.0.0.1
+DNS.1 = ${cert_domain}
+DNS.2 = matrix.local
+DNS.3 = localhost
 EOF
 
-    # Sign the certificate with Root CA
-    openssl x509 -req -in "server-${server_ip}.csr" -CA rootCA.crt -CAkey rootCA.key \
-        -CAcreateserial -out "server-${server_ip}.crt" -days "$SSL_CERT_DAYS" -sha256 \
-        -extfile "server-${server_ip}.cnf" 2>/dev/null
+    # Add IP to SAN if it's an IP address
+    if [[ -n "$cert_ip" ]]; then
+        echo "IP.1 = ${cert_ip}" >> openssl.cnf
+        echo "IP.2 = 127.0.0.1" >> openssl.cnf
+    fi
 
-    # Create full-chain certificate
-    cat "server-${server_ip}.crt" rootCA.crt > cert-full-chain.pem
+    # Generate Server private key
+    openssl genrsa -out server.key 4096 2>/dev/null
+
+    # Generate CSR with the config file
+    openssl req -new -key server.key -out server.csr -config openssl.cnf 2>/dev/null
+
+    # Sign the certificate with Root CA using v3_req extensions
+    openssl x509 -req -in server.csr \
+        -CA rootCA.crt -CAkey rootCA.key \
+        -CAcreateserial -out server.crt \
+        -days "$SSL_CERT_DAYS" -sha256 \
+        -extensions v3_req -extfile openssl.cnf 2>/dev/null
+
+    # Create full-chain certificate (server cert + Root CA)
+    # Critical for Matrix federation - both servers must trust the same CA chain
+    cat server.crt rootCA.crt > cert-full-chain.pem
+
+    # Also create server-specific named files for backward compatibility
+    cp server.key "server-${server_ip}.key"
+    cp server.crt "server-${server_ip}.crt"
 
     # Set global variables for SSL paths
-    SSL_KEY_PATH="${CA_DIR}/server-${server_ip}.key"
+    SSL_KEY_PATH="${CA_DIR}/server.key"
     SSL_CERT_PATH="${CA_DIR}/cert-full-chain.pem"
+    SSL_CA_PATH="${CA_DIR}/rootCA.crt"
 
     print_message "success" "SSL certificates created successfully"
     print_message "info" "  - Private key: $SSL_KEY_PATH"
-    print_message "info" "  - Certificate: $SSL_CERT_PATH"
+    print_message "info" "  - Full chain cert: $SSL_CERT_PATH"
     print_message "info" "  - Root CA: $SSL_CA_PATH"
+    print_message "info" "  - SAN includes: ${cert_domain}, matrix.local, localhost${cert_ip:+, ${cert_ip}, 127.0.0.1}"
 
     return 0
 }
@@ -699,6 +738,7 @@ matrix_synapse_federation_ip_range_blacklist: []
 matrix_synapse_configuration_extension_yaml: |
   federation_verify_certificates: false
   suppress_key_server_warning: true
+  report_stats: false
 
 EOF
     else
@@ -832,6 +872,88 @@ create_traefik_directories() {
         print_message "success" "Traefik directories created on remote server"
     fi
 
+    return 0
+}
+
+# ===========================================
+# FUNCTION: configure_firewall
+# Description: Configure firewall to open required ports for Matrix
+# Arguments:
+#   $1 - Installation mode: "local" or "remote"
+# Ports required:
+#   - 443/tcp: HTTPS (Element Web, Client API, Federation via Traefik)
+#   - 8448/tcp: Matrix Federation (direct Synapse-to-Synapse)
+# ===========================================
+configure_firewall() {
+    local mode="$1"
+
+    print_message "info" "Configuring firewall for Matrix ports..."
+
+    cd_playbook_and_setup_direnv || return 1
+
+    # Set environment variables for ansible password authentication
+    if [[ -n "$SSH_PASSWORD" ]]; then
+        export ANSIBLE_SSH_PASS="$SSH_PASSWORD"
+    fi
+    if [[ -n "$SUDO_PASSWORD" ]]; then
+        export ANSIBLE_BECOME_PASS="$SUDO_PASSWORD"
+    fi
+
+    # Determine target (use SERVER_IP for local, 'all' for remote)
+    local target="$SERVER_IP"
+    if [[ "$mode" == "remote" ]]; then
+        target="all"
+    fi
+
+    # Detect firewall type and configure accordingly
+    local firewall_type=""
+    local detect_output
+    detect_output=$(ansible -i inventory/hosts "$target" -m shell \
+        -a "command -v ufw && echo 'ufw' || (command -v firewall-cmd && echo 'firewalld') || (iptables -nL >/dev/null 2>&1 && echo 'iptables') || echo 'none'" \
+        --become 2>/dev/null | grep -v "$target |" | head -n1)
+
+    firewall_type=$(echo "$detect_output" | tr -d ' \n\r')
+
+    case "$firewall_type" in
+        ufw)
+            print_message "info" "  - Detected firewall: UFW"
+            ansible -i inventory/hosts "$target" -m shell \
+                -a "ufw allow 443/tcp comment 'Matrix HTTPS' && ufw allow 8448/tcp comment 'Matrix Federation'" \
+                --become 2>/dev/null
+            print_message "success" "UFW rules added for ports 443, 8448"
+            ;;
+        firewalld)
+            print_message "info" "  - Detected firewall: firewalld"
+            ansible -i inventory/hosts "$target" -m shell \
+                -a "firewall-cmd --permanent --add-service=https && firewall-cmd --permanent --add-port=8448/tcp && firewall-cmd --reload" \
+                --become 2>/dev/null
+            print_message "success" "firewalld rules added for ports 443, 8448"
+            ;;
+        iptables)
+            print_message "info" "  - Detected firewall: iptables"
+            ansible -i inventory/hosts "$target" -m shell \
+                -a "iptables -I INPUT -p tcp --dport 443 -j ACCEPT && iptables -I INPUT -p tcp --dport 8448 -j ACCEPT" \
+                --become 2>/dev/null
+            # Try to persist rules if iptables-persistent is available
+            ansible -i inventory/hosts "$target" -m shell \
+                -a "(iptables-save > /etc/iptables/rules.v4 2>/dev/null || iptables-save > /etc/iptables/rules 2>/dev/null || true)" \
+                --become 2>/dev/null
+            print_message "success" "iptables rules added for ports 443, 8448"
+            print_message "warning" "Note: iptables rules may not persist after reboot"
+            ;;
+        none|*)
+            print_message "warning" "  - No firewall detected or unknown type"
+            print_message "info" "  - Ports 443 and 8448 should be open manually if needed"
+            ;;
+    esac
+
+    # Verify ports are accessible
+    print_message "info" "Verifying port accessibility..."
+    ansible -i inventory/hosts "$target" -m shell \
+        -a "ss -tlnp | grep -E ':443|:8448' || netstat -tlnp | grep -E ':443|:8448' || echo 'Services not yet running (expected)'" \
+        --become 2>/dev/null | grep -v "$target |" | head -n5
+
+    print_message "success" "Firewall configuration completed"
     return 0
 }
 
@@ -1639,6 +1761,7 @@ EOF
     configure_inventory "$SERVER_IP" "$INSTALLATION_MODE" || exit 1
     configure_vars_yml "$SERVER_IP" "$IPV6_ENABLED" "$ELEMENT_ENABLED" || exit 1
     create_traefik_directories "$INSTALLATION_MODE" || exit 1
+    configure_firewall "$INSTALLATION_MODE" || print_message "warning" "Firewall configuration failed, but continuing..."
 
     # ============================================
     # PHASE 7: Install Ansible Roles
