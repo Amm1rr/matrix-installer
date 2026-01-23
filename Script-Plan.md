@@ -425,7 +425,8 @@ create_ssl_certificates() {
     cat > "server-${server_ip}.cnf" <<EOF
 authorityKeyIdentifier=keyid,issuer
 basicConstraints=CA:FALSE
-keyUsage = digitalSignature, nonRepudiation, keyEncipherment, dataEncipherment
+keyUsage = digitalSignature, keyEncipherment
+extendedKeyUsage = serverAuth
 subjectAltName = @alt_names
 
 [alt_names]
@@ -586,6 +587,26 @@ matrix_server_fqn_element: "${server_ip}"
 
 # Important: Disable redirect when using IP instead of domain
 matrix_synapse_container_labels_public_client_root_enabled: false
+
+# -------------------------------------------
+# Federation Configuration (for IP-based setup)
+# -------------------------------------------
+# Enable federation for communication between servers
+matrix_synapse_federation_enabled: true
+
+# Empty the IP range blacklist to allow federation with local/private IPs
+# This enables federation between servers using IP addresses
+matrix_synapse_federation_ip_range_blacklist: []
+
+# Synapse configuration extension for self-signed certificates
+# WARNING: Only use this in trusted internal networks!
+matrix_synapse_configuration_extension_yaml: |
+  federation_verify_certificates: false
+  suppress_key_server_warning: true
+  report_stats: false
+  key_server:
+    accept_keys_insecurely: true
+  trusted_key_servers: []
 
 # -------------------------------------------
 # SSL/TLS Configuration (Self-signed)
@@ -762,7 +783,285 @@ create_admin_user() {
 }
 ```
 
-### تابع ۱۳: خواندن ورودی از کاربر
+### تابع ۱۳: تنظیم Firewall
+
+```bash
+# ===========================================
+# FUNCTION: configure_firewall
+# Description: Configure firewall for Matrix ports (443/tcp and 8448/tcp)
+# Arguments:
+#   $1 - Installation mode: "local" or "remote"
+# ===========================================
+configure_firewall() {
+    local mode="$1"
+
+    print_message "info" "Configuring firewall for Matrix ports..."
+
+    cd_playbook_and_setup_direnv || return 1
+
+    # Determine target
+    local target="$SERVER_IP"
+    if [[ "$mode" == "remote" ]]; then
+        target="all"
+    fi
+
+    # Detect firewall type and open ports
+    local firewall_type="unknown"
+
+    # Try ufw
+    if command -v ufw &> /dev/null; then
+        firewall_type="ufw"
+    elif command -v firewall-cmd &> /dev/null; then
+        firewall_type="firewalld"
+    else
+        firewall_type="iptables"
+    fi
+
+    print_message "info" "  - Detected firewall: $firewall_type"
+
+    case "$firewall_type" in
+        ufw)
+            ansible -i inventory/hosts "$target" -m shell \
+                -a "ufw allow 443/tcp comment 'Matrix HTTPS' && ufw allow 8448/tcp comment 'Matrix Federation'" \
+                --become 2>/dev/null
+            ;;
+        firewalld)
+            ansible -i inventory/hosts "$target" -m shell \
+                -a "firewall-cmd --permanent --add-service=https && firewall-cmd --permanent --add-port=8448/tcp && firewall-cmd --reload" \
+                --become 2>/dev/null
+            ;;
+        iptables)
+            ansible -i inventory/hosts "$target" -m shell \
+                -a "iptables -I INPUT -p tcp --dport 443 -j ACCEPT && iptables -I INPUT -p tcp --dport 8448 -j ACCEPT" \
+                --become 2>/dev/null
+            print_message "warning" "  - iptables rules added (may not persist after reboot)"
+            ;;
+    esac
+
+    print_message "success" "Firewall configuration completed"
+    return 0
+}
+```
+
+### تابع ۱۴: نصب Root CA در سیستم
+
+```bash
+# ===========================================
+# FUNCTION: install_root_ca_on_system
+# Description: Install Root CA in system trust store for federation
+# Arguments:
+#   $1 - Installation mode: "local" or "remote"
+# ===========================================
+install_root_ca_on_system() {
+    local mode="$1"
+
+    print_message "info" "Installing Root CA in system trust store..."
+
+    cd_playbook_and_setup_direnv || return 1
+
+    # Determine target
+    local target="$SERVER_IP"
+    if [[ "$mode" == "remote" ]]; then
+        target="all"
+    fi
+
+    # Copy Root CA to system trust store
+    local copy_output
+    copy_output=$(ansible -i inventory/hosts "$target" -m copy \
+        -a "src=${CA_DIR}/rootCA.crt dest=/usr/local/share/ca-certificates/matrix-root-ca.crt mode=0644" \
+        --become 2>&1)
+
+    if [[ $? -eq 0 ]]; then
+        # Update CA certificates
+        ansible -i inventory/hosts "$target" -m command \
+            -a "update-ca-certificates" \
+            --become 2>/dev/null
+
+        print_message "success" "Root CA installed in system trust store"
+        print_message "info" "  - Location: /usr/local/share/ca-certificates/matrix-root-ca.crt"
+        return 0
+    else
+        print_message "warning" "Root CA installation failed, but continuing..."
+        return 1
+    fi
+}
+```
+
+### تابع ۱۵: حذف Root CA از سیستم (cleanup)
+
+```bash
+# ===========================================
+# FUNCTION: remove_root_ca_from_system
+# Description: Remove Root CA from system trust store (for reinstallation)
+# Arguments:
+#   $1 - Installation mode: "local" or "remote"
+# ===========================================
+remove_root_ca_from_system() {
+    local mode="$1"
+
+    print_message "info" "Removing Root CA from system trust store..."
+
+    cd_playbook_and_setup_direnv || return 1
+
+    # Determine target
+    local target="$SERVER_IP"
+    if [[ "$mode" == "remote" ]]; then
+        target="all"
+    fi
+
+    # Remove Root CA certificate
+    ansible -i inventory/hosts "$target" -m file \
+        -a "path=/usr/local/share/ca-certificates/matrix-root-ca.crt state=absent" \
+        --become 2>/dev/null
+
+    # Update CA certificates
+    ansible -i inventory/hosts "$target" -m command \
+        -a "update-ca-certificates --fresh" \
+        --become 2>/dev/null
+
+    print_message "success" "Root CA removed from system trust store"
+    return 0
+}
+```
+
+### تابع ۱۶: پاک‌سازی PostgreSQL Data (Auto-confirm)
+
+```bash
+# ===========================================
+# FUNCTION: cleanup_existing_postgres_data
+# Description: Auto-remove PostgreSQL data for clean installation
+# Arguments:
+#   $1 - Installation mode: "local" or "remote"
+# ===========================================
+cleanup_existing_postgres_data() {
+    local mode="$1"
+
+    cd_playbook_and_setup_direnv || return 1
+
+    # Determine target
+    local target="$SERVER_IP"
+    if [[ "$mode" == "remote" ]]; then
+        target="all"
+    fi
+
+    # Check if postgres data directory exists
+    print_message "info" "Checking for existing PostgreSQL data..."
+
+    local check_output
+    check_output=$(ansible -i inventory/hosts "$target" -m shell \
+        -a "test -d /matrix/postgres && echo 'EXISTS' || echo 'NOT_FOUND'" \
+        --become 2>/dev/null | grep -v "$target |")
+
+    if [[ "$check_output" != *"EXISTS"* ]]; then
+        print_message "info" "No existing PostgreSQL data found (clean installation)"
+        return 0
+    fi
+
+    # PostgreSQL data exists - auto-remove with warning
+    echo ""
+    print_message "warning" "Existing PostgreSQL data found on target server!"
+    print_message "info" "Automatically removing PostgreSQL data for clean installation..."
+    echo ""
+
+    # Remove postgres data
+    print_message "info" "Removing existing PostgreSQL data..."
+
+    if ansible -i inventory/hosts "$target" -m shell \
+        -a "rm -rf /matrix/postgres" \
+        --become 2>/dev/null; then
+        print_message "success" "PostgreSQL data removed successfully"
+        return 0
+    else
+        print_message "error" "Failed to remove PostgreSQL data"
+        return 1
+    fi
+}
+```
+
+### تابع ۱۷: پاک‌سازی Matrix Services (Auto-confirm)
+
+```bash
+# ===========================================
+# FUNCTION: cleanup_matrix_services
+# Description: Aggressively stop and remove all Matrix services and containers
+# Arguments:
+#   $1 - Installation mode: "local" or "remote"
+# ===========================================
+cleanup_matrix_services() {
+    local mode="$1"
+
+    cd_playbook_and_setup_direnv || return 1
+
+    # Determine target
+    local target="$SERVER_IP"
+    if [[ "$mode" == "remote" ]]; then
+        target="all"
+    fi
+
+    # Check if any Matrix services exist
+    print_message "info" "Checking for existing Matrix services..."
+
+    local check_output
+    check_output=$(ansible -i inventory/hosts "$target" -m shell \
+        -a "systemctl list-units --all | grep -E 'matrix-.*\.service' | grep -v 'not found'" \
+        --become 2>/dev/null | grep -v "$target |")
+
+    if [[ -z "$check_output" ]] && [[ "$check_output" != *"matrix-"* ]]; then
+        print_message "info" "No existing Matrix services found"
+        return 0
+    fi
+
+    # Matrix services exist - auto-remove
+    echo ""
+    print_message "warning" "Existing Matrix services detected!"
+    print_message "info" "Automatically stopping and removing all Matrix services..."
+    echo ""
+
+    # Stop and disable all Matrix services
+    print_message "info" "Stopping Matrix services..."
+
+    ansible -i inventory/hosts "$target" -m shell \
+        -a "systemctl stop matrix-*.service 2>/dev/null || true" \
+        --become 2>/dev/null
+
+    ansible -i inventory/hosts "$target" -m shell \
+        -a "systemctl disable matrix-*.service 2>/dev/null || true" \
+        --become 2>/dev/null
+
+    print_message "success" "Matrix services stopped and disabled"
+
+    # Remove Docker containers
+    print_message "info" "Removing Matrix Docker containers..."
+
+    ansible -i inventory/hosts "$target" -m shell \
+        -a 'docker ps -a --format "{{"{{"}}.Names{{"}}"}}" | grep "^matrix-" | xargs -r docker rm -f 2>/dev/null || true' \
+        --become 2>/dev/null
+
+    print_message "success" "Matrix Docker containers removed"
+
+    # Check Docker volumes (inform user, keep by default)
+    print_message "info" "Checking for Matrix Docker volumes..."
+
+    local volumes_output
+    volumes_output=$(ansible -i inventory/hosts "$target" -m shell \
+        -a 'docker volume ls --format "{{"{{"}}.Name{{"}}"}}" 2>/dev/null | grep "^matrix-" || true' \
+        --become 2>/dev/null | grep -v "$target |")
+
+    if [[ -n "$volumes_output" ]]; then
+        print_message "warning" "Matrix Docker volumes found (will be preserved):"
+        echo "$volumes_output" | while read -r vol; do
+            print_message "info" "  - $vol"
+        done
+        echo ""
+        print_message "info" "Docker volumes will NOT be removed (use manual cleanup if needed)"
+    fi
+
+    print_message "success" "Matrix services cleanup completed"
+    return 0
+}
+```
+
+### تابع ۱۷: خواندن ورودی از کاربر
 
 ```bash
 # ===========================================
@@ -920,25 +1219,11 @@ EOF
     check_prerequisites
 
     # ============================================
-    # PHASE 2: Install Prerequisites
+    # PHASE 2: User Inputs (Collect all information first)
     # ============================================
-    print_message "info" "=== PHASE 2: Install Prerequisites ==="
+    print_message "info" "=== PHASE 2: User Inputs ==="
 
-    if [[ "$HAS_ANSIBLE" == false ]]; then
-        print_message "warning" "Ansible is not installed"
-        if [[ "$(prompt_yes_no "Install Ansible now?" "y")" == "yes" ]]; then
-            install_ansible || exit 1
-        else
-            print_message "error" "Ansible is required to continue"
-            exit 1
-        fi
-    fi
-
-    # ============================================
-    # PHASE 3: Installation Mode Selection
-    # ============================================
-    print_message "info" "=== PHASE 3: Installation Mode ==="
-
+    # Installation Mode Selection
     cat <<'EOF'
 
 Select installation mode:
@@ -947,55 +1232,206 @@ Select installation mode:
      - Install Matrix on THIS machine
      - Ansible will run locally (ansible_connection=local)
 
-  2) Remote VPS
+  2) Remote VPS (Beta)
      - Install Matrix on a remote server via SSH
      - You need SSH access to the server
+
+  3) Generate a new Root Key
+     - Only create Root CA certificate
+     - Can be used for multiple Matrix servers later
 
 EOF
 
     while true; do
-        read -rp "Enter your choice (1 or 2): " choice
+        read -rp "Enter your choice (1, 2 or 3): " choice
 
         case "$choice" in
             1)
                 INSTALLATION_MODE="local"
-                # Detect server IP
-                SERVER_IP="$(hostname -I | awk '{print $1}')"
-                if [[ -z "$SERVER_IP" ]]; then
-                    SERVER_IP="$(prompt_user "Enter server IP address")"
-                fi
                 print_message "info" "Local installation mode selected"
-                print_message "info" "Server IP: $SERVER_IP"
+                echo ""
+                # Detect server IP (works on both Arch and Debian/Ubuntu)
+                SERVER_IP="$(ip route get 1 2>/dev/null | awk '{for(i=1;i<=NF;i++)if($i=="src"){print $(i+1);exit}}')"
+                if [[ -z "$SERVER_IP" ]]; then
+                    SERVER_IP="$(ip -4 addr show 2>/dev/null | grep -oP '(?<=inet\s)\d+(\.\d+){3}' | grep -v '127.0.0.1' | head -n1)"
+                fi
+                if [[ -z "$SERVER_IP" ]]; then
+                    print_message "warning" "Could not auto-detect IP address"
+                    SERVER_IP="$(prompt_user "Enter server IP address")"
+                else
+                    echo ""
+                    echo "Detected IP addresses:"
+                    ip -br addr 2>/dev/null || ifconfig 2>/dev/null | grep "inet "
+                    echo ""
+                    local input
+                    input="$(prompt_user "Use '$SERVER_IP' as server address? [y/n/IP/Domain]")"
+                    input="$(echo "$input" | tr '[:upper:]' '[:lower:]' | xargs)"
+
+                    if [[ "$input" == "y" ]] || [[ -z "$input" ]]; then
+                        # Use detected IP
+                        print_message "info" "Server address: $SERVER_IP"
+                    elif [[ "$input" == "n" ]]; then
+                        # Ask for new address
+                        SERVER_IP="$(prompt_user "Enter server IP address or domain")"
+                        print_message "info" "Server address: $SERVER_IP"
+                    else
+                        # User entered an address directly
+                        SERVER_IP="$input"
+                        print_message "info" "Server address: $SERVER_IP"
+                    fi
+                fi
+
+                # Detect if using IP address or domain
+                if is_ip_address "$SERVER_IP"; then
+                    SERVER_IS_IP="true"
+                    echo ""
+                    local input
+                    input="$(prompt_user "IP address detected. Use domain name instead for better federation support? [y/n/Domain]")"
+                    input="$(echo "$input" | tr '[:upper:]' '[:lower:]' | xargs)"
+
+                    if [[ "$input" == "n" ]] || [[ -z "$input" ]]; then
+                        # Continue with IP
+                        :
+                    elif [[ "$input" == "y" ]]; then
+                        # User wants to enter domain name
+                        SERVER_IP="$(prompt_user "Enter server domain name")"
+                        is_ip_address "$SERVER_IP" && SERVER_IS_IP="true" || SERVER_IS_IP="false"
+                    else
+                        # User entered a domain name directly
+                        SERVER_IP="$input"
+                        SERVER_IS_IP="false"
+                    fi
+                else
+                    SERVER_IS_IP="false"
+                fi
+
+                # Sudo password (always required)
+                echo ""
+                SUDO_PASSWORD="$(prompt_user "Sudo password")"
+                print_message "info" "Sudo password will be used"
+
+                print_message "info" "Target server: localhost (Matrix on $SERVER_IP)"
                 break
                 ;;
             2)
                 INSTALLATION_MODE="remote"
                 print_message "info" "Remote installation mode selected"
-
                 # Get server details
                 SERVER_IP="$(prompt_user "Enter server IP address or domain")"
                 SERVER_USER="$(prompt_user "SSH username" "$DEFAULT_SSH_USER")"
-                print_message "info" "Target server: ${SERVER_USER}@${SERVER_IP}"
+
+                # Detect if using IP address or domain
+                if is_ip_address "$SERVER_IP"; then
+                    SERVER_IS_IP="true"
+                    echo ""
+                    local input
+                    input="$(prompt_user "IP address detected. Use domain name instead for better federation support? [y/n/Domain]")"
+                    input="$(echo "$input" | tr '[:upper:]' '[:lower:]' | xargs)"
+
+                    if [[ "$input" == "n" ]] || [[ -z "$input" ]]; then
+                        # Continue with IP
+                        :
+                    elif [[ "$input" == "y" ]]; then
+                        # User wants to enter domain name
+                        SERVER_IP="$(prompt_user "Enter server domain name")"
+                        is_ip_address "$SERVER_IP" && SERVER_IS_IP="true" || SERVER_IS_IP="false"
+                    else
+                        # User entered a domain name directly
+                        SERVER_IP="$input"
+                        SERVER_IS_IP="false"
+                    fi
+                else
+                    SERVER_IS_IP="false"
+                fi
+
+                SSH_HOST="$(prompt_user "SSH host" "$SERVER_IP")"
+                SERVER_PORT="$(prompt_user "SSH port" "22")"
+
+                # SSH Authentication setup
+                echo ""
+                print_message "info" "SSH Authentication:"
+                if [[ "$(prompt_yes_no "Use custom SSH key?" "n")" == "yes" ]]; then
+                    SSH_KEY_PATH="$(prompt_user "SSH key path" "$HOME/.ssh/id_rsa")"
+                    if [[ ! -f "$SSH_KEY_PATH" ]]; then
+                        print_message "warning" "SSH key not found at $SSH_KEY_PATH"
+                        if [[ "$(prompt_yes_no "Continue anyway?" "n")" != "yes" ]]; then
+                            print_message "info" "Please specify a valid SSH key path"
+                            exit 1
+                        fi
+                    fi
+                    USE_SSH_KEY="yes"
+                    print_message "info" "Using SSH key: $SSH_KEY_PATH"
+                else
+                    # Ask about password authentication
+                    if [[ "$(prompt_yes_no "Use password authentication?" "n")" == "yes" ]]; then
+                        USE_SSH_KEY="no"
+                        SSH_PASSWORD="$(prompt_user "SSH password")"
+                        print_message "info" "Password authentication will be used"
+                    else
+                        USE_SSH_KEY="no"
+                        SSH_PASSWORD=""
+                        print_message "info" "Using default SSH agent or keys"
+                    fi
+                fi
+
+                # Sudo password (always required)
+                echo ""
+                SUDO_PASSWORD="$(prompt_user "Sudo password")"
+                print_message "info" "Sudo password will be used"
+
+                print_message "info" "Target server: ${SERVER_USER}@${SSH_HOST}:${SERVER_PORT} → Matrix on ${SERVER_IP}"
+                break
+                ;;
+            3)
+                INSTALLATION_MODE="generate-root-ca"
+                print_message "info" "Generate Root CA mode selected"
                 break
                 ;;
             *)
-                echo "Invalid choice. Please enter 1 or 2."
+                echo "Invalid choice. Please enter 1, 2 or 3."
                 ;;
         esac
     done
 
     # ============================================
-    # PHASE 4: Configuration Questions
+    # Branch based on installation mode
     # ============================================
-    print_message "info" "=== PHASE 4: Configuration ==="
+    if [[ "$INSTALLATION_MODE" == "generate-root-ca" ]]; then
+        # ============================================
+        # MODE: Generate Root CA only
+        # ============================================
+        print_message "info" "=== Root CA Generation ==="
 
-    # IPv6
-    ipv6_answer="$(prompt_yes_no "Enable IPv6 support?" "$DEFAULT_IPV6_ENABLED")"
-    IPV6_ENABLED="$([ "$ipv6_answer" == "yes" ] && echo "true" || echo "false")"
+        create_root_ca || exit 1
 
-    # Element Web
-    element_answer="$(prompt_yes_no "Enable Element Web?" "$DEFAULT_ELEMENT_ENABLED")"
-    ELEMENT_ENABLED="$([ "$element_answer" == "yes" ] && echo "true" || echo "false")"
+        # Summary for Root CA generation
+        echo ""
+        print_message "info" "=== Root CA Summary ==="
+        echo ""
+        echo "  Mode:              Generate Root CA"
+        echo "  Root CA Key:       ${CA_DIR}/rootCA.key"
+        echo "  Root CA Cert:      ${CA_DIR}/rootCA.crt"
+        echo ""
+        print_message "success" "Root CA generation completed!"
+        print_message "info" "You can now use this Root CA for Matrix installations."
+        exit 0
+    fi
+
+    # ============================================
+    # MODE: Matrix Installation (local or remote)
+    # ============================================
+
+    # Configuration (auto defaults)
+    echo ""
+    print_message "info" "Configuration options:"
+
+    # IPv6 enabled by default (NO PROMPT)
+    IPV6_ENABLED="true"
+    print_message "info" "IPv6 support: enabled (default)"
+
+    # Element Web enabled by default (NO PROMPT)
+    ELEMENT_ENABLED="true"
+    print_message "info" "Element Web: enabled (default)"
 
     # Admin user
     echo ""
@@ -1003,25 +1439,63 @@ EOF
     ADMIN_USERNAME="$(prompt_user "Username" "admin")"
     ADMIN_PASSWORD="$(prompt_user "Password" "$(generate_password 16)")"
 
-    print_message "info" "Configuration summary:"
-    print_message "info" "  - IPv6: $IPV6_ENABLED"
-    print_message "info" "  - Element Web: $ELEMENT_ENABLED"
-    print_message "info" "  - Admin User: $ADMIN_USERNAME"
+    # SSL Certificates
+    echo ""
+    SSL_OUTPUT="$(prompt_ssl_option "1")"
+    SSL_OPTION="$(echo "$SSL_OUTPUT" | head -n1)"
+    EXISTING_ROOT_CA_DIR="$(echo "$SSL_OUTPUT" | tail -n1)"
+
+    # Summary of inputs
+    echo ""
+    print_message "info" "=== Installation Summary ==="
+    echo ""
+    echo "  Server IP:         $SERVER_IP"
+    echo "  Installation Mode: $INSTALLATION_MODE"
+    if [[ "$INSTALLATION_MODE" == "remote" ]]; then
+        echo "  SSH Host:          ${SSH_HOST:-$SERVER_IP}"
+        echo "  SSH Port:          $SERVER_PORT"
+        echo "  SSH User:          $SERVER_USER"
+    fi
+    echo "  IPv6:              $IPV6_ENABLED"
+    echo "  Element Web:       $ELEMENT_ENABLED"
+    echo "  Admin Username:    $ADMIN_USERNAME"
+    if [[ "$SSL_OPTION" == "1" ]]; then
+        echo "  SSL Option:        Create new Root CA"
+    else
+        echo "  SSL Option:        Use existing Root CA"
+    fi
+    echo ""
+
+    if [[ "$(prompt_yes_no "Proceed with installation?" "y")" != "yes" ]]; then
+        print_message "info" "Installation cancelled by user"
+        exit 0
+    fi
+
+    # ============================================
+    # PHASE 3: Install Prerequisites
+    # ============================================
+    print_message "info" "=== PHASE 3: Install Prerequisites ==="
+
+    if [[ "$HAS_ANSIBLE" == false ]]; then
+        print_message "warning" "Ansible is not installed, installing..."
+        install_ansible || exit 1
+    else
+        print_message "success" "Ansible is already installed"
+    fi
+
+    # ============================================
+    # PHASE 4: Ensure Playbook
+    # ============================================
+    print_message "info" "=== PHASE 4: Ensure Playbook ==="
+
+    ensure_playbook_exists || exit 1
 
     # ============================================
     # PHASE 5: SSL Certificates
     # ============================================
     print_message "info" "=== PHASE 5: SSL Certificates ==="
 
-    ssl_answer="$(prompt_yes_no "Create self-signed SSL certificates?" "y")"
-    if [[ "$ssl_answer" == "yes" ]]; then
-        create_ssl_certificates "$SERVER_IP" || exit 1
-    else
-        print_message "warning" "Skipping SSL certificate creation"
-        SSL_KEY_PATH="$(prompt_user "Path to SSL private key")"
-        SSL_CERT_PATH="$(prompt_user "Path to SSL certificate")"
-        SSL_CA_PATH="$(prompt_user "Path to Root CA certificate")"
-    fi
+    create_ssl_certificates "$SERVER_IP" "$SSL_OPTION" || exit 1
 
     # ============================================
     # PHASE 6: Configure Playbook
@@ -1030,7 +1504,9 @@ EOF
 
     configure_inventory "$SERVER_IP" "$INSTALLATION_MODE" || exit 1
     configure_vars_yml "$SERVER_IP" "$IPV6_ENABLED" "$ELEMENT_ENABLED" || exit 1
-    create_traefik_directories "$INSTALLATION_MODE"
+    create_traefik_directories "$INSTALLATION_MODE" || exit 1
+    configure_firewall "$INSTALLATION_MODE" || print_message "warning" "Firewall configuration failed, but continuing..."
+    install_root_ca_on_system "$INSTALLATION_MODE" || print_message "warning" "Root CA installation failed, but continuing..."
 
     # ============================================
     # PHASE 7: Install Ansible Roles
@@ -1044,34 +1520,75 @@ EOF
     # ============================================
     print_message "info" "=== PHASE 8: Pre-flight Check ==="
 
-    check_answer="$(prompt_yes_no "Run pre-flight check?" "y")"
-    if [[ "$check_answer" == "yes" ]]; then
-        print_message "info" "Running pre-flight check..."
-        cd "$PLAYBOOK_DIR"
-        export LC_ALL=C.UTF-8 LANG=C.UTF-8
-        ansible-playbook -i inventory/hosts setup.yml --tags=check-all || {
-            print_message "warning" "Pre-flight check found some issues"
-            continue_answer="$(prompt_yes_no "Continue anyway?" "n")"
-            if [[ "$continue_answer" == "no" ]]; then
-                print_message "error" "Installation cancelled"
-                exit 1
-            fi
-        }
+    print_message "info" "Running pre-flight check..."
+    cd_playbook_and_setup_direnv || exit 1
+    export LC_ALL=C.UTF-8 LANG=C.UTF-8
+    if ansible-playbook -i inventory/hosts setup.yml --tags=check-all >> "$LOG_FILE" 2>&1; then
+        print_message "success" "Pre-flight check passed"
+    else
+        print_message "warning" "Pre-flight check found some issues"
+        if [[ "$(prompt_yes_no "Continue anyway?" "n")" == "no" ]]; then
+            print_message "error" "Installation cancelled"
+            exit 1
+        fi
+    fi
+
+    # ============================================
+    # PHASE 8.5: Final Confirmation
+    # ============================================
+    print_message "info" "=== PHASE 8.5: Final Confirmation ==="
+
+    echo ""
+    print_message "info" "All configurations have been applied and pre-flight check passed."
+    print_message "warning" "Installation will take 10-20 minutes."
+
+    if [[ "$(prompt_yes_no "Start installation now?" "y")" != "yes" ]]; then
+        print_message "info" "Installation cancelled by user"
+        print_message "info" "All configurations are in place."
+        print_message "info" "You can run the installation manually:"
+        print_message "info" "  cd $PLAYBOOK_DIR"
+        print_message "info" "  ansible-playbook -i inventory/hosts setup.yml --tags=install-all,start"
+        print_message "info" ""
+        print_message "info" "Or create admin user:"
+        print_message "info" "  cd $PLAYBOOK_DIR"
+        print_message "info" "  ansible-playbook -i inventory/hosts setup.yml --extra-vars=\"username=<user> password=<pass> admin=yes\" --tags=register-user"
+        exit 0
+    fi
+
+    # ============================================
+    # PHASE 8.6: Cleanup Existing Data (if any) - AUTO-CONFIRMED
+    # ============================================
+    print_message "info" "=== PHASE 8.6: Cleanup Existing Data ==="
+
+    if ! cleanup_existing_postgres_data "$INSTALLATION_MODE"; then
+        print_message "error" "Failed to cleanup existing data"
+        print_message "info" "Please manually remove /matrix/postgres on the target server"
+        exit 1
+    fi
+
+    # ============================================
+    # PHASE 8.7: Cleanup Matrix Services (if any) - AUTO-CONFIRMED
+    # ============================================
+    print_message "info" "=== PHASE 8.7: Cleanup Matrix Services ==="
+
+    if ! cleanup_matrix_services "$INSTALLATION_MODE"; then
+        print_message "warning" "Matrix services cleanup was cancelled or failed"
+        print_message "info" "Installation will continue, but may encounter issues"
+    fi
+
+    # ============================================
+    # PHASE 8.8: Cleanup Root CA from System (if re-installing) - AUTO-CONFIRMED
+    # ============================================
+    print_message "info" "=== PHASE 8.8: Cleanup Root CA ==="
+
+    if ! remove_root_ca_from_system "$INSTALLATION_MODE"; then
+        print_message "warning" "Root CA cleanup failed, but continuing..."
     fi
 
     # ============================================
     # PHASE 9: Run Installation
     # ============================================
     print_message "info" "=== PHASE 9: Installation ==="
-
-    install_answer="$(prompt_yes_no "Start installation now?" "y")"
-    if [[ "$install_answer" == "no" ]]; then
-        print_message "info" "Installation cancelled by user"
-        print_message "info" "You can run the playbook manually:"
-        print_message "info" "  cd $PLAYBOOK_DIR"
-        print_message "info" "  ansible-playbook -i inventory/hosts setup.yml --tags=install-all,start"
-        exit 0
-    fi
 
     run_playbook "install-all,ensure-matrix-users-created,start" || exit 1
 
@@ -1080,7 +1597,10 @@ EOF
     # ============================================
     print_message "info" "=== PHASE 10: Create Admin User ==="
 
-    create_admin_user "$ADMIN_USERNAME" "$ADMIN_PASSWORD"
+    if ! create_admin_user "$ADMIN_USERNAME" "$ADMIN_PASSWORD"; then
+        print_message "warning" "Admin user creation failed, but installation is complete"
+        print_message "info" "You can create the admin user manually later"
+    fi
 
     # ============================================
     # PHASE 11: Summary

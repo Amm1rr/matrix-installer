@@ -101,7 +101,8 @@ openssl req -new -key server-217.78.237.15.key -out server-217.78.237.15.csr \
 cat > server-217.78.237.15.cnf <<EOF
 authorityKeyIdentifier=keyid,issuer
 basicConstraints=CA:FALSE
-keyUsage = digitalSignature, nonRepudiation, keyEncipherment, dataEncipherment
+keyUsage = digitalSignature, keyEncipherment
+extendedKeyUsage = serverAuth
 subjectAltName = @alt_names
 
 [alt_names]
@@ -192,6 +193,23 @@ matrix_server_fqn_element: "217.78.237.15"
 matrix_synapse_container_labels_public_client_root_enabled: false
 
 # ===========================================
+# تنظیمات Federation (برای IP-based setup)
+# ===========================================
+matrix_synapse_federation_enabled: true
+matrix_synapse_federation_ip_range_blacklist: []
+
+# ===========================================
+# تنظیمات Synapse Extension
+# ===========================================
+matrix_synapse_configuration_extension_yaml: |
+  federation_verify_certificates: false
+  suppress_key_server_warning: true
+  report_stats: false
+  key_server:
+    accept_keys_insecurely: true
+  trusted_key_servers: []
+
+# ===========================================
 # تنظیمات SSL/TLS برای Self-signed Certificates
 # ===========================================
 
@@ -219,7 +237,7 @@ traefik_provider_configuration_extension_yaml: |
 # کپی کردن فایل‌های SSL به سرور
 # ===========================================
 
-**⚠️ نکته مهم درباره امنیت:**
+** نکته مهم درباره امنیت:**
 به جای استفاده از `src:` که مسیر فایل روی سیستم لوکال رو ذخیره می‌کنه، می‌تونید از `content:` استفاده کنید تا محتوای certificate مستقیماً در vars.yml ذخیره بشه. این روش امن‌تر است چون فایل‌های sensitive روی سیستم لوکال ذخیره نمی‌شوند.
 
 **روش اول: استفاده از `src:` (ساده‌تر اما فایل روی لوکال ذخیره می‌شود)**
@@ -259,7 +277,7 @@ aux_file_definitions:
     mode: "0644"
 ```
 
-**⚠️ نکته مهم درباره مسیر `/ssl/…`:**
+** نکته مهم درباره مسیر `/ssl/…`:**
 مسیر `/ssl/cert.pem` و `/ssl/privkey.pem` در این تنظیمات، **مسیر داخل کانتینر Traefik** است، نه مسیر روی host سرور.
 - روی host: `/matrix/traefik/ssl/cert.pem`
 - در کانتینر: `/ssl/cert.pem`
@@ -335,12 +353,6 @@ sudo cp rootCA.crt /usr/local/share/ca-certificates/
 sudo update-ca-certificates
 ```
 
-### 2. اعتماد مرورگر به Self-signed Cert برای کلاینت
-
-برای استفاده از Element Web در مرورگر:
-- Chrome/Edge: به `chrome://settings/certificates` بروید، تب "Authorities" را انتخاب کنید و `rootCA.crt` را import کنید.
-- Firefox: به `Settings > Privacy & Security > Certificates` بروید و `rootCA.crt` را import کنید.
-
 ### 3. خطای ERR_TOO_MANY_REDIRECTS
 
 اگر با این خطا مواجه شدید، مطمئن شوید که:
@@ -377,7 +389,7 @@ curl -k https://217.78.237.15/_matrix/client/versions
 
 ---
 
-## 💡 نکات تکمیلی
+## نکات تکمیلی
 
 ### نگهداری تنظیمات با Git
 
