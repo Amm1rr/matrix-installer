@@ -1552,7 +1552,7 @@ main() {
     cat <<'EOF'
 ╔══════════════════════════════════════════════════════════╗
 ║                                                          ║
-║     Matrix Ansible Playbook Auto-Installer v1.0.0       ║
+║     Matrix Ansible Playbook Auto-Installer v1.0.0        ║
 ║                                                          ║
 ╚══════════════════════════════════════════════════════════╝
 EOF
@@ -1579,7 +1579,7 @@ Select installation mode:
      - Install Matrix on THIS machine
      - Ansible will run locally (ansible_connection=local)
 
-  2) Remote VPS
+  2) Remote VPS (Beta)
      - Install Matrix on a remote server via SSH
      - You need SSH access to the server
 
