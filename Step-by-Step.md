@@ -69,7 +69,8 @@ openssl req -new -key server-45.148.31.170.key -out server-45.148.31.170.csr \
 cat > server-45.148.31.170.cnf <<EOF
 authorityKeyIdentifier=keyid,issuer
 basicConstraints=CA:FALSE
-keyUsage = digitalSignature, nonRepudiation, keyEncipherment, dataEncipherment
+keyUsage = digitalSignature, keyEncipherment
+extendedKeyUsage = serverAuth
 subjectAltName = @alt_names
 
 [alt_names]
@@ -155,6 +156,25 @@ matrix_server_fqn_element: "45.148.31.170"
 
 # مهم: چون Element و Synapse روی یک IP هستند، باید false باشد
 matrix_synapse_container_labels_public_client_root_enabled: false
+
+# ===========================================
+# تنظیمات Federation (برای IP-based setup)
+# ===========================================
+
+matrix_synapse_federation_enabled: true
+matrix_synapse_federation_ip_range_blacklist: []
+
+# ===========================================
+# تنظیمات Synapse Extension
+# ===========================================
+
+matrix_synapse_configuration_extension_yaml: |
+  federation_verify_certificates: false
+  suppress_key_server_warning: true
+  report_stats: false
+  key_server:
+    accept_keys_insecurely: true
+  trusted_key_servers: []
 
 # ===========================================
 # تنظیمات SSL/TLS برای Self-signed Certificates
@@ -270,6 +290,49 @@ https://45.148.31.170/
 
 ---
 
+## مرحله ۱۱: نصب Root CA در سیستم (برای Federation)
+
+برای اینکه Federation بین سرورهای Matrix با گواهی‌نامه self-signed کار کند، باید Root CA را در سیستم عامل نصب کنید:
+
+```bash
+# ساخت فولدر
+sudo mkdir -p /usr/local/share/ca-certificates/matrix
+
+# کپی Root CA
+sudo cp ~/matrix-ca/rootCA.crt /usr/local/share/ca-certificates/matrix/
+
+# به‌روزرسانی certificate store
+sudo update-ca-certificates
+```
+
+برای تأیید نصب:
+```bash
+# باید rootCA.crt را در لیست ببینید
+ls -la /usr/local/share/ca-certificates/matrix/
+
+# بررسی certificate store
+sudo trust list | grep Matrix
+```
+
+---
+
+## مرحله ۱۲: تست Federation (اختیاری)
+
+اگر سرور دوم Matrix دارید، می‌توانید Federation را تست کنید:
+
+### از سرور اول به سرور دوم:
+
+```bash
+# تست دسترسی federation
+curl -k https://[SECOND-SERVER-IP]:8448/_matrix/federation/v1/version
+```
+
+### ساخت room directory (لوکال):
+
+در Element Web روی سرور اول، یک room جدید بسازید و سپس از سرور دوم با همان کاربر وارد شوید و room را ببینید.
+
+---
+
 ## رفع مشکلات رایج
 
 ### سرویس‌ها اجرا نمی‌شوند
@@ -295,6 +358,27 @@ sudo docker logs matrix-synapse --tail 50
 matrix_synapse_container_labels_public_client_root_enabled: false
 ```
 
+### خطای Synapse: "accept_keys_insecurely"
+
+اگر Synapse استارت نمی‌شود و این خطا را می‌دهید:
+
+```
+Error in configuration:
+  Your server is configured to accept key server responses without signature
+  validation or TLS certificate validation. If you are *sure* you want to do
+  this, set 'accept_keys_insecurely' on the keyserver configuration.
+```
+
+**راه حل:** مطمئن شوید در `vars.yml` تنظیمات زیر وجود دارد:
+```yaml
+matrix_synapse_configuration_extension_yaml: |
+  key_server:
+    accept_keys_insecurely: true
+  trusted_key_servers: []
+```
+
+دلیل: وقتی از self-signed certificate استفاده می‌کنید، باید `trusted_key_servers` را خالی کنید تا Synapse سعی نکند به matrix.org وصل شود.
+
 ### مشکل SSL
 
 ```bash
@@ -314,6 +398,48 @@ tls:
   stores:
     default:
       defaultCertificate:
+        certFile: /ssl/cert.pem
+        keyFile: /ssl/privkey.pem
+```
+
+### خطای ERR_SSL_KEY_USAGE_INCOMPATIBLE در مرورگر
+
+اگر مرورگر این خطا را می‌دهد، یعنی certificate با تنظیمات اشتباه ساخته شده است.
+
+**راه حل:** certificate را دوباره با تنظیمات درست بسازید:
+```bash
+cd ~/matrix-ca
+
+# فایل config را اصلاح کنید
+cat > server-45.148.31.170.cnf <<EOF
+authorityKeyIdentifier=keyid,issuer
+basicConstraints=CA:FALSE
+keyUsage = digitalSignature, keyEncipherment
+extendedKeyUsage = serverAuth
+subjectAltName = @alt_names
+
+[alt_names]
+DNS.1 = matrix.local
+IP.1 = 45.148.31.170
+EOF
+
+# دوباره certificate را بسازید
+openssl x509 -req -in server-45.148.31.170.csr -CA rootCA.crt -CAkey rootCA.key \
+  -CAcreateserial -out server-45.148.31.170.crt -days 365 -sha256 \
+  -extfile server-45.148.31.170.cnf
+
+# full-chain را دوباره بسازید
+cat server-45.148.31.170.crt rootCA.crt > cert-full-chain.pem
+
+# کپی در محل SSL
+sudo cp cert-full-chain.pem /matrix/traefik/ssl/cert.pem
+sudo cp server-45.148.31.170.key /matrix/traefik/ssl/privkey.pem
+
+# ریستارت traefik
+sudo systemctl restart matrix-traefik
+```
+
+دلیل: مرورگرهای مدرن به `digitalSignature` و `extendedKeyUsage = serverAuth` نیاز دارند.
         certFile: /ssl/cert.pem
         keyFile: /ssl/privkey.pem
 ```
