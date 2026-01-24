@@ -1,9 +1,9 @@
 #!/bin/bash
 
 # ===========================================
-# Matrix Plus - Modular Matrix Installation System
-# Version: 1.0.0
-# Description: Orchestrator for modular Matrix homeserver installation
+# Matrix Plus - Private Key Matrix Installation System
+# Version: 0.1.0
+# Description:Matrix homeserver installation
 # ===========================================
 
 set -e
@@ -519,8 +519,28 @@ menu_with_root_ca() {
             1)
                 # Generate server certificate
                 echo ""
-                SERVER_NAME="$(prompt_user "Enter server IP address or domain")"
-                ssl_manager_generate_server_cert "$SERVER_NAME"
+                local server_input
+                server_input="$(prompt_user "Enter server IP address or domain")"
+
+                # Show summary and confirm
+                echo ""
+                echo "=== Certificate Summary ==="
+                echo "  Server: $server_input"
+                local server_type="Domain"
+                if is_ip_address "$server_input"; then
+                    server_type="IP Address"
+                fi
+                echo "  Type: $server_type"
+                echo "  Certificate directory: certs/$server_input/"
+                echo "  Validity: $SSL_CERT_DAYS days"
+                echo ""
+
+                if [[ "$(prompt_yes_no "Generate certificate now?" "y")" == "yes" ]]; then
+                    SERVER_NAME="$server_input"
+                    ssl_manager_generate_server_cert "$SERVER_NAME"
+                else
+                    print_message "info" "Certificate generation cancelled"
+                fi
                 ;;
             2)
                 # Generate new Root CA
@@ -680,8 +700,8 @@ main() {
     cat <<'EOF'
 ╔══════════════════════════════════════════════════════════╗
 ║                                                          ║
-║              Matrix Plus - Modular Installer             ║
-║                      Version 1.0.0                       ║
+║              Matrix Plus - Private Key Installer         ║
+║                      Version 0.1.0                       ║
 ║                                                          ║
 ╚══════════════════════════════════════════════════════════╝
 EOF
