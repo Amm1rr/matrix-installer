@@ -181,8 +181,10 @@ list_servers_with_certs() {
         fi
     done
 
-    # Return list
-    printf '%s\n' "${servers[@]}"
+    # Return list (only if we have servers)
+    if [[ ${#servers[@]} -gt 0 ]]; then
+        printf '%s\n' "${servers[@]}"
+    fi
 }
 
 # ===========================================
