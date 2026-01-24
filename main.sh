@@ -186,6 +186,73 @@ list_servers_with_certs() {
 }
 
 # ===========================================
+# Root CA Information Functions
+# ===========================================
+
+get_root_ca_info() {
+    local root_ca_cert="${CERTS_DIR}/rootCA.crt"
+
+    if [[ ! -f "$root_ca_cert" ]]; then
+        return 1
+    fi
+
+    # Get Subject (CN) - extract from openssl output
+    local subject
+    subject=$(openssl x509 -in "$root_ca_cert" -noout -subject 2>/dev/null | grep -o 'CN=[^,]*' | cut -d'=' -f2)
+
+    # Default subject if not found
+    if [[ -z "$subject" ]]; then
+        subject="Matrix Root CA"
+    fi
+
+    # Get expiration date and calculate days remaining
+    local expiry_date
+    local expiry_epoch
+    local days_remaining="unknown"
+    local display_date
+
+    expiry_date=$(openssl x509 -in "$root_ca_cert" -noout -enddate 2>/dev/null | cut -d'=' -f2)
+
+    if command -v date &> /dev/null && [[ -n "$expiry_date" ]]; then
+        # Try GNU date format
+        expiry_epoch=$(date -d "$expiry_date" +%s 2>/dev/null)
+        # If that fails, try BSD date
+        if [[ -z "$expiry_epoch" ]]; then
+            expiry_epoch=$(date -j -f "%b %d %T %Y %Z" "$expiry_date" +%s 2>/dev/null)
+        fi
+
+        if [[ -n "$expiry_epoch" ]]; then
+            local current_epoch
+            current_epoch=$(date +%s)
+            local seconds_diff=$((expiry_epoch - current_epoch))
+            if [[ $seconds_diff -gt 0 ]]; then
+                days_remaining=$((seconds_diff / 86400))
+            else
+                days_remaining="expired"
+            fi
+        fi
+
+        display_date=$(date -d "$expiry_date" "+%Y-%m-%d" 2>/dev/null || echo "$expiry_date")
+    fi
+
+    # Get key size
+    local key_size
+    key_size=$(openssl x509 -in "$root_ca_cert" -noout -text 2>/dev/null | grep "Public-Key:" | grep -o '[0-9]* bit' | head -1)
+
+    if [[ -z "$key_size" ]]; then
+        key_size="4096-bit"
+    fi
+
+    # Output as formatted lines
+    echo "SUBJECT=$subject"
+    echo "EXPIRY_DATE=$display_date"
+    echo "DAYS_REMAINING=$days_remaining"
+    echo "KEY_SIZE=$key_size"
+
+    return 0
+}
+
+# ===========================================
 # SSL MANAGER MODULE
 # ===========================================
 
@@ -496,6 +563,32 @@ menu_with_root_ca() {
         echo "╚══════════════════════════════════════════════════════════╝"
         echo ""
         echo "Root CA: Available"
+
+        # Get and display Root CA info
+        # Get and display Root CA info
+        local ca_info
+        ca_info=$(get_root_ca_info 2>/dev/null)
+
+        if [[ -n "$ca_info" ]]; then
+            # Parse the info line by line
+            local ca_subject="Matrix Root CA"
+            local ca_expiry="unknown"
+            local ca_days="unknown"
+
+            while IFS= read -r line; do
+                local key="${line%%=*}"
+                local value="${line#*=}"
+                case "$key" in
+                    SUBJECT) ca_subject="$value" ;;
+                    EXPIRY_DATE) ca_expiry="$value" ;;
+                    DAYS_REMAINING) ca_days="$value" ;;
+                esac
+            done <<< "$ca_info"
+
+            echo "  | Subject: $ca_subject"
+            echo "  | Expires: $ca_expiry (in $ca_days days)"
+        fi
+
         echo ""
         echo "  1) Generate server certificate for Synapse"
         echo "  2) Generate new Root CA (overwrite existing)"
