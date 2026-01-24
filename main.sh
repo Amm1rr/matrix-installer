@@ -554,9 +554,10 @@ menu_with_root_ca() {
 
     while true; do
         # Build menu dynamically with addons
-        local addon_index_start=3
+        local addon_index_start=2
         local last_addon_index=$((addon_index_start + ${#addons[@]} - 1))
-        local exit_option=$((last_addon_index + 1))
+        local root_ca_option=$((last_addon_index + 1))
+        local exit_option=$((root_ca_option + 1))
 
         echo ""
         echo "╔══════════════════════════════════════════════════════════╗"
@@ -593,8 +594,7 @@ menu_with_root_ca() {
         fi
 
         echo ""
-        echo "  1) Generate server certificate for Synapse"
-        echo "  2) Generate new Root CA (overwrite existing)"
+        echo "  1) Generate server certificate"
 
         # Add addon options to menu
         if [[ ${#addons[@]} -gt 0 ]]; then
@@ -602,10 +602,11 @@ menu_with_root_ca() {
                 local addon_num=$((i + addon_index_start))
                 local addon_name
                 addon_name="$(addon_loader_get_name "${addons[$i]}")"
-                echo "  $addon_num) $addon_name"
+                echo "  $addon_num) Install $addon_name"
             done
         fi
 
+        echo "  $root_ca_option) Generate new Root CA (overwrite existing)"
         echo "  $exit_option) Exit"
         echo ""
 
@@ -638,7 +639,7 @@ menu_with_root_ca() {
                     print_message "info" "Certificate generation cancelled"
                 fi
                 ;;
-            2)
+            $root_ca_option)
                 # Generate new Root CA
                 echo ""
                 if [[ "$(prompt_yes_no "This will overwrite the existing Root CA. Continue?" "y")" == "yes" ]]; then
