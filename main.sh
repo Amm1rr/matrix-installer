@@ -620,7 +620,14 @@ menu_with_root_ca() {
                 # Generate server certificate
                 echo ""
                 local server_input
-                server_input="$(prompt_user "Enter server IP address or domain")"
+                # Loop until user enters a valid server name
+                while true; do
+                    server_input="$(prompt_user "Enter server IP address or domain")"
+                    if [[ -n "$server_input" ]]; then
+                        break
+                    fi
+                    echo "Server name cannot be empty. Please try again."
+                done
 
                 # Show summary and confirm
                 echo ""
@@ -851,8 +858,42 @@ menu_run_addon() {
         echo "You need to generate a server certificate before installing an addon."
         echo ""
 
+        # Detect local IP
+        local detected_ip
+        detected_ip="$(ip route get 1 2>/dev/null | awk '{for(i=1;i<=NF;i++)if($i=="src"){print $(i+1);exit}}')"
+        if [[ -z "$detected_ip" ]]; then
+            detected_ip="$(ip -4 addr show 2>/dev/null | grep -oP '(?<=inet\s)\d+(\.\d+){3}' | grep -v '127.0.0.1' | head -n1)"
+        fi
+
         local new_server
-        new_server="$(prompt_user "Enter server IP address or domain")"
+        if [[ -n "$detected_ip" ]]; then
+            # Custom prompt: Enter/y = use detected IP, anything else = custom IP
+            read -rp "Use [$detected_ip] for server certificate? [Y/n]: " server_choice
+            if [[ -z "$server_choice" ]] || [[ "$server_choice" =~ ^[Yy] ]]; then
+                new_server="$detected_ip"
+            else
+                new_server="$server_choice"
+                # If user typed "n", prompt for IP
+                if [[ "$new_server" =~ ^[Nn]$ ]]; then
+                    while true; do
+                        new_server="$(prompt_user "Enter server IP address or domain")"
+                        if [[ -n "$new_server" ]]; then
+                            break
+                        fi
+                        echo "Server name cannot be empty. Please try again."
+                    done
+                fi
+            fi
+        else
+            # Loop until user enters a valid server name
+            while true; do
+                new_server="$(prompt_user "Enter server IP address or domain")"
+                if [[ -n "$new_server" ]]; then
+                    break
+                fi
+                echo "Server name cannot be empty. Please try again."
+            done
+        fi
 
         if [[ "$(prompt_yes_no "Generate server certificate for $new_server now?" "y")" == "yes" ]]; then
             if ! ssl_manager_generate_server_cert "$new_server"; then
@@ -887,7 +928,14 @@ menu_run_addon() {
         elif [[ "$choice" -eq $index ]]; then
             # Create new certificate
             local new_server
-            new_server="$(prompt_user "Enter server IP address or domain")"
+            # Loop until user enters a valid server name
+            while true; do
+                new_server="$(prompt_user "Enter server IP address or domain")"
+                if [[ -n "$new_server" ]]; then
+                    break
+                fi
+                echo "Server name cannot be empty. Please try again."
+            done
 
             if ! ssl_manager_generate_server_cert "$new_server"; then
                 print_message "error" "Failed to generate server certificate"
