@@ -200,6 +200,41 @@ cd_playbook_and_setup_direnv() {
     return 0
 }
 
+# ===========================================
+# OS DETECTION HELPER
+# ===========================================
+
+# Get OS family: "arch", "debian", or "unknown"
+# Usage: get_os_family "local" or get_os_family "remote" "$target"
+get_os_family() {
+    local mode="$1"
+    local target="${2:-}"
+
+    if [[ "$mode" == "local" ]]; then
+        # Local OS detection
+        if [[ -f /etc/arch-release ]]; then
+            echo "arch"
+        elif [[ -f /etc/debian_version ]]; then
+            echo "debian"
+        elif [[ -f /etc/os-release ]]; then
+            # Check if ID is debian or ubuntu
+            source /etc/os-release
+            if [[ "${ID:-}" =~ ^(debian|ubuntu)$ ]]; then
+                echo "debian"
+            else
+                echo "unknown"
+            fi
+        else
+            echo "unknown"
+        fi
+    else
+        # Remote OS detection via ansible
+        ansible -i inventory/hosts "$target" -m shell \
+            -a "[[ -f /etc/arch-release ]] && echo 'arch' || ([[ -f /etc/debian_version ]] && echo 'debian') || ([[ -f /etc/os-release ]] && . /etc/os-release && [[ \"$ID\" =~ ^(debian|ubuntu)$ ]] && echo 'debian') || echo 'unknown')" \
+            --become 2>/dev/null | grep -v "$target |" | grep -v "WARNING" | head -n1 | tr -d ' \n\r'
+    fi
+}
+
 detect_os() {
     print_message "info" "Detecting operating system..."
 
@@ -568,11 +603,11 @@ create_traefik_directories() {
 
     ansible -i inventory/hosts "$target" -m shell \
         -a "mkdir -p /matrix/traefik/ssl /matrix/traefik/config" \
-        --become >/dev/null 2>&1
+        --become >> "$LOG_FILE" 2>&1
 
     ansible -i inventory/hosts "$target" -m shell \
         -a "chown -R matrix:matrix /matrix/ || true" \
-        --become >/dev/null 2>&1
+        --become >> "$LOG_FILE" 2>&1
 
     print_message "success" "Traefik directories created"
     return 0
@@ -609,19 +644,19 @@ configure_firewall() {
         ufw)
             ansible -i inventory/hosts "$target" -m shell \
                 -a "ufw allow 443/tcp && ufw allow 8448/tcp" \
-                --become >/dev/null 2>&1
+                --become >> "$LOG_FILE" 2>&1
             print_message "success" "UFW rules added for ports 443, 8448"
             ;;
         firewalld)
             ansible -i inventory/hosts "$target" -m shell \
                 -a "firewall-cmd --permanent --add-service=https && firewall-cmd --permanent --add-port=8448/tcp && firewall-cmd --reload" \
-                --become >/dev/null 2>&1
+                --become >> "$LOG_FILE" 2>&1
             print_message "success" "firewalld rules added for ports 443, 8448"
             ;;
         iptables)
             ansible -i inventory/hosts "$target" -m shell \
                 -a "iptables -I INPUT -p tcp --dport 443 -j ACCEPT && iptables -I INPUT -p tcp --dport 8448 -j ACCEPT" \
-                --become >/dev/null 2>&1
+                --become >> "$LOG_FILE" 2>&1
             print_message "success" "iptables rules added for ports 443, 8448"
             ;;
         *)
@@ -651,13 +686,42 @@ install_root_ca_on_system() {
         target="all"
     fi
 
-    ansible -i inventory/hosts "$target" -m copy \
-        -a "src=${ROOT_CA} dest=/usr/local/share/ca-certificates/matrix-root-ca.crt mode=0644" \
-        --become >/dev/null 2>&1
+    # Detect OS family using the helper function
+    local os_family
+    os_family="$(get_os_family "remote" "$target")"
 
-    ansible -i inventory/hosts "$target" -m command \
-        -a "update-ca-certificates" \
-        --become >/dev/null 2>&1
+    case "$os_family" in
+        arch)
+            # Arch/Manjaro: use /etc/ca-certificates/trust-source/anchors/
+            ansible -i inventory/hosts "$target" -m copy \
+                -a "src=${ROOT_CA} dest=/etc/ca-certificates/trust-source/anchors/matrix-root-ca.crt mode=0644" \
+                --become >> "$LOG_FILE" 2>&1
+
+            ansible -i inventory/hosts "$target" -m command \
+                -a "trust extract-compat" \
+                --become >> "$LOG_FILE" 2>&1
+            ;;
+        debian)
+            # Debian/Ubuntu: use /usr/local/share/ca-certificates/
+            ansible -i inventory/hosts "$target" -m copy \
+                -a "src=${ROOT_CA} dest=/usr/local/share/ca-certificates/matrix-root-ca.crt mode=0644" \
+                --become >> "$LOG_FILE" 2>&1
+
+            ansible -i inventory/hosts "$target" -m command \
+                -a "update-ca-certificates" \
+                --become >> "$LOG_FILE" 2>&1
+            ;;
+        *)
+            print_message "warning" "Unknown OS family ($os_family), trying Debian method..."
+            ansible -i inventory/hosts "$target" -m copy \
+                -a "src=${ROOT_CA} dest=/usr/local/share/ca-certificates/matrix-root-ca.crt mode=0644" \
+                --become >> "$LOG_FILE" 2>&1
+
+            ansible -i inventory/hosts "$target" -m command \
+                -a "update-ca-certificates" \
+                --become >> "$LOG_FILE" 2>&1 || true
+            ;;
+    esac
 
     print_message "success" "Root CA installed in system trust store"
     return 0
@@ -696,7 +760,7 @@ cleanup_existing_postgres_data() {
 
     ansible -i inventory/hosts "$target" -m shell \
         -a "rm -rf /matrix/postgres" \
-        --become >/dev/null 2>&1
+        --become >> "$LOG_FILE" 2>&1
 
     print_message "success" "PostgreSQL data removed"
     return 0
@@ -723,11 +787,11 @@ cleanup_matrix_services() {
 
     ansible -i inventory/hosts "$target" -m shell \
         -a "systemctl stop matrix-*.service 2>/dev/null || true" \
-        --become >/dev/null 2>&1
+        --become >> "$LOG_FILE" 2>&1
 
     ansible -i inventory/hosts "$target" -m shell \
         -a 'docker ps -a --format "{{"{{"}}.Names{{"}}"}}" | grep "^matrix-" | xargs -r docker rm -f 2>/dev/null || true' \
-        --become >/dev/null 2>&1
+        --become >> "$LOG_FILE" 2>&1
 
     print_message "success" "Matrix services cleaned up"
     return 0
