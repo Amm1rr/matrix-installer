@@ -190,15 +190,11 @@ list_servers_with_certs() {
 # ===========================================
 
 ssl_manager_init() {
-    print_message "info" "Initializing SSL Manager..."
-
     # Create certs directory
     mkdir -p "$CERTS_DIR"
 
     # Detect Root CA next to main.sh
     detect_root_ca
-
-    print_message "info" "SSL Manager initialized"
 }
 
 detect_root_ca() {
@@ -209,12 +205,6 @@ detect_root_ca() {
     if [[ -f "${SCRIPT_DIR}/rootCA.key" ]] && [[ -f "${SCRIPT_DIR}/rootCA.crt" ]]; then
         ROOT_CA_DETECTED="true"
         ROOT_CA_SOURCE_PATH="$SCRIPT_DIR"
-        print_message "info" "Root CA detected next to main.sh"
-    fi
-
-    # Also check in certs/ for existing Root CA
-    if [[ -f "${CERTS_DIR}/rootCA.key" ]] && [[ -f "${CERTS_DIR}/rootCA.crt" ]]; then
-        print_message "info" "Root CA already exists in certs/"
     fi
 }
 
@@ -226,6 +216,18 @@ prompt_use_existing_root_ca() {
     echo ""
     print_message "info" "Root CA found at: ${ROOT_CA_SOURCE_PATH}"
     if [[ "$(prompt_yes_no "Use this Root CA for Matrix Plus?" "n")" == "yes" ]]; then
+        # Check if files already exist in certs/ and warn user
+        if [[ -f "${CERTS_DIR}/rootCA.key" ]] || [[ -f "${CERTS_DIR}/rootCA.crt" ]]; then
+            echo ""
+            print_message "warning" "Root CA files already exist in certs/ directory!"
+            print_message "warning" "They will be overwritten with files from: ${ROOT_CA_SOURCE_PATH}"
+            echo ""
+            if [[ "$(prompt_yes_no "Continue with overwrite?" "n")" != "yes" ]]; then
+                print_message "info" "Skipped copying Root CA"
+                return 1
+            fi
+        fi
+
         # Copy to certs/
         cp "${ROOT_CA_SOURCE_PATH}/rootCA.key" "${CERTS_DIR}/rootCA.key"
         cp "${ROOT_CA_SOURCE_PATH}/rootCA.crt" "${CERTS_DIR}/rootCA.crt"
@@ -252,7 +254,6 @@ ssl_manager_create_root_ca() {
     if [[ -f "${CERTS_DIR}/rootCA.key" ]] || [[ -f "${CERTS_DIR}/rootCA.crt" ]]; then
         print_message "warning" "Existing Root CA found in certs/"
         if [[ "$(prompt_yes_no "Overwrite existing Root CA?" "n")" != "yes" ]]; then
-            print_message "info" "Root CA creation cancelled"
             return 1
         fi
         rm -f "${CERTS_DIR}/rootCA.key" "${CERTS_DIR}/rootCA.crt" "${CERTS_DIR}/rootCA.srl"
@@ -261,22 +262,17 @@ ssl_manager_create_root_ca() {
     cd "$CERTS_DIR" || return 1
 
     # Generate Root CA private key
-    print_message "info" "Generating Root CA private key..."
     openssl genrsa -out rootCA.key 4096 2>/dev/null
     chmod 600 rootCA.key
 
     # Generate Root CA certificate with v3_ca extensions
-    print_message "info" "Generating Root CA certificate..."
     openssl req -x509 -new -nodes -key rootCA.key -sha256 -days "$SSL_CA_DAYS" \
         -subj "/C=${SSL_COUNTRY}/ST=${SSL_STATE}/L=${SSL_CITY}/O=${SSL_ORG}/OU=${SSL_OU}/CN=Matrix Root CA" \
         -out rootCA.crt 2>/dev/null
 
     chmod 644 rootCA.crt
 
-    print_message "success" "Root CA created"
-    print_message "info" "  - Root CA key: ${CERTS_DIR}/rootCA.key"
-    print_message "info" "  - Root CA cert: ${CERTS_DIR}/rootCA.crt"
-    print_message "info" "  - Valid for: $SSL_CA_DAYS days"
+    print_message "success" "Root CA created (valid for $SSL_CA_DAYS days)"
 
     cd "$WORKING_DIR"
     return 0
@@ -302,7 +298,6 @@ ssl_manager_generate_server_cert() {
     if [[ -f "${server_cert_dir}/server.key" ]] || [[ -f "${server_cert_dir}/cert-full-chain.pem" ]]; then
         print_message "warning" "Certificates already exist for server: $server_name"
         if [[ "$(prompt_yes_no "Overwrite existing certificates?" "n")" != "yes" ]]; then
-            print_message "info" "Certificate generation cancelled"
             return 1
         fi
         rm -f "${server_cert_dir}/server.key" "${server_cert_dir}/server.crt" "${server_cert_dir}/cert-full-chain.pem"
@@ -378,12 +373,7 @@ EOF
     # Set as active server
     ACTIVE_SERVER="$server_name"
 
-    print_message "success" "Server certificate created"
-    print_message "info" "  - Server: $server_name"
-    print_message "info" "  - Private key: ${server_cert_dir}/server.key"
-    print_message "info" "  - Certificate: ${server_cert_dir}/server.crt"
-    print_message "info" "  - Full chain: ${server_cert_dir}/cert-full-chain.pem"
-    print_message "info" "  - SAN includes: ${cert_domain}, matrix.local, localhost${cert_ip:+, ${cert_ip}, 127.0.0.1}"
+    print_message "success" "Server certificate created for: $server_name"
 
     cd "$WORKING_DIR"
     return 0
@@ -413,12 +403,6 @@ env_provider_export_for_addon() {
     export ROOT_CA="${CERTS_DIR}/rootCA.crt"
     export CERTS_DIR="$CERTS_DIR"
     export WORKING_DIR="$WORKING_DIR"
-
-    print_message "info" "Environment variables set for addon"
-    print_message "info" "  - SERVER_NAME: $SERVER_NAME"
-    print_message "info" "  - SSL_CERT: $SSL_CERT"
-    print_message "info" "  - SSL_KEY: $SSL_KEY"
-    print_message "info" "  - ROOT_CA: $ROOT_CA"
 
     return 0
 }
@@ -466,8 +450,6 @@ addon_loader_run() {
         return 1
     fi
 
-    print_message "info" "Running addon: $addon_dir"
-
     # Make executable
     chmod +x "$addon_install"
 
@@ -490,11 +472,6 @@ addon_loader_validate() {
         return 1
     fi
 
-    # Check for manifest (optional but recommended)
-    if [[ -f "${addon_dir}/addon.manifest" ]]; then
-        print_message "info" "Addon manifest found"
-    fi
-
     return 0
 }
 
@@ -515,7 +492,7 @@ menu_with_root_ca() {
 
         echo ""
         echo "╔══════════════════════════════════════════════════════════╗"
-        echo "║                  Matrix Plus - Main Menu                ║"
+        echo "║                  Matrix Plus - Main Menu                 ║"
         echo "╚══════════════════════════════════════════════════════════╝"
         echo ""
         echo "Root CA: Available"
@@ -574,7 +551,7 @@ menu_without_root_ca() {
         cat <<'EOF'
 
 ╔══════════════════════════════════════════════════════════╗
-║                  Matrix Plus - Main Menu                ║
+║                  Matrix Plus - Main Menu                 ║
 ╚══════════════════════════════════════════════════════════╝
 
 Root CA: Not Available
@@ -703,7 +680,7 @@ main() {
     cat <<'EOF'
 ╔══════════════════════════════════════════════════════════╗
 ║                                                          ║
-║              Matrix Plus - Modular Installer            ║
+║              Matrix Plus - Modular Installer             ║
 ║                      Version 1.0.0                       ║
 ║                                                          ║
 ╚══════════════════════════════════════════════════════════╝
