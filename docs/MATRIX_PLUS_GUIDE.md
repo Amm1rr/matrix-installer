@@ -57,7 +57,7 @@ If no Root CA is detected, you'll see:
 
 ```
 ╔══════════════════════════════════════════════════════════╗
-║                  Matrix Plus - Main Menu                ║
+║                  Matrix Plus - Main Menu                 ║
 ╚══════════════════════════════════════════════════════════╝
 
 Root CA: Not Available
@@ -74,7 +74,7 @@ Once you have a Root CA, the menu expands:
 
 ```
 ╔══════════════════════════════════════════════════════════╗
-║                  Matrix Plus - Main Menu                ║
+║                  Matrix Plus - Main Menu                 ║
 ╚══════════════════════════════════════════════════════════╝
 
 Root CA: Available
