@@ -556,8 +556,8 @@ menu_with_root_ca() {
         # Build menu dynamically with addons
         local addon_index_start=2
         local last_addon_index=$((addon_index_start + ${#addons[@]} - 1))
-        local root_ca_option=$((last_addon_index + 1))
-        local exit_option=$((root_ca_option + 1))
+        local root_ca_option=9
+        local exit_option=0
 
         echo ""
         echo "╔══════════════════════════════════════════════════════════╗"
@@ -606,11 +606,12 @@ menu_with_root_ca() {
             done
         fi
 
+        echo "  ---------------------------"
         echo "  $root_ca_option) Generate new Root CA (overwrite existing)"
         echo "  $exit_option) Exit"
         echo ""
 
-        read -rp "Enter your choice (1-$exit_option): " choice
+        read -rp "Enter your choice (0-9): " choice
 
         case "$choice" in
             1)
@@ -639,7 +640,7 @@ menu_with_root_ca() {
                     print_message "info" "Certificate generation cancelled"
                 fi
                 ;;
-            $root_ca_option)
+            9)
                 # Generate new Root CA
                 echo ""
                 if [[ "$(prompt_yes_no "This will overwrite the existing Root CA. Continue?" "y")" == "yes" ]]; then
@@ -705,7 +706,7 @@ menu_with_root_ca() {
                     SSL_CA_DAYS="$old_days"
                 fi
                 ;;
-            $exit_option)
+            0)
                 print_message "info" "Exiting..."
                 exit 0
                 ;;
