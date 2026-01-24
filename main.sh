@@ -196,13 +196,22 @@ get_root_ca_info() {
         return 1
     fi
 
-    # Get Subject (CN) - extract from openssl output
+    # Get Subject (CN)
     local subject
     subject=$(openssl x509 -in "$root_ca_cert" -noout -subject 2>/dev/null | grep -o 'CN=[^,]*' | cut -d'=' -f2)
 
     # Default subject if not found
     if [[ -z "$subject" ]]; then
         subject="Matrix Root CA"
+    fi
+
+    # Get Country (C)
+    local country
+    country=$(openssl x509 -in "$root_ca_cert" -noout -subject 2>/dev/null | grep -o 'C=[^,]*' | cut -d'=' -f2)
+
+    # Default country if not found
+    if [[ -z "$country" ]]; then
+        country="IR"
     fi
 
     # Get expiration date and calculate days remaining
@@ -235,19 +244,11 @@ get_root_ca_info() {
         display_date=$(date -d "$expiry_date" "+%Y-%m-%d" 2>/dev/null || echo "$expiry_date")
     fi
 
-    # Get key size
-    local key_size
-    key_size=$(openssl x509 -in "$root_ca_cert" -noout -text 2>/dev/null | grep "Public-Key:" | grep -o '[0-9]* bit' | head -1)
-
-    if [[ -z "$key_size" ]]; then
-        key_size="4096-bit"
-    fi
-
     # Output as formatted lines
     echo "SUBJECT=$subject"
+    echo "COUNTRY=$country"
     echo "EXPIRY_DATE=$display_date"
     echo "DAYS_REMAINING=$days_remaining"
-    echo "KEY_SIZE=$key_size"
 
     return 0
 }
@@ -289,7 +290,7 @@ prompt_use_existing_root_ca() {
             print_message "warning" "Root CA files already exist in certs/ directory!"
             print_message "warning" "They will be overwritten with files from: ${ROOT_CA_SOURCE_PATH}"
             echo ""
-            if [[ "$(prompt_yes_no "Continue with overwrite?" "n")" != "yes" ]]; then
+            if [[ "$(prompt_yes_no "Continue with overwrite?" "y")" != "yes" ]]; then
                 print_message "info" "Skipped copying Root CA"
                 return 1
             fi
@@ -320,7 +321,7 @@ ssl_manager_create_root_ca() {
     # Warn if overwriting
     if [[ -f "${CERTS_DIR}/rootCA.key" ]] || [[ -f "${CERTS_DIR}/rootCA.crt" ]]; then
         print_message "warning" "Existing Root CA found in certs/"
-        if [[ "$(prompt_yes_no "Overwrite existing Root CA?" "n")" != "yes" ]]; then
+        if [[ "$(prompt_yes_no "Overwrite existing Root CA?" "y")" != "yes" ]]; then
             return 1
         fi
         rm -f "${CERTS_DIR}/rootCA.key" "${CERTS_DIR}/rootCA.crt" "${CERTS_DIR}/rootCA.srl"
@@ -334,7 +335,7 @@ ssl_manager_create_root_ca() {
 
     # Generate Root CA certificate with v3_ca extensions
     openssl req -x509 -new -nodes -key rootCA.key -sha256 -days "$SSL_CA_DAYS" \
-        -subj "/C=${SSL_COUNTRY}/ST=${SSL_STATE}/L=${SSL_CITY}/O=${SSL_ORG}/OU=${SSL_OU}/CN=Matrix Root CA" \
+        -subj "/C=${SSL_COUNTRY}/ST=${SSL_STATE}/L=${SSL_CITY}/O=${SSL_ORG}/OU=${SSL_OU}/CN=${SSL_ORG}" \
         -out rootCA.crt 2>/dev/null
 
     chmod 644 rootCA.crt
@@ -364,7 +365,7 @@ ssl_manager_generate_server_cert() {
     # Check if certs already exist for this server
     if [[ -f "${server_cert_dir}/server.key" ]] || [[ -f "${server_cert_dir}/cert-full-chain.pem" ]]; then
         print_message "warning" "Certificates already exist for server: $server_name"
-        if [[ "$(prompt_yes_no "Overwrite existing certificates?" "n")" != "yes" ]]; then
+        if [[ "$(prompt_yes_no "Overwrite existing certificates?" "y")" != "yes" ]]; then
             return 1
         fi
         rm -f "${server_cert_dir}/server.key" "${server_cert_dir}/server.crt" "${server_cert_dir}/cert-full-chain.pem"
@@ -565,13 +566,13 @@ menu_with_root_ca() {
         echo "Root CA: Available"
 
         # Get and display Root CA info
-        # Get and display Root CA info
         local ca_info
         ca_info=$(get_root_ca_info 2>/dev/null)
 
         if [[ -n "$ca_info" ]]; then
             # Parse the info line by line
             local ca_subject="Matrix Root CA"
+            local ca_country="IR"
             local ca_expiry="unknown"
             local ca_days="unknown"
 
@@ -580,6 +581,7 @@ menu_with_root_ca() {
                 local value="${line#*=}"
                 case "$key" in
                     SUBJECT) ca_subject="$value" ;;
+                    COUNTRY) ca_country="$value" ;;
                     EXPIRY_DATE) ca_expiry="$value" ;;
                     DAYS_REMAINING) ca_days="$value" ;;
                 esac
@@ -587,6 +589,7 @@ menu_with_root_ca() {
 
             echo "  | Subject: $ca_subject"
             echo "  | Expires: $ca_expiry (in $ca_days days)"
+            echo "  | Country: $ca_country"
         fi
 
         echo ""
@@ -638,8 +641,67 @@ menu_with_root_ca() {
             2)
                 # Generate new Root CA
                 echo ""
-                if [[ "$(prompt_yes_no "This will overwrite the existing Root CA. Continue?" "n")" == "yes" ]]; then
-                    ssl_manager_create_root_ca
+                if [[ "$(prompt_yes_no "This will overwrite the existing Root CA. Continue?" "y")" == "yes" ]]; then
+                    echo ""
+                    echo "=== Root CA Configuration ==="
+                    echo "Press Enter for default values"
+
+                    local org_input
+                    local country_input
+                    local state_input
+                    local city_input
+                    local days_input
+
+                    org_input="$(prompt_user "Organization" "$SSL_ORG")"
+                    # Validate country code (2 characters)
+                    while true; do
+                        country_input="$(prompt_user "Country Code (2 letters)" "$SSL_COUNTRY")"
+                        if [[ ${#country_input} -eq 2 ]]; then
+                            break
+                        fi
+                        echo "Country code must be exactly 2 letters (e.g., IR, US, DE)"
+                    done
+                    state_input="$(prompt_user "State/Province" "$SSL_STATE")"
+                    city_input="$(prompt_user "City" "$SSL_CITY")"
+                    days_input="$(prompt_user "Validity in days" "$SSL_CA_DAYS")"
+
+                    # Validate days is a number
+                    if [[ ! "$days_input" =~ ^[0-9]+$ ]]; then
+                        echo "Invalid days value, using default: $SSL_CA_DAYS"
+                        days_input="$SSL_CA_DAYS"
+                    fi
+
+                    # Update globals for this creation
+                    local old_org="$SSL_ORG"
+                    local old_country="$SSL_COUNTRY"
+                    local old_state="$SSL_STATE"
+                    local old_city="$SSL_CITY"
+                    local old_days="$SSL_CA_DAYS"
+
+                    SSL_ORG="$org_input"
+                    SSL_COUNTRY="$country_input"
+                    SSL_STATE="$state_input"
+                    SSL_CITY="$city_input"
+                    SSL_CA_DAYS="$days_input"
+
+                    echo ""
+                    echo "  Organization: $SSL_ORG"
+                    echo "  Country: $SSL_COUNTRY"
+                    echo "  State: $SSL_STATE"
+                    echo "  City: $SSL_CITY"
+                    echo "  Validity: $SSL_CA_DAYS days"
+                    echo ""
+
+                    if [[ "$(prompt_yes_no "Create Root CA with these settings?" "y")" == "yes" ]]; then
+                        ssl_manager_create_root_ca
+                    fi
+
+                    # Restore defaults
+                    SSL_ORG="$old_org"
+                    SSL_COUNTRY="$old_country"
+                    SSL_STATE="$old_state"
+                    SSL_CITY="$old_city"
+                    SSL_CA_DAYS="$old_days"
                 fi
                 ;;
             $exit_option)
@@ -678,13 +740,80 @@ EOF
 
         case "$choice" in
             1)
-                if ssl_manager_create_root_ca; then
-                    # Root CA created successfully, switch to main menu
-                    print_message "success" "Root CA created. Switching to main menu..."
-                    echo ""
-                    menu_with_root_ca
-                    return
+                echo ""
+                echo "=== Root CA Configuration ==="
+                echo "Press Enter for default values"
+
+                local org_input
+                local country_input
+                local state_input
+                local city_input
+                local days_input
+
+                org_input="$(prompt_user "Organization" "$SSL_ORG")"
+                # Validate country code (2 characters)
+                while true; do
+                    country_input="$(prompt_user "Country Code (2 letters)" "$SSL_COUNTRY")"
+                    if [[ ${#country_input} -eq 2 ]]; then
+                        break
+                    fi
+                    echo "Country code must be exactly 2 letters (e.g., IR, US, DE)"
+                done
+                state_input="$(prompt_user "State/Province" "$SSL_STATE")"
+                city_input="$(prompt_user "City" "$SSL_CITY")"
+                days_input="$(prompt_user "Validity in days" "$SSL_CA_DAYS")"
+
+                # Validate days is a number
+                if [[ ! "$days_input" =~ ^[0-9]+$ ]]; then
+                    echo "Invalid days value, using default: $SSL_CA_DAYS"
+                    days_input="$SSL_CA_DAYS"
                 fi
+
+                # Update globals for this creation
+                local old_org="$SSL_ORG"
+                local old_country="$SSL_COUNTRY"
+                local old_state="$SSL_STATE"
+                local old_city="$SSL_CITY"
+                local old_days="$SSL_CA_DAYS"
+
+                SSL_ORG="$org_input"
+                SSL_COUNTRY="$country_input"
+                SSL_STATE="$state_input"
+                SSL_CITY="$city_input"
+                SSL_CA_DAYS="$days_input"
+
+                echo ""
+                echo "  Organization: $SSL_ORG"
+                echo "  Country: $SSL_COUNTRY"
+                echo "  State: $SSL_STATE"
+                echo "  City: $SSL_CITY"
+                echo "  Validity: $SSL_CA_DAYS days"
+                echo ""
+
+                if [[ "$(prompt_yes_no "Create Root CA with these settings?" "y")" == "yes" ]]; then
+                    if ssl_manager_create_root_ca; then
+                        # Root CA created successfully, switch to main menu
+                        print_message "success" "Root CA created. Switching to main menu..."
+                        echo ""
+
+                        # Restore defaults
+                        SSL_ORG="$old_org"
+                        SSL_COUNTRY="$old_country"
+                        SSL_STATE="$old_state"
+                        SSL_CITY="$old_city"
+                        SSL_CA_DAYS="$old_days"
+
+                        menu_with_root_ca
+                        return
+                    fi
+                fi
+
+                # Restore defaults on cancel
+                SSL_ORG="$old_org"
+                SSL_COUNTRY="$old_country"
+                SSL_STATE="$old_state"
+                SSL_CITY="$old_city"
+                SSL_CA_DAYS="$old_days"
                 ;;
             2)
                 print_message "info" "Exiting..."
