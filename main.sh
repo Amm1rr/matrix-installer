@@ -627,15 +627,43 @@ menu_with_root_ca() {
             1)
                 # Generate server certificate
                 echo ""
+
+                # Detect local IP
+                local detected_ip
+                detected_ip="$(ip route get 1 2>/dev/null | awk '{for(i=1;i<=NF;i++)if($i=="src"){print $(i+1);exit}}')"
+                if [[ -z "$detected_ip" ]]; then
+                    detected_ip="$(ip -4 addr show 2>/dev/null | grep -oP '(?<=inet\s)\d+(\.\d+){3}' | grep -v '127.0.0.1' | head -n1)"
+                fi
+
                 local server_input
-                # Loop until user enters a valid server name
-                while true; do
-                    server_input="$(prompt_user "Enter server IP address or domain")"
-                    if [[ -n "$server_input" ]]; then
-                        break
+                if [[ -n "$detected_ip" ]]; then
+                    # Prompt with detected IP as default
+                    read -rp "Use [$detected_ip] for server certificate? [Y/n]: " server_choice
+                    if [[ -z "$server_choice" ]] || [[ "$server_choice" =~ ^[Yy] ]]; then
+                        server_input="$detected_ip"
+                    else
+                        server_input="$server_choice"
+                        # If user typed "n", prompt for IP
+                        if [[ "$server_input" =~ ^[Nn]$ ]]; then
+                            while true; do
+                                server_input="$(prompt_user "Enter server IP address or domain")"
+                                if [[ -n "$server_input" ]]; then
+                                    break
+                                fi
+                                echo "Server name cannot be empty. Please try again."
+                            done
+                        fi
                     fi
-                    echo "Server name cannot be empty. Please try again."
-                done
+                else
+                    # No IP detected, prompt normally
+                    while true; do
+                        server_input="$(prompt_user "Enter server IP address or domain")"
+                        if [[ -n "$server_input" ]]; then
+                            break
+                        fi
+                        echo "Server name cannot be empty. Please try again."
+                    done
+                fi
 
                 # Show summary and confirm
                 echo ""
