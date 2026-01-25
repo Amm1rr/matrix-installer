@@ -49,6 +49,7 @@ ROOT_CA_SOURCE_PATH=""
 SERVER_NAME=""
 ACTIVE_SERVER=""  # Currently selected server for addon installation
 ACTIVE_ROOT_CA_DIR=""  # Currently active Root CA directory
+SELECTED_ROOT_CA_BASE=""  # Selected Root CA base name from files next to script
 
 # ===========================================
 # HELPER FUNCTIONS
@@ -368,41 +369,10 @@ prompt_select_root_ca_from_files() {
     print_message "info" "Multiple Root CA files found next to script:"
     echo ""
 
-    # Display each Root CA with info
+    # Display each Root CA key file
     local index=1
     for base_name in "${found_files[@]}"; do
-        local cert_file="${SCRIPT_DIR}/${base_name}.crt"
-
-        # Get certificate info
-        local subject="Unknown"
-        local expiry="Unknown"
-        local days="Unknown"
-
-        if [[ -f "$cert_file" ]]; then
-            subject=$(openssl x509 -in "$cert_file" -noout -subject 2>/dev/null | grep -o 'CN=[^,]*' | cut -d'=' -f2)
-            subject="${subject:-Unknown}"
-
-            local expiry_date
-            expiry_date=$(openssl x509 -in "$cert_file" -noout -enddate 2>/dev/null | cut -d'=' -f2)
-
-            if command -v date &> /dev/null && [[ -n "$expiry_date" ]]; then
-                local expiry_epoch
-                expiry_epoch=$(date -d "$expiry_date" +%s 2>/dev/null)
-                if [[ -n "$expiry_epoch" ]]; then
-                    local current_epoch
-                    current_epoch=$(date +%s)
-                    local seconds_diff=$((expiry_epoch - current_epoch))
-                    if [[ $seconds_diff -gt 0 ]]; then
-                        days=$((seconds_diff / 86400))
-                        expiry=$(date -d "$expiry_date" "+%Y-%m-%d" 2>/dev/null || echo "$expiry_date")
-                    else
-                        days="expired"
-                    fi
-                fi
-            fi
-        fi
-
-        echo "  $index) ${base_name} - ${subject} (expires: ${expiry}, ${days} days)"
+        echo "  $index) ${base_name}.key"
         ((index++))
     done
 
@@ -413,10 +383,10 @@ prompt_select_root_ca_from_files() {
         read -rp "Select which Root CA to use (1-$index): " choice
 
         if [[ "$choice" -ge 1 ]] && [[ "$choice" -lt $index ]]; then
-            local selected_base="${found_files[$((choice-1))]}"
-            echo "$selected_base"
+            SELECTED_ROOT_CA_BASE="${found_files[$((choice-1))]}"
             return 0
         elif [[ "$choice" -eq $index ]]; then
+            SELECTED_ROOT_CA_BASE=""
             return 1
         else
             print_message "error" "Invalid choice"
@@ -433,7 +403,8 @@ prompt_use_existing_root_ca() {
 
     # If multiple Root CA files found, prompt for selection
     if [[ ${#ROOT_CA_FILES[@]} -gt 1 ]]; then
-        selected_base="$(prompt_select_root_ca_from_files "${ROOT_CA_FILES[@]}")"
+        prompt_select_root_ca_from_files "${ROOT_CA_FILES[@]}"
+        selected_base="$SELECTED_ROOT_CA_BASE"
         if [[ -z "$selected_base" ]]; then
             print_message "info" "Skipping Root CA files next to script"
             return 1
@@ -987,7 +958,7 @@ menu_with_root_ca() {
                         # If user typed "n", prompt for IP
                         if [[ "$server_input" =~ ^[Nn]$ ]]; then
                             while true; do
-                                server_input="$(prompt_user "Enter server IP address or domain")"
+                                server_input="$(prompt_user "Enter server IP address or domain" "$detected_ip")"
                                 if [[ -n "$server_input" ]]; then
                                     break
                                 fi
@@ -998,7 +969,7 @@ menu_with_root_ca() {
                 else
                     # No IP detected, prompt normally
                     while true; do
-                        server_input="$(prompt_user "Enter server IP address or domain")"
+                        server_input="$(prompt_user "Enter server IP address or domain" "")"
                         if [[ -n "$server_input" ]]; then
                             break
                         fi
@@ -1340,7 +1311,7 @@ menu_run_addon() {
                 # If user typed "n", prompt for IP
                 if [[ "$new_server" =~ ^[Nn]$ ]]; then
                     while true; do
-                        new_server="$(prompt_user "Enter server IP address or domain")"
+                        new_server="$(prompt_user "Enter server IP address or domain" "$detected_ip")"
                         if [[ -n "$new_server" ]]; then
                             break
                         fi
@@ -1351,7 +1322,7 @@ menu_run_addon() {
         else
             # Loop until user enters a valid server name
             while true; do
-                new_server="$(prompt_user "Enter server IP address or domain")"
+                new_server="$(prompt_user "Enter server IP address or domain" "$detected_ip")"
                 if [[ -n "$new_server" ]]; then
                     break
                 fi
@@ -1392,9 +1363,15 @@ menu_run_addon() {
         elif [[ "$choice" -eq $index ]]; then
             # Create new certificate
             local new_server
+            # Detect local IP for default suggestion
+            local detected_ip=""
+            detected_ip="$(ip route get 1 2>/dev/null | awk '{for(i=1;i<=NF;i++)if($i=="src"){print $(i+1);exit}}')"
+            if [[ -z "$detected_ip" ]]; then
+                detected_ip="$(ip -4 addr show 2>/dev/null | grep -oP '(?<=inet\s)\d+(\.\d+){3}' | grep -v '127.0.0.1' | head -n1)"
+            fi
             # Loop until user enters a valid server name
             while true; do
-                new_server="$(prompt_user "Enter server IP address or domain")"
+                new_server="$(prompt_user "Enter server IP address or domain" "$detected_ip")"
                 if [[ -n "$new_server" ]]; then
                     break
                 fi
