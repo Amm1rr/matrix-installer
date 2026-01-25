@@ -420,10 +420,10 @@ prompt_use_existing_root_ca() {
         return 1
     fi
 
-    # Get Root CA directory name from user
+    # Get Root CA directory name from user (use selected_base as default)
     local root_ca_name=""
     while true; do
-        root_ca_name="$(prompt_user "Enter a name for this Root CA directory (e.g., IP or domain)")"
+        root_ca_name="$(prompt_user "Enter a name for this Root CA directory (e.g., IP or domain)" "$selected_base")"
         if [[ -n "$root_ca_name" ]]; then
             break
         fi
