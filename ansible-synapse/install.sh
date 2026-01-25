@@ -1,5 +1,18 @@
 #!/bin/bash
 
+# این متغیرها در دسترس هستند
+# SERVER_NAME="$server_name"                                                                      
+# SSL_CERT="${server_cert_dir}/cert-full-chain.pem"                                               
+# SSL_KEY="${server_cert_dir}/server.key"                                                         
+# ROOT_CA="${CERTS_DIR}/rootCA.crt"                                                               
+# CERTS_DIR="$CERTS_DIR"                                                                          
+# WORKING_DIR="$WORKING_DIR"                                                                      
+
+# در این ماژول، فقط از این ها استفاده شده است: 
+# ${SSL_CERT}
+# ${SSL_KEY}
+# ${ROOT_CA}
+
 # ===========================================
 # ansible-synapse Addon
 # Self-contained Ansible module for Synapse installation
@@ -228,10 +241,10 @@ get_os_family() {
             echo "unknown"
         fi
     else
-        # Remote OS detection via ansible
+        # Remote OS detection via ansible (no become needed for checking /etc files)
         ansible -i inventory/hosts "$target" -m shell \
-            -a "[[ -f /etc/arch-release ]] && echo 'arch' || ([[ -f /etc/debian_version ]] && echo 'debian') || ([[ -f /etc/os-release ]] && . /etc/os-release && [[ \"$ID\" =~ ^(debian|ubuntu)$ ]] && echo 'debian') || echo 'unknown')" \
-            --become 2>/dev/null | grep -v "$target |" | grep -v "WARNING" | head -n1 | tr -d ' \n\r'
+            -a "if [[ -f /etc/arch-release ]]; then echo 'arch'; elif [[ -f /etc/debian_version ]]; then echo 'debian'; else echo 'unknown'; fi" \
+            2>/dev/null | grep -v "$target |" | grep -v "WARNING" | head -n1 | tr -d ' \n\r'
     fi
 }
 
@@ -592,9 +605,8 @@ create_traefik_directories() {
     if [[ -n "$SSH_PASSWORD" ]]; then
         export ANSIBLE_SSH_PASS="$SSH_PASSWORD"
     fi
-    if [[ -n "$SUDO_PASSWORD" ]]; then
-        export ANSIBLE_BECOME_PASS="$SUDO_PASSWORD"
-    fi
+    # Always export ANSIBLE_BECOME_PASS for local mode (supports passwordless sudo)
+    export ANSIBLE_BECOME_PASS="$SUDO_PASSWORD"
 
     local target="$SERVER_IP"
     if [[ "$mode" == "remote" ]]; then
@@ -623,9 +635,8 @@ configure_firewall() {
     if [[ -n "$SSH_PASSWORD" ]]; then
         export ANSIBLE_SSH_PASS="$SSH_PASSWORD"
     fi
-    if [[ -n "$SUDO_PASSWORD" ]]; then
-        export ANSIBLE_BECOME_PASS="$SUDO_PASSWORD"
-    fi
+    # Always export ANSIBLE_BECOME_PASS for local mode (supports passwordless sudo)
+    export ANSIBLE_BECOME_PASS="$SUDO_PASSWORD"
 
     local target="$SERVER_IP"
     if [[ "$mode" == "remote" ]]; then
@@ -677,9 +688,8 @@ install_root_ca_on_system() {
     if [[ -n "$SSH_PASSWORD" ]]; then
         export ANSIBLE_SSH_PASS="$SSH_PASSWORD"
     fi
-    if [[ -n "$SUDO_PASSWORD" ]]; then
-        export ANSIBLE_BECOME_PASS="$SUDO_PASSWORD"
-    fi
+    # Always export ANSIBLE_BECOME_PASS for local mode (supports passwordless sudo)
+    export ANSIBLE_BECOME_PASS="$SUDO_PASSWORD"
 
     local target="$SERVER_IP"
     if [[ "$mode" == "remote" ]]; then
@@ -689,6 +699,8 @@ install_root_ca_on_system() {
     # Detect OS family using the helper function
     local os_family
     os_family="$(get_os_family "remote" "$target")"
+
+    print_message "info" "Detected OS family: $os_family"
 
     case "$os_family" in
         arch)
@@ -735,9 +747,8 @@ cleanup_existing_postgres_data() {
     if [[ -n "$SSH_PASSWORD" ]]; then
         export ANSIBLE_SSH_PASS="$SSH_PASSWORD"
     fi
-    if [[ -n "$SUDO_PASSWORD" ]]; then
-        export ANSIBLE_BECOME_PASS="$SUDO_PASSWORD"
-    fi
+    # Always export ANSIBLE_BECOME_PASS for local mode (supports passwordless sudo)
+    export ANSIBLE_BECOME_PASS="$SUDO_PASSWORD"
 
     local target="$SERVER_IP"
     if [[ "$mode" == "remote" ]]; then
@@ -774,9 +785,8 @@ cleanup_matrix_services() {
     if [[ -n "$SSH_PASSWORD" ]]; then
         export ANSIBLE_SSH_PASS="$SSH_PASSWORD"
     fi
-    if [[ -n "$SUDO_PASSWORD" ]]; then
-        export ANSIBLE_BECOME_PASS="$SUDO_PASSWORD"
-    fi
+    # Always export ANSIBLE_BECOME_PASS for local mode (supports passwordless sudo)
+    export ANSIBLE_BECOME_PASS="$SUDO_PASSWORD"
 
     local target="$SERVER_IP"
     if [[ "$mode" == "remote" ]]; then
@@ -794,6 +804,53 @@ cleanup_matrix_services() {
         --become >> "$LOG_FILE" 2>&1
 
     print_message "success" "Matrix services cleaned up"
+    return 0
+}
+
+# ===========================================
+# SYGNAPSE SIGNING KEY GENERATION
+# ===========================================
+
+cleanup_incorrect_signing_key() {
+    local mode="$1"
+
+    local signing_key_path="/matrix/synapse/config/${SERVER_NAME}.signing.key"
+
+    cd_playbook_and_setup_direnv || return 1
+
+    if [[ -n "$SSH_PASSWORD" ]]; then
+        export ANSIBLE_SSH_PASS="$SSH_PASSWORD"
+    fi
+    # Always export ANSIBLE_BECOME_PASS for local mode (supports passwordless sudo)
+    export ANSIBLE_BECOME_PASS="$SUDO_PASSWORD"
+
+    local target="$SERVER_IP"
+    if [[ "$mode" == "remote" ]]; then
+        target="all"
+    fi
+
+    # Check if signing key exists and has incorrect format (RSA key instead of ed25519)
+    local check_output
+    check_output=$(ansible -i inventory/hosts "$target" -m shell \
+        -a "if [[ -f '$signing_key_path' ]]; then head -n1 '$signing_key_path'; else echo 'NOT_FOUND'; fi" \
+        --become 2>/dev/null | grep -v "$target |" | grep -v "WARNING")
+
+    if [[ "$check_output" == *"NOT_FOUND"* ]]; then
+        print_message "info" "No existing signing key (playbook will generate it)"
+        return 0
+    fi
+
+    # Check if it has incorrect format (RSA PEM format)
+    if [[ "$check_output" == *"BEGIN PRIVATE KEY"* ]] || [[ "$check_output" == *"BEGIN RSA"* ]]; then
+        print_message "warning" "Removing incorrectly formatted signing key..."
+        ansible -i inventory/hosts "$target" -m shell \
+            -a "rm -f '$signing_key_path'" \
+            --become >> "$LOG_FILE" 2>&1
+        print_message "success" "Incorrect signing key removed (playbook will generate correct one)"
+        return 0
+    fi
+
+    print_message "info" "Signing key already exists in correct format"
     return 0
 }
 
@@ -1030,6 +1087,11 @@ EOF
 
     cleanup_existing_postgres_data "$INSTALLATION_MODE"
     cleanup_matrix_services "$INSTALLATION_MODE"
+
+    print_message "info" "=== Cleaning Up Signing Key ==="
+
+    # Remove incorrect signing key if exists (let playbook generate it correctly)
+    cleanup_incorrect_signing_key "$INSTALLATION_MODE"
 
     print_message "info" "=== Running Installation ==="
 
