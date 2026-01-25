@@ -1,6 +1,0 @@
-# Addon Manifest for ansible-synapse
-NAME="ansible-synapse"
-VERSION="1.0.0"
-DESCRIPTION="Self-contained Ansible module for Synapse homeserver installation"
-AUTHOR="Matrix Plus Team"
-REQUIRES="ansible,git,openssl"

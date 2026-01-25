@@ -1,21 +1,23 @@
 #!/bin/bash
 
-# این متغیرها در دسترس هستند
-# SERVER_NAME="$server_name"                                                                      
-# SSL_CERT="${server_cert_dir}/cert-full-chain.pem"                                               
-# SSL_KEY="${server_cert_dir}/server.key"                                                         
-# ROOT_CA="${CERTS_DIR}/rootCA.crt"                                                               
-# CERTS_DIR="$CERTS_DIR"                                                                          
-# WORKING_DIR="$WORKING_DIR"                                                                      
-
-# در این ماژول، فقط از این ها استفاده شده است: 
-# ${SSL_CERT}
-# ${SSL_KEY}
-# ${ROOT_CA}
+# ===========================================
+# ADDON METADATA
+# ===========================================
+ADDON_NAME="ansible-synapse"
+ADDON_VERSION="1.0.0"
+ADDON_DESCRIPTION="Self-contained Ansible module for Synapse homeserver installation"
+ADDON_AUTHOR="Matrix Plus Team"
 
 # ===========================================
-# ansible-synapse Addon
-# Self-contained Ansible module for Synapse installation
+# ENVIRONMENT VARIABLES FROM MAIN.SH
+# ===========================================
+# These variables are exported by main.sh:
+# SERVER_NAME - Matrix server identity (IP or domain)
+# SSL_CERT - Full chain certificate path
+# SSL_KEY - Private key path
+# ROOT_CA - Root CA certificate path
+# CERTS_DIR - Certificate directory
+# WORKING_DIR - Working directory
 # ===========================================
 
 set -e

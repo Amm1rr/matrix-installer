@@ -1,8 +1,23 @@
 #!/bin/bash
 
 # ===========================================
-# zanjir-synapse Addon
-# Placeholder for future Zanjir-based deployment
+# ADDON METADATA
+# ===========================================
+ADDON_NAME="zanjir-synapse"
+ADDON_VERSION="0.1.0"
+ADDON_DESCRIPTION="Placeholder for future Zanjir-based Synapse deployment module (NOT YET IMPLEMENTED)"
+ADDON_AUTHOR="Matrix Plus Team"
+
+# ===========================================
+# ENVIRONMENT VARIABLES FROM MAIN.SH
+# ===========================================
+# These variables are exported by main.sh:
+# SERVER_NAME - Matrix server identity (IP or domain)
+# SSL_CERT - Full chain certificate path
+# SSL_KEY - Private key path
+# ROOT_CA - Root CA certificate path
+# CERTS_DIR - Certificate directory
+# WORKING_DIR - Working directory
 # ===========================================
 
 set -e

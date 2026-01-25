@@ -1,6 +1,0 @@
-# Addon Manifest for zanjir-synapse
-NAME="zanjir-synapse"
-VERSION="0.1.0"
-DESCRIPTION="Placeholder for future Zanjir-based Synapse deployment module (NOT YET IMPLEMENTED)"
-AUTHOR="Matrix Plus Team"
-STATUS="placeholder"

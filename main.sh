@@ -486,7 +486,7 @@ addon_loader_get_list() {
 
     # Find all directories containing install.sh
     for dir in */; do
-        if [[ -f "${dir}install.sh" ]] && [[ -f "${dir}addon.manifest" ]]; then
+        if [[ -f "${dir}install.sh" ]]; then
             found_addons+=("${dir%/}")
         fi
     done
@@ -498,14 +498,15 @@ addon_loader_get_list() {
 
 addon_loader_get_name() {
     local addon_dir="$1"
+    local addon_install="${addon_dir}/install.sh"
 
-    if [[ -f "${addon_dir}/addon.manifest" ]]; then
+    if [[ -f "$addon_install" ]]; then
         local name
-        name=$(grep "^NAME=" "${addon_dir}/addon.manifest" | cut -d'=' -f2)
+        name=$(grep "^ADDON_NAME=" "$addon_install" | cut -d'=' -f2)
         # Remove quotes if present
         name="${name%\"}"
         name="${name#\"}"
-        echo "$name"
+        echo "${name:-$addon_dir}"
     else
         echo "$addon_dir"
     fi
