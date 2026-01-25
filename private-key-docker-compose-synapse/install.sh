@@ -571,10 +571,12 @@ EOF
     # Wait a bit more for database migrations
     sleep 5
 
-    if timeout 30 docker compose exec -T synapse register_new_matrix_user -u admin -p "${ADMIN_PASSWORD}" -a -c /data/homeserver.yaml 2>/dev/null; then
+    # Use < /dev/null to prevent stdin blocking, and capture stderr to handle existing user
+    if docker compose exec -T synapse register_new_matrix_user -u admin -p "${ADMIN_PASSWORD}" -a -c /data/homeserver.yaml < /dev/null 2>&1; then
         print_message "success" "Admin user created successfully"
     else
-        print_message "warning" "Admin user creation may have failed. You can create it manually:"
+        print_message "warning" "Admin user may already exist or creation failed."
+        echo "  You can create it manually:"
         echo "  docker compose exec synapse register_new_matrix_user -u admin -p YOUR_PASSWORD -a -c /data/homeserver.yaml"
     fi
 
@@ -697,30 +699,6 @@ PRIVATE-KEY-DOCKER-COMPOSE-SYNAPSE INSTALLATION COMPLETE
   - Control: cd ${MATRIX_BASE} && docker compose [up|down|logs]
 "
 
-    echo -e "${YELLOW}========================================${NC}"
-    echo -e "${YELLOW}IMPORTANT: Client Trust Configuration${NC}"
-    echo -e "${YELLOW}========================================${NC}"
-
-    if is_ip_address "$DOMAIN"; then
-        echo ""
-        echo -e "${RED}Since you are using an IP address,${NC} clients must trust the Root CA."
-        echo ""
-        echo "1. Copy the Root CA certificate to client devices:"
-        echo "   Server: ${ROOT_CA}"
-        echo ""
-        echo "2. Install Root CA on clients:"
-        echo "   - Linux:   sudo cp ${ROOT_CA} /usr/local/share/ca-certificates/ && sudo update-ca-certificates"
-        echo "   - macOS:   sudo security add-trusted-cert -d -r trustRoot -k /Library/Keychains/System.keychain ${ROOT_CA}"
-        echo "   - Windows: Import certificate to 'Trusted Root Certification Authorities'"
-        echo "   - Android: Settings > Security > Install from storage"
-        echo "   - iOS:     Settings > General > About > Certificate Trust Settings"
-    else
-        echo ""
-        echo "For domain-based installation, clients may need to trust the Root CA"
-        echo "if the domain is not publicly resolvable."
-    fi
-
-    echo ""
     echo -e "${GREEN}========================================${NC}"
 }
 
