@@ -1007,6 +1007,12 @@ menu_with_root_ca() {
                         # Refresh list
                         mapfile -t FOUND_ROOT_CAS < <(list_root_cas)
                         num_root_cas=${#FOUND_ROOT_CAS[@]}
+                    else
+                        # User chose to create new Root CA
+                        create_new_root_ca_with_config
+                        # Refresh list after creation
+                        mapfile -t FOUND_ROOT_CAS < <(list_root_cas)
+                        num_root_cas=${#FOUND_ROOT_CAS[@]}
                     fi
                 else
                     # Fall through to new Root CA if only one exists
@@ -1406,10 +1412,10 @@ menu_run_addon() {
 }
 
 # ===========================================
-# MAIN FUNCTION
+# INITIALIZATION FUNCTION
 # ===========================================
 
-main() {
+initialize() {
     # Initialize log
     mkdir -p "$(dirname "$LOG_FILE")"
     echo "${MATRIX_PLUS_NAME} Log - $(date)" > "$LOG_FILE"
@@ -1442,19 +1448,93 @@ main() {
 
     # Initialize SSL Manager
     ssl_manager_init
+}
 
-    # Check for Root CA files next to main.sh and prompt user
+# ===========================================
+# NEW ROOT CA CREATION FUNCTION
+# ===========================================
+
+create_new_root_ca_with_config() {
+    print_message "info" "=== Root CA Configuration ==="
+    echo "Press Enter for default values"
+
+    local org_input
+    local country_input
+    local state_input
+    local city_input
+    local days_input
+
+    org_input="$(prompt_user "Organization" "$SSL_ORG")"
+    # Validate country code (2 characters)
+    while true; do
+        country_input="$(prompt_user "Country Code (2 letters)" "$SSL_COUNTRY")"
+        if [[ ${#country_input} -eq 2 ]]; then
+            break
+        fi
+        echo "Country code must be exactly 2 letters (e.g., IR, US, DE)"
+    done
+    state_input="$(prompt_user "State/Province" "$SSL_STATE")"
+    city_input="$(prompt_user "City" "$SSL_CITY")"
+    days_input="$(prompt_user "Validity in days" "$SSL_CA_DAYS")"
+
+    # Validate days is a number
+    if [[ ! "$days_input" =~ ^[0-9]+$ ]]; then
+        echo "Invalid days value, using default: $SSL_CA_DAYS"
+        days_input="$SSL_CA_DAYS"
+    fi
+
+    # Update globals for this creation
+    local old_org="$SSL_ORG"
+    local old_country="$SSL_COUNTRY"
+    local old_state="$SSL_STATE"
+    local old_city="$SSL_CITY"
+    local old_days="$SSL_CA_DAYS"
+
+    SSL_ORG="$org_input"
+    SSL_COUNTRY="$country_input"
+    SSL_STATE="$state_input"
+    SSL_CITY="$city_input"
+    SSL_CA_DAYS="$days_input"
+
+    echo ""
+    echo "  Organization: $SSL_ORG"
+    echo "  Country: $SSL_COUNTRY"
+    echo "  State: $SSL_STATE"
+    echo "  City: $SSL_CITY"
+    echo "  Validity: $SSL_CA_DAYS days"
+    echo ""
+
+    if [[ "$(prompt_yes_no "Create Root CA with these settings?" "y")" == "yes" ]]; then
+        ssl_manager_create_root_ca
+    fi
+
+    # Restore defaults
+    SSL_ORG="$old_org"
+    SSL_COUNTRY="$old_country"
+    SSL_STATE="$old_state"
+    SSL_CITY="$old_city"
+    SSL_CA_DAYS="$old_days"
+}
+
+# ===========================================
+# MAIN FUNCTION
+# ===========================================
+
+main() {
+    # Initialize: show banner and detect Root CA files
+    initialize
+
+    # Step 1: Handle Root CA files next to script (if any)
     if [[ "$ROOT_CA_DETECTED" == "true" ]]; then
         if prompt_use_existing_root_ca; then
-            # Root CA copied successfully, skip to menu
+            # Root CA copied successfully, continue to certs/ menu
             :
         fi
     fi
 
-    # Discover Root CAs in certs/
+    # Step 2: Discover Root CAs in certs/ and show appropriate menu
     mapfile -t FOUND_ROOT_CAS < <(list_root_cas)
 
-    # Show appropriate menu based on Root CA availability
     if [[ ${#FOUND_ROOT_CAS[@]} -gt 0 ]]; then
         # Has Root CAs - may need to select one
         if [[ ${#FOUND_ROOT_CAS[@]} -eq 1 ]] && [[ -z "$ACTIVE_ROOT_CA_DIR" ]]; then
@@ -1464,7 +1544,10 @@ main() {
             # Multiple Root CAs and none selected - prompt user
             if ! prompt_select_root_ca_from_certs "${FOUND_ROOT_CAS[@]}"; then
                 # User chose to create new Root CA
-                menu_without_root_ca
+                # Prompt for Root CA configuration and create it directly
+                create_new_root_ca_with_config
+                # After creation, show menu with new Root CA
+                menu_with_root_ca
                 return
             fi
         fi
