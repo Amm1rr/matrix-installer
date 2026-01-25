@@ -536,10 +536,15 @@ addon_loader_run() {
 
 addon_loader_validate() {
     local addon_dir="$1"
+    local addon_install="${addon_dir}/install.sh"
 
     # Check for install.sh
-    if [[ ! -f "${addon_dir}/install.sh" ]]; then
-        print_message "error" "Missing install.sh in addon: $addon_dir"
+    if [[ ! -f "$addon_install" ]]; then
+        return 1
+    fi
+
+    # Check for ADDON_NAME in first 15 lines (valid addon marker)
+    if ! head -n 15 "$addon_install" | grep -q "^ADDON_NAME="; then
         return 1
     fi
 
