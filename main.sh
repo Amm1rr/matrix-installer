@@ -2,9 +2,13 @@
 
 # ===========================================
 # Matrix Plus - Private Key Matrix Installation System
-# Version: 0.1.0
-# Description:Matrix homeserver installation
 # ===========================================
+
+# Application Metadata
+MATRIX_PLUS_NAME="Matrix Plus"
+MATRIX_PLUS_VERSION="0.1.0"
+MATRIX_PLUS_DESCRIPTION="Private Key Installer"
+MATRIX_PLUS_BUILD_DATE="$(date +%Y-%m-%d)"
 
 set -e
 set -u
@@ -568,10 +572,6 @@ menu_with_root_ca() {
         local exit_option=0
 
         echo ""
-        echo "╔══════════════════════════════════════════════════════════╗"
-        echo "║                  Matrix Plus - Main Menu                 ║"
-        echo "╚══════════════════════════════════════════════════════════╝"
-        echo ""
         echo "Root CA: Available"
 
         # Get and display Root CA info
@@ -979,17 +979,33 @@ menu_run_addon() {
 main() {
     # Initialize log
     mkdir -p "$(dirname "$LOG_FILE")"
-    echo "Matrix Plus Log - $(date)" > "$LOG_FILE"
+    echo "${MATRIX_PLUS_NAME} Log - $(date)" > "$LOG_FILE"
 
-    # Print banner
-    cat <<'EOF'
-╔══════════════════════════════════════════════════════════╗
-║                                                          ║
-║              Matrix Plus - Private Key Installer         ║
-║                      Version 0.1.0                       ║
-║                                                          ║
-╚══════════════════════════════════════════════════════════╝
-EOF
+    # Print banner (dynamic)
+    local title="${MATRIX_PLUS_NAME} - ${MATRIX_PLUS_DESCRIPTION}"
+    local version="Version ${MATRIX_PLUS_VERSION}"
+    local build="Build: ${MATRIX_PLUS_BUILD_DATE}"
+    local box_width=58
+
+    echo ""
+    echo "╔══════════════════════════════════════════════════════════╗"
+    echo "║                                                          ║"
+
+    # Center title
+    local title_padding=$(( (box_width - ${#title}) / 2 ))
+    printf "║%*s%s%*s║\n" $title_padding "" "$title" $((box_width - title_padding - ${#title})) ""
+
+    # Center version
+    local version_padding=$(( (box_width - ${#version}) / 2 ))
+    printf "║%*s%s%*s║\n" $version_padding "" "$version" $((box_width - version_padding - ${#version})) ""
+
+    # Center build
+    local build_padding=$(( (box_width - ${#build}) / 2 ))
+    printf "║%*s%s%*s║\n" $build_padding "" "$build" $((box_width - build_padding - ${#build})) ""
+
+    echo "║                                                          ║"
+    echo "╚══════════════════════════════════════════════════════════╝"
+    echo ""
 
     # Initialize SSL Manager
     ssl_manager_init
