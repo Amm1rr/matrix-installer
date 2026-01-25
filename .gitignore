@@ -1,6 +1,5 @@
 addons/
 certs/
-openspec/
 *.crt
 *.key
 *.srl
