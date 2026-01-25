@@ -21,7 +21,7 @@ set -o pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 WORKING_DIR="$(pwd)"
 CERTS_DIR="${WORKING_DIR}/certs"
-ADDONS_DIR="${WORKING_DIR}"
+ADDONS_DIR="${WORKING_DIR}/addons"
 LOG_FILE="${WORKING_DIR}/main.log"
 
 # SSL Certificate settings
@@ -509,7 +509,7 @@ addon_loader_get_list() {
     local found_addons=()
 
     # Find all directories containing install.sh
-    for dir in */; do
+    for dir in addons/*/; do
         if [[ -f "${dir}install.sh" ]]; then
             found_addons+=("${dir%/}")
         fi
