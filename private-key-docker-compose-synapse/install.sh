@@ -248,6 +248,18 @@ check_environment_variables() {
 # ===========================================
 
 configure_registration() {
+    # Skip prompting if re-executed with sudo (variables already set)
+    if [[ "${REEXECED:-}" == "1" && -n "${MAX_REG_DEFAULT:-}" && -n "${ENABLE_REGISTRATION:-}" ]]; then
+        # Only generate secrets if not already set
+        REGISTRATION_SHARED_SECRET="${REGISTRATION_SHARED_SECRET:-$(rand_secret)}"
+        POSTGRES_PASSWORD="${POSTGRES_PASSWORD:-$(rand_secret)}"
+        ADMIN_PASSWORD="${ADMIN_PASSWORD:-$(rand_secret)}"
+        MACAROON_SECRET_KEY="${MACAROON_SECRET_KEY:-$(rand_secret)}"
+        FORM_SECRET="${FORM_SECRET:-$(rand_secret)}"
+        DOMAIN="${DOMAIN:-$SERVER_NAME}"
+        return 0
+    fi
+
     echo ""
     echo "========================================"
     echo "       Registration Configuration"
