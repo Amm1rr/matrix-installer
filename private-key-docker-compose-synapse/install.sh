@@ -266,6 +266,8 @@ configure_registration() {
     REGISTRATION_SHARED_SECRET="$(rand_secret)"
     POSTGRES_PASSWORD="$(rand_secret)"
     ADMIN_PASSWORD="$(rand_secret)"
+    MACAROON_SECRET_KEY="$(rand_secret)"
+    FORM_SECRET="$(rand_secret)"
 
     # Domain is SERVER_NAME from main.sh
     DOMAIN="$SERVER_NAME"
@@ -316,6 +318,8 @@ export ENABLE_REGISTRATION="${ENABLE_REGISTRATION}"
 export REGISTRATION_SHARED_SECRET="${REGISTRATION_SHARED_SECRET}"
 export POSTGRES_PASSWORD="${POSTGRES_PASSWORD}"
 export ADMIN_PASSWORD="${ADMIN_PASSWORD}"
+export MACAROON_SECRET_KEY="${MACAROON_SECRET_KEY}"
+export FORM_SECRET="${FORM_SECRET}"
 export DOMAIN="${DOMAIN}"
 export REEXECED="1"
 EOF
@@ -382,15 +386,16 @@ EOF
 networks: {matrix: {}}
 services:
   traefik:
-    image: traefik:v2.10
+    image: traefik:v3.6
     restart: unless-stopped
     command:
       - "--providers.docker=true"
       - "--providers.docker.exposedbydefault=false"
+      - "--providers.file.filename=/etc/traefik/tls.yaml"
       - "--entrypoints.websecure.address=:443"
       - "--api.insecure=true"
     ports: ["443:443", "8080:8080"]
-    volumes: ["/var/run/docker.sock:/var/run/docker.sock:ro", "./ssl:/ssl:ro"]
+    volumes: ["/var/run/docker.sock:/var/run/docker.sock:ro", "./ssl:/ssl:ro", "./traefik-config:/etc/traefik:ro"]
     networks: [matrix]
 
   postgres:
@@ -399,6 +404,7 @@ services:
       - POSTGRES_DB=synapsedb
       - POSTGRES_USER=synapse
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_INITDB_ARGS=-E UTF8 --locale=C
     volumes: ["./data/postgres:/var/lib/postgresql/data"]
     networks: [matrix]
 
@@ -434,6 +440,7 @@ services:
       - "traefik.http.routers.element.rule=Host(\`${DOMAIN}\`)"
       - "traefik.http.routers.element.entrypoints=websecure"
       - "traefik.http.routers.element.tls=true"
+      - "traefik.http.services.element.loadbalancer.server.port=80"
     networks: [matrix]
 EOF
 
@@ -465,11 +472,27 @@ EOF
 
     # Initialize Synapse
     print_message "info" "Initializing Synapse..."
-    docker compose run --rm synapse generate || true
 
-    # Write Homeserver Config
-    print_message "info" "Configuring Synapse..."
-    cat >> data/synapse/homeserver.yaml <<EOF
+    # Create synapse data directory
+    mkdir -p data/synapse
+
+    # Note: Synapse automatically generates the signing key on first startup
+    # at: /data/${DOMAIN}.signing.key
+
+    # Create minimal homeserver.yaml manually
+    print_message "info" "Creating homeserver configuration..."
+    cat > data/synapse/homeserver.yaml <<EOF
+# Configuration file for Synapse
+server_name: "${DOMAIN}"
+pid_file: /data/homeserver.pid
+listeners:
+  - port: 8008
+    tls: false
+    type: http
+    x_forwarded: true
+    resources:
+      - names: [client, federation]
+        compress: false
 database:
   name: psycopg2
   args:
@@ -477,9 +500,17 @@ database:
     password: ${POSTGRES_PASSWORD}
     database: synapsedb
     host: postgres
-enable_registration: ${ENABLE_REGISTRATION}
+  allow_unsafe_locale: true
+media_store_path: /data/media_store
 registration_shared_secret: "${REGISTRATION_SHARED_SECRET}"
+report_stats: false
+macaroon_secret_key: "${MACAROON_SECRET_KEY}"
+form_secret: "${FORM_SECRET}"
+signing_key_path: "/data/${DOMAIN}.signing.key"
 EOF
+
+    # Fix ownership of synapse data files (synapse runs as UID 991)
+    chown -R 991:991 data/synapse/
 
     # Handle IP-based server configuration
     if is_ip_address "$DOMAIN"; then
@@ -495,6 +526,15 @@ key_server:
 trusted_key_servers: []
 EOF
     fi
+
+    # Add registration settings
+    cat >> data/synapse/homeserver.yaml <<EOF
+enable_registration: ${ENABLE_REGISTRATION}
+enable_registration_without_verification: true
+EOF
+
+    # Fix ownership again after modifications
+    chown -R 991:991 data/synapse/
 
     # Start services
     print_message "info" "Starting services..."
@@ -594,13 +634,20 @@ check_status() {
         return 0
     fi
 
+    # Check if docker-compose.yml exists
+    if [[ ! -f "$MATRIX_BASE/docker-compose.yml" ]]; then
+        print_message "warning" "Matrix is not properly installed (docker-compose.yml not found)"
+        print_message "info" "You may need to reinstall or clean up the directory: sudo rm -rf $MATRIX_BASE"
+        return 0
+    fi
+
     cd "$MATRIX_BASE" || return 1
 
     echo ""
-    docker compose ps
+    docker compose ps 2>/dev/null
     echo ""
 
-    if docker compose ps | grep -q "Up"; then
+    if docker compose ps 2>/dev/null | grep -q "Up"; then
         print_message "success" "Matrix services are running"
     else
         print_message "warning" "Matrix services are not running"
