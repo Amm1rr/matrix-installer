@@ -88,7 +88,7 @@ prompt_user() {
         prompt="$prompt [$default]"
     fi
 
-    read -rp "$prompt: " input
+    read -rp "$prompt: " input || true
 
     if [[ -z "$input" && -n "$default" ]]; then
         echo "$default"
@@ -109,7 +109,7 @@ prompt_yes_no() {
             default_display="y/N"
         fi
 
-        read -rp "$prompt [$default_display]: " answer
+        read -rp "$prompt [$default_display]: " answer || true
 
         if [[ -z "$answer" ]]; then
             answer="$default"
@@ -150,6 +150,122 @@ is_ip_address() {
     fi
 
     return 1
+}
+
+# Get detected local IP address
+get_detected_ip() {
+    local ip=""
+    ip="$(ip route get 1 2>/dev/null | awk '{for(i=1;i<=NF;i++)if($i=="src"){print $(i+1);exit}}')"
+    if [[ -z "$ip" ]]; then
+        ip="$(ip -4 addr show 2>/dev/null | grep -oP '(?<=inet\s)\d+(\.\d+){3}' | grep -v '127.0.0.1' | head -n1)"
+    fi
+    echo "$ip"
+}
+
+# Print styled menu header
+print_menu_header() {
+    local title="$1"
+
+    echo ""
+    echo "╔══════════════════════════════════════════════════════════╗"
+    echo "║                                                          ║"
+
+    local box_width=58
+    local title_padding=$(( (box_width - ${#title}) / 2 ))
+    printf "║%*s%s%*s║\n" $title_padding "" "$title" $((box_width - title_padding - ${#title})) ""
+
+    echo "║                                                          ║"
+    echo "╚══════════════════════════════════════════════════════════╝"
+}
+
+# Prompt for Root CA configuration (returns: org|country|state|city|days)
+prompt_root_ca_config() {
+    local org_input
+    local country_input
+    local state_input
+    local city_input
+    local days_input
+
+    echo "" >&2
+    echo "=== Root CA Configuration ===" >&2
+    echo "Press Enter for default values" >&2
+
+    org_input="$(prompt_user "Organization" "$SSL_ORG")"
+
+    # Validate country code (2 characters)
+    while true; do
+        country_input="$(prompt_user "Country Code (2 letters)" "$SSL_COUNTRY")"
+        if [[ ${#country_input} -eq 2 ]]; then
+            break
+        fi
+        echo "Country code must be exactly 2 letters (e.g., IR, US, DE)" >&2
+    done
+
+    state_input="$(prompt_user "State/Province" "$SSL_STATE")"
+    city_input="$(prompt_user "City" "$SSL_CITY")"
+    days_input="$(prompt_user "Validity in days" "$SSL_CA_DAYS")"
+
+    # Validate days is a number
+    if [[ ! "$days_input" =~ ^[0-9]+$ ]]; then
+        echo "Invalid days value, using default: $SSL_CA_DAYS" >&2
+        days_input="$SSL_CA_DAYS"
+    fi
+
+    # Display summary
+    echo "" >&2
+    echo "  Organization: $org_input" >&2
+    echo "  Country: $country_input" >&2
+    echo "  State: $state_input" >&2
+    echo "  City: $city_input" >&2
+    echo "  Validity: $days_input days" >&2
+    echo "" >&2
+
+    # Output as pipe-delimited for parsing (to stdout only)
+    echo "${org_input}|${country_input}|${state_input}|${city_input}|${days_input}"
+}
+
+# Create Root CA from menu (handles config prompt and creation)
+create_root_ca_from_menu() {
+    echo ""
+    if [[ "$(prompt_yes_no "This will create a new Root CA directory. Continue?" "y")" != "yes" ]]; then
+        return 0
+    fi
+
+    # Get configuration
+    local config
+    config="$(prompt_root_ca_config)" || true
+
+    # Parse config safely
+    local org_input country_input state_input city_input days_input
+    org_input="$(echo "$config" | cut -d'|' -f1)"
+    country_input="$(echo "$config" | cut -d'|' -f2)"
+    state_input="$(echo "$config" | cut -d'|' -f3)"
+    city_input="$(echo "$config" | cut -d'|' -f4)"
+    days_input="$(echo "$config" | cut -d'|' -f5)"
+
+    # Save and restore globals
+    local old_org="$SSL_ORG"
+    local old_country="$SSL_COUNTRY"
+    local old_state="$SSL_STATE"
+    local old_city="$SSL_CITY"
+    local old_days="$SSL_CA_DAYS"
+
+    SSL_ORG="$org_input"
+    SSL_COUNTRY="$country_input"
+    SSL_STATE="$state_input"
+    SSL_CITY="$city_input"
+    SSL_CA_DAYS="$days_input"
+
+    if [[ "$(prompt_yes_no "Create Root CA with these settings?" "y")" == "yes" ]]; then
+        ssl_manager_create_root_ca "$org_input"
+    fi
+
+    # Restore defaults
+    SSL_ORG="$old_org"
+    SSL_COUNTRY="$old_country"
+    SSL_STATE="$old_state"
+    SSL_CITY="$old_city"
+    SSL_CA_DAYS="$old_days"
 }
 
 # ===========================================
@@ -376,11 +492,18 @@ prompt_select_root_ca_from_files() {
         ((index++))
     done
 
+    echo "  -------------"
     echo "  $index) Skip and use Root CAs from certs/"
+    echo "  0) Back to previous menu"
     echo ""
 
     while true; do
-        read -rp "Select which Root CA to use (1-$index): " choice
+        read -rp "Select which Root CA to use (0-$index): " choice || true
+
+        # Handle empty input (Enter) as Skip
+        if [[ -z "$choice" ]]; then
+            choice=$index
+        fi
 
         if [[ "$choice" -ge 1 ]] && [[ "$choice" -lt $index ]]; then
             SELECTED_ROOT_CA_BASE="${found_files[$((choice-1))]}"
@@ -388,6 +511,8 @@ prompt_select_root_ca_from_files() {
         elif [[ "$choice" -eq $index ]]; then
             SELECTED_ROOT_CA_BASE=""
             return 1
+        elif [[ "$choice" -eq 0 ]]; then
+            return 3  # Back to previous menu
         else
             print_message "error" "Invalid choice"
         fi
@@ -403,8 +528,15 @@ prompt_use_existing_root_ca() {
 
     # If multiple Root CA files found, prompt for selection
     if [[ ${#ROOT_CA_FILES[@]} -gt 1 ]]; then
-        prompt_select_root_ca_from_files "${ROOT_CA_FILES[@]}"
+        local select_result
+        prompt_select_root_ca_from_files "${ROOT_CA_FILES[@]}" || select_result=$?
+        select_result="${select_result:-0}"
         selected_base="$SELECTED_ROOT_CA_BASE"
+        if [[ $select_result -eq 3 ]]; then
+            # Back to previous menu - skip and show certs menu
+            print_message "info" "Skipping Root CA files next to script"
+            return 1
+        fi
         if [[ -z "$selected_base" ]]; then
             print_message "info" "Skipping Root CA files next to script"
             return 1
@@ -524,19 +656,28 @@ prompt_select_root_ca_from_certs() {
         ((index++))
     done
 
+    echo "  -----------------------"
     echo "  $index) Create new Root CA"
+    echo "  0) Back to previous menu"
     echo ""
 
     while true; do
-        read -rp "Select active Root CA (1-$index): " choice
+        read -rp "Select active Root CA (0-$index): " choice || true
 
-        if [[ "$choice" -ge 1 ]] && [[ "$choice" -lt $index ]]; then
+        # Handle empty input (Enter) as Back to previous menu
+        if [[ -z "$choice" ]]; then
+            choice=0
+        fi
+
+        if [[ "$choice" -ge 1 ]] && [[ "$choice" -le ${#root_cas[@]} ]]; then
             local selected_root_ca="${root_cas[$((choice-1))]}"
             ACTIVE_ROOT_CA_DIR="${CERTS_DIR}/${selected_root_ca}"
             print_message "success" "Selected Root CA: ${selected_root_ca}"
             return 0
         elif [[ "$choice" -eq $index ]]; then
             return 1  # User wants to create new
+        elif [[ "$choice" -eq 0 ]]; then
+            return 3  # Back to previous menu
         else
             print_message "error" "Invalid choice"
         fi
@@ -548,29 +689,27 @@ ssl_manager_create_root_ca() {
 
     print_message "info" "Creating new Root CA..."
 
-    # Get Root CA directory name if not provided
-    if [[ -z "$root_ca_name" ]]; then
+    # Determine default name for Root CA directory
+    local default_name="$root_ca_name"
+    if [[ -z "$default_name" ]]; then
         # Detect local IP for default suggestion
-        local detected_ip=""
-        detected_ip="$(ip route get 1 2>/dev/null | awk '{for(i=1;i<=NF;i++)if($i=="src"){print $(i+1);exit}}')"
-        if [[ -z "$detected_ip" ]]; then
-            detected_ip="$(ip -4 addr show 2>/dev/null | grep -oP '(?<=inet\s)\d+(\.\d+){3}' | grep -v '127.0.0.1' | head -n1)"
+        default_name="$(get_detected_ip)"
+    fi
+
+    # Get Root CA directory name (use provided name or detected IP as default)
+    while true; do
+        local prompt_text="Enter a name for the Root CA directory (e.g., IP or domain)"
+        if [[ -n "$default_name" ]]; then
+            root_ca_name="$(prompt_user "$prompt_text" "$default_name")"
+        else
+            root_ca_name="$(prompt_user "$prompt_text")"
         fi
 
-        while true; do
-            local prompt_text="Enter a name for the Root CA directory (e.g., IP or domain)"
-            if [[ -n "$detected_ip" ]]; then
-                root_ca_name="$(prompt_user "$prompt_text" "$detected_ip")"
-            else
-                root_ca_name="$(prompt_user "$prompt_text")"
-            fi
-
-            if [[ -n "$root_ca_name" ]]; then
-                break
-            fi
-            echo "Root CA name cannot be empty."
-        done
-    fi
+        if [[ -n "$root_ca_name" ]]; then
+            break
+        fi
+        echo "Root CA name cannot be empty."
+    done
 
     local new_root_ca_dir="${CERTS_DIR}/${root_ca_name}"
 
@@ -930,9 +1069,9 @@ menu_with_root_ca() {
 
         local max_option=$new_ca_option
         if [[ $num_root_cas -gt 1 ]]; then
-            read -rp "Enter your choice (0-$max_option): " choice
+            read -rp "Enter your choice (0-$max_option): " choice || true
         else
-            read -rp "Enter your choice (0-$new_ca_option, or 8 for new Root CA): " choice
+            read -rp "Enter your choice (0-$new_ca_option, or 8 for new Root CA): " choice || true
         fi
 
         case "$choice" in
@@ -940,34 +1079,13 @@ menu_with_root_ca() {
                 # Generate server certificate
                 echo ""
 
-                # Detect local IP
                 local detected_ip
-                detected_ip="$(ip route get 1 2>/dev/null | awk '{for(i=1;i<=NF;i++)if($i=="src"){print $(i+1);exit}}')"
-                if [[ -z "$detected_ip" ]]; then
-                    detected_ip="$(ip -4 addr show 2>/dev/null | grep -oP '(?<=inet\s)\d+(\.\d+){3}' | grep -v '127.0.0.1' | head -n1)"
-                fi
-
+                detected_ip="$(get_detected_ip)"
                 local server_input
+
                 if [[ -n "$detected_ip" ]]; then
-                    # Prompt with detected IP as default
-                    read -rp "Use [$detected_ip] for server certificate? [Y/n]: " server_choice
-                    if [[ -z "$server_choice" ]] || [[ "$server_choice" =~ ^[Yy] ]]; then
-                        server_input="$detected_ip"
-                    else
-                        server_input="$server_choice"
-                        # If user typed "n", prompt for IP
-                        if [[ "$server_input" =~ ^[Nn]$ ]]; then
-                            while true; do
-                                server_input="$(prompt_user "Enter server IP address or domain" "$detected_ip")"
-                                if [[ -n "$server_input" ]]; then
-                                    break
-                                fi
-                                echo "Server name cannot be empty. Please try again."
-                            done
-                        fi
-                    fi
+                    server_input="$(prompt_user "Enter server IP address or domain" "$detected_ip")"
                 else
-                    # No IP detected, prompt normally
                     while true; do
                         server_input="$(prompt_user "Enter server IP address or domain" "")"
                         if [[ -n "$server_input" ]]; then
@@ -999,162 +1117,33 @@ menu_with_root_ca() {
                 fi
                 ;;
             8)
-                # Switch active Root CA (only if multiple exist)
                 if [[ $num_root_cas -gt 1 ]]; then
                     echo ""
-                    if prompt_select_root_ca_from_certs "${FOUND_ROOT_CAS[@]}"; then
+                    local select_result
+                    prompt_select_root_ca_from_certs "${FOUND_ROOT_CAS[@]}" || select_result=$?
+                    select_result="${select_result:-0}"
+                    if [[ $select_result -eq 0 ]]; then
                         print_message "success" "Switched to Root CA: $(basename "$ACTIVE_ROOT_CA_DIR")"
-                        # Refresh list
                         mapfile -t FOUND_ROOT_CAS < <(list_root_cas)
                         num_root_cas=${#FOUND_ROOT_CAS[@]}
-                    else
+                    elif [[ $select_result -eq 1 ]]; then
                         # User chose to create new Root CA
-                        create_new_root_ca_with_config
-                        # Refresh list after creation
+                        create_root_ca_from_menu
                         mapfile -t FOUND_ROOT_CAS < <(list_root_cas)
                         num_root_cas=${#FOUND_ROOT_CAS[@]}
                     fi
+                    # If return code 3 (Back), just continue to re-display menu
                 else
-                    # Fall through to new Root CA if only one exists
-                    print_message "info" "Creating new Root CA..."
-                    echo ""
-                    if [[ "$(prompt_yes_no "This will create a new Root CA directory. Continue?" "y")" == "yes" ]]; then
-                        echo ""
-                        echo "=== Root CA Configuration ==="
-                        echo "Press Enter for default values"
-
-                        local org_input
-                        local country_input
-                        local state_input
-                        local city_input
-                        local days_input
-
-                        org_input="$(prompt_user "Organization" "$SSL_ORG")"
-                        # Validate country code (2 characters)
-                        while true; do
-                            country_input="$(prompt_user "Country Code (2 letters)" "$SSL_COUNTRY")"
-                            if [[ ${#country_input} -eq 2 ]]; then
-                                break
-                            fi
-                            echo "Country code must be exactly 2 letters (e.g., IR, US, DE)"
-                        done
-                        state_input="$(prompt_user "State/Province" "$SSL_STATE")"
-                        city_input="$(prompt_user "City" "$SSL_CITY")"
-                        days_input="$(prompt_user "Validity in days" "$SSL_CA_DAYS")"
-
-                        # Validate days is a number
-                        if [[ ! "$days_input" =~ ^[0-9]+$ ]]; then
-                            echo "Invalid days value, using default: $SSL_CA_DAYS"
-                            days_input="$SSL_CA_DAYS"
-                        fi
-
-                        # Update globals for this creation
-                        local old_org="$SSL_ORG"
-                        local old_country="$SSL_COUNTRY"
-                        local old_state="$SSL_STATE"
-                        local old_city="$SSL_CITY"
-                        local old_days="$SSL_CA_DAYS"
-
-                        SSL_ORG="$org_input"
-                        SSL_COUNTRY="$country_input"
-                        SSL_STATE="$state_input"
-                        SSL_CITY="$city_input"
-                        SSL_CA_DAYS="$days_input"
-
-                        echo ""
-                        echo "  Organization: $SSL_ORG"
-                        echo "  Country: $SSL_COUNTRY"
-                        echo "  State: $SSL_STATE"
-                        echo "  City: $SSL_CITY"
-                        echo "  Validity: $SSL_CA_DAYS days"
-                        echo ""
-
-                        if [[ "$(prompt_yes_no "Create Root CA with these settings?" "y")" == "yes" ]]; then
-                            ssl_manager_create_root_ca "$org_input"
-                        fi
-
-                        # Restore defaults
-                        SSL_ORG="$old_org"
-                        SSL_COUNTRY="$old_country"
-                        SSL_STATE="$old_state"
-                        SSL_CITY="$old_city"
-                        SSL_CA_DAYS="$old_days"
-
-                        # Refresh list
-                        mapfile -t FOUND_ROOT_CAS < <(list_root_cas)
-                        num_root_cas=${#FOUND_ROOT_CAS[@]}
-                    fi
-                fi
-                ;;
-            9)
-                # Create new Root CA
-                echo ""
-                if [[ "$(prompt_yes_no "This will create a new Root CA directory. Continue?" "y")" == "yes" ]]; then
-                    echo ""
-                    echo "=== Root CA Configuration ==="
-                    echo "Press Enter for default values"
-
-                    local org_input
-                    local country_input
-                    local state_input
-                    local city_input
-                    local days_input
-
-                    org_input="$(prompt_user "Organization" "$SSL_ORG")"
-                    # Validate country code (2 characters)
-                    while true; do
-                        country_input="$(prompt_user "Country Code (2 letters)" "$SSL_COUNTRY")"
-                        if [[ ${#country_input} -eq 2 ]]; then
-                            break
-                        fi
-                        echo "Country code must be exactly 2 letters (e.g., IR, US, DE)"
-                    done
-                    state_input="$(prompt_user "State/Province" "$SSL_STATE")"
-                    city_input="$(prompt_user "City" "$SSL_CITY")"
-                    days_input="$(prompt_user "Validity in days" "$SSL_CA_DAYS")"
-
-                    # Validate days is a number
-                    if [[ ! "$days_input" =~ ^[0-9]+$ ]]; then
-                        echo "Invalid days value, using default: $SSL_CA_DAYS"
-                        days_input="$SSL_CA_DAYS"
-                    fi
-
-                    # Update globals for this creation
-                    local old_org="$SSL_ORG"
-                    local old_country="$SSL_COUNTRY"
-                    local old_state="$SSL_STATE"
-                    local old_city="$SSL_CITY"
-                    local old_days="$SSL_CA_DAYS"
-
-                    SSL_ORG="$org_input"
-                    SSL_COUNTRY="$country_input"
-                    SSL_STATE="$state_input"
-                    SSL_CITY="$city_input"
-                    SSL_CA_DAYS="$days_input"
-
-                    echo ""
-                    echo "  Organization: $SSL_ORG"
-                    echo "  Country: $SSL_COUNTRY"
-                    echo "  State: $SSL_STATE"
-                    echo "  City: $SSL_CITY"
-                    echo "  Validity: $SSL_CA_DAYS days"
-                    echo ""
-
-                    if [[ "$(prompt_yes_no "Create Root CA with these settings?" "y")" == "yes" ]]; then
-                        ssl_manager_create_root_ca "$org_input"
-                    fi
-
-                    # Restore defaults
-                    SSL_ORG="$old_org"
-                    SSL_COUNTRY="$old_country"
-                    SSL_STATE="$old_state"
-                    SSL_CITY="$old_city"
-                    SSL_CA_DAYS="$old_days"
-
-                    # Refresh list
+                    # Only one Root CA, create new
+                    create_root_ca_from_menu
                     mapfile -t FOUND_ROOT_CAS < <(list_root_cas)
                     num_root_cas=${#FOUND_ROOT_CAS[@]}
                 fi
+                ;;
+            9)
+                create_root_ca_from_menu
+                mapfile -t FOUND_ROOT_CAS < <(list_root_cas)
+                num_root_cas=${#FOUND_ROOT_CAS[@]}
                 ;;
             0)
                 print_message "info" "Exiting..."
@@ -1188,40 +1177,26 @@ Root CA: Not Available
 
 EOF
 
-        read -rp "Enter your choice (1-2): " choice
+        read -rp "Enter your choice (1-2): " choice || true
 
         case "$choice" in
             1)
-                echo ""
-                echo "=== Root CA Configuration ==="
-                echo "Press Enter for default values"
-
-                local org_input
-                local country_input
-                local state_input
-                local city_input
-                local days_input
-
-                org_input="$(prompt_user "Organization" "$SSL_ORG")"
-                # Validate country code (2 characters)
-                while true; do
-                    country_input="$(prompt_user "Country Code (2 letters)" "$SSL_COUNTRY")"
-                    if [[ ${#country_input} -eq 2 ]]; then
-                        break
-                    fi
-                    echo "Country code must be exactly 2 letters (e.g., IR, US, DE)"
-                done
-                state_input="$(prompt_user "State/Province" "$SSL_STATE")"
-                city_input="$(prompt_user "City" "$SSL_CITY")"
-                days_input="$(prompt_user "Validity in days" "$SSL_CA_DAYS")"
-
-                # Validate days is a number
-                if [[ ! "$days_input" =~ ^[0-9]+$ ]]; then
-                    echo "Invalid days value, using default: $SSL_CA_DAYS"
-                    days_input="$SSL_CA_DAYS"
+                if [[ "$(prompt_yes_no "This will create a new Root CA directory. Continue?" "y")" != "yes" ]]; then
+                    continue
                 fi
 
-                # Update globals for this creation
+                local config
+                config="$(prompt_root_ca_config)" || true
+
+                # Parse config safely
+                local org_input country_input state_input city_input days_input
+                org_input="$(echo "$config" | cut -d'|' -f1)"
+                country_input="$(echo "$config" | cut -d'|' -f2)"
+                state_input="$(echo "$config" | cut -d'|' -f3)"
+                city_input="$(echo "$config" | cut -d'|' -f4)"
+                days_input="$(echo "$config" | cut -d'|' -f5)"
+
+                # Save and restore globals
                 local old_org="$SSL_ORG"
                 local old_country="$SSL_COUNTRY"
                 local old_state="$SSL_STATE"
@@ -1234,27 +1209,14 @@ EOF
                 SSL_CITY="$city_input"
                 SSL_CA_DAYS="$days_input"
 
-                echo ""
-                echo "  Organization: $SSL_ORG"
-                echo "  Country: $SSL_COUNTRY"
-                echo "  State: $SSL_STATE"
-                echo "  City: $SSL_CITY"
-                echo "  Validity: $SSL_CA_DAYS days"
-                echo ""
-
                 if [[ "$(prompt_yes_no "Create Root CA with these settings?" "y")" == "yes" ]]; then
                     if ssl_manager_create_root_ca "$org_input"; then
-                        # Root CA created successfully, switch to main menu
                         print_message "success" "Root CA created. Switching to main menu..."
-                        echo ""
-
-                        # Restore defaults
                         SSL_ORG="$old_org"
                         SSL_COUNTRY="$old_country"
                         SSL_STATE="$old_state"
                         SSL_CITY="$old_city"
                         SSL_CA_DAYS="$old_days"
-
                         menu_with_root_ca
                         return
                     fi
@@ -1299,36 +1261,15 @@ menu_run_addon() {
         echo "You need to generate a server certificate before installing an addon."
         echo ""
 
-        # Detect local IP
         local detected_ip
-        detected_ip="$(ip route get 1 2>/dev/null | awk '{for(i=1;i<=NF;i++)if($i=="src"){print $(i+1);exit}}')"
-        if [[ -z "$detected_ip" ]]; then
-            detected_ip="$(ip -4 addr show 2>/dev/null | grep -oP '(?<=inet\s)\d+(\.\d+){3}' | grep -v '127.0.0.1' | head -n1)"
-        fi
-
+        detected_ip="$(get_detected_ip)"
         local new_server
+
         if [[ -n "$detected_ip" ]]; then
-            # Custom prompt: Enter/y = use detected IP, anything else = custom IP
-            read -rp "Use [$detected_ip] for server certificate? [Y/n]: " server_choice
-            if [[ -z "$server_choice" ]] || [[ "$server_choice" =~ ^[Yy] ]]; then
-                new_server="$detected_ip"
-            else
-                new_server="$server_choice"
-                # If user typed "n", prompt for IP
-                if [[ "$new_server" =~ ^[Nn]$ ]]; then
-                    while true; do
-                        new_server="$(prompt_user "Enter server IP address or domain" "$detected_ip")"
-                        if [[ -n "$new_server" ]]; then
-                            break
-                        fi
-                        echo "Server name cannot be empty. Please try again."
-                    done
-                fi
-            fi
+            new_server="$(prompt_user "Enter server IP address or domain" "$detected_ip")"
         else
-            # Loop until user enters a valid server name
             while true; do
-                new_server="$(prompt_user "Enter server IP address or domain" "$detected_ip")"
+                new_server="$(prompt_user "Enter server IP address or domain" "")"
                 if [[ -n "$new_server" ]]; then
                     break
                 fi
@@ -1362,20 +1303,16 @@ menu_run_addon() {
         echo "  $index) Create new server certificate"
         echo ""
 
-        read -rp "Select server (1-$index): " choice
+        read -rp "Select server (1-$index): " choice || true
 
         if [[ "$choice" -ge 1 ]] && [[ "$choice" -lt $index ]]; then
             selected_server="${servers[$((choice-1))]}"
         elif [[ "$choice" -eq $index ]]; then
             # Create new certificate
             local new_server
-            # Detect local IP for default suggestion
-            local detected_ip=""
-            detected_ip="$(ip route get 1 2>/dev/null | awk '{for(i=1;i<=NF;i++)if($i=="src"){print $(i+1);exit}}')"
-            if [[ -z "$detected_ip" ]]; then
-                detected_ip="$(ip -4 addr show 2>/dev/null | grep -oP '(?<=inet\s)\d+(\.\d+){3}' | grep -v '127.0.0.1' | head -n1)"
-            fi
-            # Loop until user enters a valid server name
+            local detected_ip
+            detected_ip="$(get_detected_ip)"
+
             while true; do
                 new_server="$(prompt_user "Enter server IP address or domain" "$detected_ip")"
                 if [[ -n "$new_server" ]]; then
@@ -1453,70 +1390,6 @@ initialize() {
 # ===========================================
 # NEW ROOT CA CREATION FUNCTION
 # ===========================================
-
-create_new_root_ca_with_config() {
-    print_message "info" "=== Root CA Configuration ==="
-    echo "Press Enter for default values"
-
-    local org_input
-    local country_input
-    local state_input
-    local city_input
-    local days_input
-
-    org_input="$(prompt_user "Organization" "$SSL_ORG")"
-    # Validate country code (2 characters)
-    while true; do
-        country_input="$(prompt_user "Country Code (2 letters)" "$SSL_COUNTRY")"
-        if [[ ${#country_input} -eq 2 ]]; then
-            break
-        fi
-        echo "Country code must be exactly 2 letters (e.g., IR, US, DE)"
-    done
-    state_input="$(prompt_user "State/Province" "$SSL_STATE")"
-    city_input="$(prompt_user "City" "$SSL_CITY")"
-    days_input="$(prompt_user "Validity in days" "$SSL_CA_DAYS")"
-
-    # Validate days is a number
-    if [[ ! "$days_input" =~ ^[0-9]+$ ]]; then
-        echo "Invalid days value, using default: $SSL_CA_DAYS"
-        days_input="$SSL_CA_DAYS"
-    fi
-
-    # Update globals for this creation
-    local old_org="$SSL_ORG"
-    local old_country="$SSL_COUNTRY"
-    local old_state="$SSL_STATE"
-    local old_city="$SSL_CITY"
-    local old_days="$SSL_CA_DAYS"
-
-    SSL_ORG="$org_input"
-    SSL_COUNTRY="$country_input"
-    SSL_STATE="$state_input"
-    SSL_CITY="$city_input"
-    SSL_CA_DAYS="$days_input"
-
-    echo ""
-    echo "  Organization: $SSL_ORG"
-    echo "  Country: $SSL_COUNTRY"
-    echo "  State: $SSL_STATE"
-    echo "  City: $SSL_CITY"
-    echo "  Validity: $SSL_CA_DAYS days"
-    echo ""
-
-    if [[ "$(prompt_yes_no "Create Root CA with these settings?" "y")" == "yes" ]]; then
-        ssl_manager_create_root_ca "$org_input"
-    fi
-
-    # Restore defaults
-    SSL_ORG="$old_org"
-    SSL_COUNTRY="$old_country"
-    SSL_STATE="$old_state"
-    SSL_CITY="$old_city"
-    SSL_CA_DAYS="$old_days"
-}
-
-# ===========================================
 # MAIN FUNCTION
 # ===========================================
 
@@ -1542,14 +1415,15 @@ main() {
             ACTIVE_ROOT_CA_DIR="${CERTS_DIR}/${FOUND_ROOT_CAS[0]}"
         elif [[ -z "$ACTIVE_ROOT_CA_DIR" ]]; then
             # Multiple Root CAs and none selected - prompt user
-            if ! prompt_select_root_ca_from_certs "${FOUND_ROOT_CAS[@]}"; then
+            local select_result
+            prompt_select_root_ca_from_certs "${FOUND_ROOT_CAS[@]}" || select_result=$?
+            select_result="${select_result:-0}"
+            if [[ $select_result -eq 1 ]]; then
                 # User chose to create new Root CA
-                # Prompt for Root CA configuration and create it directly
-                create_new_root_ca_with_config
-                # After creation, show menu with new Root CA
-                menu_with_root_ca
-                return
+                create_root_ca_from_menu
+                mapfile -t FOUND_ROOT_CAS < <(list_root_cas)
             fi
+            # If return code 0 (auto-selected) or 3 (Back), just continue to menu_with_root_ca
         fi
         menu_with_root_ca
     else
