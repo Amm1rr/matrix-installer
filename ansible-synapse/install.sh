@@ -11,13 +11,14 @@ ADDON_AUTHOR="Matrix Plus Team"
 # ===========================================
 # ENVIRONMENT VARIABLES FROM MAIN.SH
 # ===========================================
-# These variables are exported by main.sh:
-# SERVER_NAME - Matrix server identity (IP or domain)
-# SSL_CERT - Full chain certificate path
-# SSL_KEY - Private key path
-# ROOT_CA - Root CA certificate path
-# CERTS_DIR - Certificate directory
-# WORKING_DIR - Working directory
+# These variables are exported by main.sh before running this addon:
+#
+# SERVER_NAME="172.19.39.69"                    # Server IP or domain name
+# SSL_CERT="/path/to/certs/172.19.39.69/cert-full-chain.pem"  # Full chain certificate
+# SSL_KEY="/path/to/certs/172.19.39.69/server.key"            # SSL private key
+# ROOT_CA="/path/to/certs/rootCA.crt"                       # Root CA certificate
+# CERTS_DIR="/path/to/certs"                                # Certificates directory
+# WORKING_DIR="/path/to/script"                              # Script working directory
 # ===========================================
 
 set -e
