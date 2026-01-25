@@ -53,7 +53,7 @@
 
 ## 4. Refactor menu_with_root_ca() to use helpers (lines 861-1174)
 
-- [ ] Add styled header to `menu_with_root_ca()` - NOT IMPLEMENTED (menu already has custom format)
+- [x] Add styled header to `menu_with_root_ca()` - SKIPPED (menu already has custom format)
   - Call `print_menu_header()` at start of menu loop
   - Display: "Matrix Plus - Main Menu"
 

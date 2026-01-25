@@ -1,5 +1,6 @@
-## ADDED Requirements
-
+## Purpose
+Centralized helper functions for common operations in Matrix Plus installer.
+## Requirements
 ### Requirement: IP Detection Helper Function
 The system SHALL provide a centralized `get_detected_ip()` function that detects the local IP address using standard network utilities.
 
@@ -72,12 +73,3 @@ The system SHALL provide a `print_menu_header()` function that displays a styled
   - Closing box border: ╚══════════════════════════════════════════════════════════╝
 - **AND** title SHALL be centered within 58 character width
 
-## REMOVED Requirements
-
-### Requirement: Duplicate Root CA Configuration Function
-The `create_new_root_ca_with_config()` function is removed and replaced by `prompt_root_ca_config()` + `create_root_ca_from_menu()`.
-
-#### Scenario: Migration to new functions
-- **WHEN** code previously called `create_new_root_ca_with_config()`
-- **THEN** it SHALL now call `create_root_ca_from_menu()`
-- **AND** `create_root_ca_from_menu()` SHALL call `prompt_root_ca_config()` internally

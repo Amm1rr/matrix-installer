@@ -37,8 +37,6 @@ All user input prompts SHALL use the centralized helper functions (`prompt_user(
 - **THEN** the system SHALL use `prompt_yes_no()` function
 - **AND** display default choice as `[Y/n]` or `[y/N]`
 
-## MODIFIED Requirements
-
 ### Requirement: IP Detection in Prompts
 When prompting for server IP address or domain, the system SHALL automatically detect the local IP address and suggest it as the default value.
 
