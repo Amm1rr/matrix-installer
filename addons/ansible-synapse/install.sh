@@ -1005,14 +1005,8 @@ EOF
                 if [[ -z "$SERVER_IP" ]]; then
                     SERVER_IP="$(ip -4 addr show 2>/dev/null | grep -oP '(?<=inet\s)\d+(\.\d+){3}' | grep -v '127.0.0.1' | head -n1)"
                 fi
-                if [[ -z "$SERVER_IP" ]]; then
-                    SERVER_IP="$(prompt_user "Enter server IP address")"
-                else
-                    print_message "info" "Detected IP: $SERVER_IP"
-                    if [[ "$(prompt_yes_no "Use this IP?" "y")" != "yes" ]]; then
-                        SERVER_IP="$(prompt_user "Enter server IP address or domain")"
-                    fi
-                fi
+                # Prompt with detected IP as default
+                SERVER_IP="$(prompt_user "Enter server IP address or domain" "$SERVER_IP")"
 
                 SUDO_PASSWORD="$(prompt_user "Sudo password")"
                 break
