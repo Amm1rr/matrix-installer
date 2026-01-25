@@ -348,6 +348,14 @@ ssl_manager_create_root_ca() {
 
     print_message "success" "Root CA created (valid for $SSL_CA_DAYS days)"
 
+    # Show Root CA summary
+    echo ""
+    echo "=== Root CA Files ==="
+    echo "  Certificate directory: $CERTS_DIR"
+    echo "  Root CA certificate:   ${CERTS_DIR}/rootCA.crt"
+    echo "  Root CA private key:   ${CERTS_DIR}/rootCA.key"
+    echo ""
+
     cd "$WORKING_DIR"
     return 0
 }
