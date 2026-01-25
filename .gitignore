@@ -1,5 +1,8 @@
-certs
+addons/
+certs/
+openspec/
 *.crt
 *.key
 *.srl
 *.log
+matrix-docker-ansible-deploy/
