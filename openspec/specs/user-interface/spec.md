@@ -1,5 +1,5 @@
 ## Purpose
-User interface conventions and interaction patterns for the Matrix Plus installer.
+User interface conventions and interaction patterns for the Matrix Installer installer.
 ## Requirements
 ### Requirement: Back to Main Menu Option
 All selection menus SHALL provide an option to return to the main menu without making a selection.

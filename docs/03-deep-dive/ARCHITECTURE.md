@@ -1,10 +1,10 @@
-# Matrix Plus Architecture
+# Matrix Installer Architecture
 
-This document explains how Matrix Plus works internally. Understanding the architecture helps with troubleshooting, extending the system, and contributing to development.
+This document explains how Matrix Installer works internally. Understanding the architecture helps with troubleshooting, extending the system, and contributing to development.
 
 ## High-Level Overview
 
-Matrix Plus is a modular installation system for Matrix homeservers. It handles the complex certificate management that enables federation between servers, then delegates the actual installation to specialized addons.
+Matrix Installer is a modular installation system for Matrix homeservers. It handles the complex certificate management that enables federation between servers, then delegates the actual installation to specialized addons.
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
@@ -561,6 +561,6 @@ fi
 
 ## Conclusion
 
-Matrix Plus is designed to be simple, modular, and understandable. The architecture follows the Unix philosophy: do one thing well (certificate management) and delegate the rest (installation) to specialized tools (addons).
+Matrix Installer is designed to be simple, modular, and understandable. The architecture follows the Unix philosophy: do one thing well (certificate management) and delegate the rest (installation) to specialized tools (addons).
 
 For implementation details, see the source code in `main.sh`. For extension details, see the [Addon Development Guide](ADDON_DEVELOPMENT_GUIDE.md).

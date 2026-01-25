@@ -6,7 +6,7 @@
 ADDON_NAME="ansible-synapse"
 ADDON_VERSION="1.0.0"
 ADDON_DESCRIPTION="Self-contained Ansible module for Synapse homeserver installation"
-ADDON_AUTHOR="Matrix Plus Team"
+ADDON_AUTHOR="Matrix Installer Team"
 
 # ===========================================
 # ENVIRONMENT VARIABLES FROM MAIN.SH

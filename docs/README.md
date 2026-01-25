@@ -1,12 +1,12 @@
-# Matrix Plus Documentation
+# Matrix Installer Documentation
 
-This documentation is organized by how you plan to use Matrix Plus.
+This documentation is organized by how you plan to use Matrix Installer.
 
 ## Start Here
 
 Start with **[01-start/](01-start/)**
 
-- **[User Guide](01-start/USER_GUIDE.md)** - Complete guide for using Matrix Plus
+- **[User Guide](01-start/USER_GUIDE.md)** - Complete guide for using Matrix Installer
 - **[Quick Reference](01-start/QUICK_REFERENCE.md)** - Cheat sheet for common tasks
 
 <br>

@@ -185,8 +185,8 @@ curl "https://www.duckdns.org/update?domains=YOUR_SUBDOMAIN&token=YOUR_TOKEN&ip=
 
 ## License
 
-Part of Matrix Plus project.
+Part of Matrix Installer project.
 
 ## Author
 
-Matrix Plus Team
+Matrix Installer Team

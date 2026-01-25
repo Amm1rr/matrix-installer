@@ -4,7 +4,7 @@ This document describes the technical interface between `main.sh` and addons. Fo
 
 ## Overview
 
-Matrix Plus uses a modular addon system where each addon is a self-contained module invoked by `main.sh`. Communication happens through environment variables—no complex APIs or protocols needed.
+Matrix Installer uses a modular addon system where each addon is a self-contained module invoked by `main.sh`. Communication happens through environment variables—no complex APIs or protocols needed.
 
 ## Addon Structure
 

@@ -375,7 +375,7 @@ If issues persist:
 
 2. Check relevant documentation:
    - Synapse Federation Guide
-   - Matrix Plus User Guide
+   - Matrix Installer User Guide
    - Addon Interface Documentation
 
 3. Seek help from:

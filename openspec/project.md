@@ -1,7 +1,7 @@
 # Project Context
 
 ## Purpose
-Matrix Plus is a modular installation system for Matrix homeservers. Its primary goal is to simplify the deployment of private Matrix federated servers by handling complex SSL/TLS certificate management and delegating actual installation to specialized addons. The system uses a private Root CA approach to enable federation between self-hosted Matrix servers without requiring public certificate authorities.
+Matrix Installer is a modular installation system for Matrix homeservers. Its primary goal is to simplify the deployment of private Matrix federated servers by handling complex SSL/TLS certificate management and delegating actual installation to specialized addons. The system uses a private Root CA approach to enable federation between self-hosted Matrix servers without requiring public certificate authorities.
 
 ## Tech Stack
 - **Shell Script (Bash)** - Core orchestrator and certificate management
@@ -80,7 +80,7 @@ Matrix servers communicate using federation protocol which requires:
 3. Well-known federation endpoints (`/.well-known/matrix/server`)
 
 ### Private Certificate Authority
-Matrix Plus uses a private Root CA approach:
+Matrix Installer uses a private Root CA approach:
 - Each Root CA stored in its own directory (named by IP/domain)
 - Root CA valid for 3650 days (10 years) by default
 - Server certificates signed by private Root CA (1-year validity)

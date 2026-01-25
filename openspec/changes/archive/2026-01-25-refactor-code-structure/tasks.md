@@ -55,7 +55,7 @@
 
 - [x] Add styled header to `menu_with_root_ca()` - SKIPPED (menu already has custom format)
   - Call `print_menu_header()` at start of menu loop
-  - Display: "Matrix Plus - Main Menu"
+  - Display: "Matrix Installer - Main Menu"
 
 - [x] Simplify option 1 (Generate server certificate)
   - Use `get_detected_ip()` helper

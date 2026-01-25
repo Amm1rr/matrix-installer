@@ -372,8 +372,8 @@ This addon uses **Private Key SSL** from main.sh. Certificates are:
 
 ## License
 
-Part of Matrix Plus project.
+Part of Matrix Installer project.
 
 ## Author
 
-Matrix Plus Team
+Matrix Installer Team

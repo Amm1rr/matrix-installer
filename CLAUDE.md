@@ -23,7 +23,7 @@ Keep this managed block so 'openspec update' can refresh the instructions.
 
 ## Project Overview
 
-Matrix Plus is a modular installation system for Matrix homeservers. The project uses a private Root CA approach to enable federation between self-hosted Matrix servers without requiring public certificate authorities.
+Matrix Installer is a modular installation system for Matrix homeservers. The project uses a private Root CA approach to enable federation between self-hosted Matrix servers without requiring public certificate authorities.
 
 ## Running the Project
 

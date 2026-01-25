@@ -1,11 +1,11 @@
 #!/bin/bash
 
 # ===========================================
-# Matrix Plus - Private Key Matrix Installation System
+# Matrix Installer - Private Key Matrix Installation System
 # ===========================================
 
 # Application Metadata
-MATRIX_PLUS_NAME="Matrix Plus"
+MATRIX_PLUS_NAME="Matrix Installer"
 MATRIX_PLUS_VERSION="0.1.0"
 MATRIX_PLUS_DESCRIPTION="Private Key Installer"
 MATRIX_PLUS_BUILD_DATE="$(date +%Y-%m-%d)"
@@ -545,7 +545,7 @@ prompt_use_existing_root_ca() {
         selected_base="${ROOT_CA_FILES[0]}"
         echo ""
         print_message "info" "Root CA found at: ${ROOT_CA_SOURCE_PATH}/${selected_base}.{key,crt}"
-        if [[ "$(prompt_yes_no "Use this Root CA for Matrix Plus?" "n")" != "yes" ]]; then
+        if [[ "$(prompt_yes_no "Use this Root CA for ${MATRIX_PLUS_NAME}?" "n")" != "yes" ]]; then
             return 1
         fi
     else
@@ -1164,10 +1164,10 @@ menu_with_root_ca() {
 
 menu_without_root_ca() {
     while true; do
-        cat <<'EOF'
+        cat <<EOF
 
 ╔══════════════════════════════════════════════════════════╗
-║                  Matrix Plus - Main Menu                 ║
+║             ${MATRIX_PLUS_NAME} - Main Menu               ║
 ╚══════════════════════════════════════════════════════════╝
 
 Root CA: Not Available

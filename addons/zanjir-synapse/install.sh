@@ -6,7 +6,7 @@
 ADDON_NAME="zanjir-synapse"
 ADDON_VERSION="0.1.0"
 ADDON_DESCRIPTION="Placeholder for future Zanjir-based Synapse deployment module (NOT YET IMPLEMENTED)"
-ADDON_AUTHOR="Matrix Plus Team"
+ADDON_AUTHOR="Matrix Installer Team"
 
 # ===========================================
 # ENVIRONMENT VARIABLES FROM MAIN.SH

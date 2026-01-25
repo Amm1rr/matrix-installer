@@ -1,12 +1,12 @@
-# Matrix Plus User Guide
+# Matrix Installer User Guide
 
-Welcome to Matrix Plus. This guide will walk you through everything you need to know to set up your own Matrix homeserver using this system.
+Welcome to Matrix Installer. This guide will walk you through everything you need to know to set up your own Matrix homeserver using this system.
 
-## What is Matrix Plus?
+## What is Matrix Installer?
 
-Matrix Plus is a tool that makes it easier to install Matrix homeservers by handling the complicated parts—specifically, managing SSL certificates so your servers can talk to each other securely. It uses a modular system called "addons," so you can choose how you want to install Matrix.
+Matrix Installer is a tool that makes it easier to install Matrix homeservers by handling the complicated parts—specifically, managing SSL certificates so your servers can talk to each other securely. It uses a modular system called "addons," so you can choose how you want to install Matrix.
 
-Think of it this way: Matrix Plus is like a project manager that coordinates everything, and the addons are the specialists who do the actual work.
+Think of it this way: Matrix Installer is like a project manager that coordinates everything, and the addons are the specialists who do the actual work.
 
 ## The Basic Idea
 
@@ -22,7 +22,7 @@ The beauty of this approach is that when you use the same Root CA for multiple s
 
 ### Step 1: Run the Script
 
-Open your terminal and navigate to where you have Matrix Plus:
+Open your terminal and navigate to where you have Matrix Installer:
 
 ```bash
 cd /path/to/matrix-second/script
@@ -94,23 +94,23 @@ These files are stored in `certs/<your-server-ip-or-domain>/` so you can have ce
 
 Now go back to the main menu (it returns automatically after creating a certificate). Choose the addon you want to use. Let's say you pick `ansible-synapse` (option 2):
 
-The addon will take over from here. It already knows where your certificates are because Matrix Plus passes that information to it automatically. The addon will:
+The addon will take over from here. It already knows where your certificates are because Matrix Installer passes that information to it automatically. The addon will:
 
 1. Check that you have the necessary tools (Ansible, Docker, etc.)
 2. Ask you a few questions about how you want to install
 3. Do the actual installation
 
-Each addon is different, but they all follow this same pattern of getting the certificate information from Matrix Plus.
+Each addon is different, but they all follow this same pattern of getting the certificate information from Matrix Installer.
 
 ## Using an Existing Root CA
 
-If you already have a Root CA from another Matrix Plus installation (or you created one separately), you can reuse it. Just place `rootCA.key` and `rootCA.crt` in the same directory as `main.sh` before running it.
+If you already have a Root CA from another Matrix Installer installation (or you created one separately), you can reuse it. Just place `rootCA.key` and `rootCA.crt` in the same directory as `main.sh` before running it.
 
 When you start the script, you'll see:
 
 ```
 [INFO] Root CA found at: /path/to/script
-Use this Root CA for Matrix Plus? [y/N]:
+Use this Root CA for Matrix Installer? [y/N]:
 ```
 
 Type `y` to use it. This is useful when:
@@ -120,7 +120,7 @@ Type `y` to use it. This is useful when:
 
 ## Working with Multiple Servers
 
-One of the powerful features of Matrix Plus is managing certificates for multiple servers. Each server gets its own folder in `certs/`:
+One of the powerful features of Matrix Installer is managing certificates for multiple servers. Each server gets its own folder in `certs/`:
 
 ```
 certs/
@@ -154,7 +154,7 @@ Addons are the actual installation methods. Here's what you'll typically find:
 
 - **zanjir-synapse**: A placeholder for the Zanjir project (currently under development).
 
-The great thing about this system is that anyone can write an addon. If you have a specific way you want to install Matrix, you can create your own addon and drop it in the `addons/` folder—Matrix Plus will automatically find it and add it to the menu.
+The great thing about this system is that anyone can write an addon. If you have a specific way you want to install Matrix, you can create your own addon and drop it in the `addons/` folder—Matrix Installer will automatically find it and add it to the menu.
 
 ## After Installation
 
@@ -187,7 +187,7 @@ For most people, **ansible-synapse** is the best choice. It's based on the offic
 
 ### Do I need a domain name?
 
-No, you can use an IP address. This is actually one of the main benefits of Matrix Plus—it's designed to work perfectly with IP addresses for private network setups. If you do have a domain, the system works with that too.
+No, you can use an IP address. This is actually one of the main benefits of Matrix Installer—it's designed to work perfectly with IP addresses for private network setups. If you do have a domain, the system works with that too.
 
 ### Is this secure?
 
@@ -197,7 +197,7 @@ Yes, provided you:
 - Use strong passwords for your admin accounts
 - Keep your server updated
 
-The certificates Matrix Plus generates are just as secure as ones from a commercial certificate authority—they're just not trusted by default in web browsers, which is why you get the security warning.
+The certificates Matrix Installer generates are just as secure as ones from a commercial certificate authority—they're just not trusted by default in web browsers, which is why you get the security warning.
 
 ### Can I change my certificates later?
 
@@ -232,4 +232,4 @@ If you run into issues:
 
 ---
 
-Matrix Plus is designed to make Matrix server installation approachable while still giving you full control over your infrastructure. Take it step by step, and don't hesitate to experiment—that's what the sandbox is for.
+Matrix Installer is designed to make Matrix server installation approachable while still giving you full control over your infrastructure. Take it step by step, and don't hesitate to experiment—that's what the sandbox is for.

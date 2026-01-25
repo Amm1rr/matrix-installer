@@ -1,5 +1,5 @@
 ## Purpose
-Centralized helper functions for common operations in Matrix Plus installer.
+Centralized helper functions for common operations in Matrix Installer installer.
 ## Requirements
 ### Requirement: IP Detection Helper Function
 The system SHALL provide a centralized `get_detected_ip()` function that detects the local IP address using standard network utilities.

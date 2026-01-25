@@ -1,6 +1,6 @@
 # Addon Development Guide
 
-This guide shows you how to create addons for Matrix Plus. Addons are how you extend the system to install Matrix in different ways—whether that's using Ansible, Docker Compose, or something entirely custom.
+This guide shows you how to create addons for Matrix Installer. Addons are how you extend the system to install Matrix in different ways—whether that's using Ansible, Docker Compose, or something entirely custom.
 
 ## What is an Addon?
 
@@ -478,7 +478,7 @@ Before considering your addon complete, test it:
 3. **Idempotency**: Run it twice and make sure it doesn't break
 4. **Error handling**: Intentionally break things (wrong paths, missing files) and see how it handles errors
 
-## Getting Your Addon into Matrix Plus
+## Getting Your Addon into Matrix Installer
 
 Once your addon is working:
 
@@ -556,4 +556,4 @@ detect_os() {
 
 ---
 
-Now you know everything you need to create addons for Matrix Plus. Start simple, test thoroughly, and don't hesitate to look at the existing addons for inspiration. Happy coding!
+Now you know everything you need to create addons for Matrix Installer. Start simple, test thoroughly, and don't hesitate to look at the existing addons for inspiration. Happy coding!

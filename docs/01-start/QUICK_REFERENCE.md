@@ -1,6 +1,6 @@
-# Matrix Plus Quick Reference
+# Matrix Installer Quick Reference
 
-This is a quick reference guide for Matrix Plus. For complete documentation, see the [User Guide](USER_GUIDE.md).
+This is a quick reference guide for Matrix Installer. For complete documentation, see the [User Guide](USER_GUIDE.md).
 
 ## Quick Start
 

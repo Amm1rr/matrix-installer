@@ -6,7 +6,7 @@ This guide walks you through exactly what `main.sh` does behind the scenes when 
 
 Matrix federation between servers requires SSL/TLS certificates. Normally, you'd use a service like Let's Encrypt to get these certificates automatically. But what if you don't have a domain name? Or you're on a private network? Or you want full control over your certificate infrastructure?
 
-That's where having your own Certificate Authority (CA) comes in. You become your own little certificate company, issuing certificates that all your servers trust. This is exactly what Matrix Plus does for you.
+That's where having your own Certificate Authority (CA) comes in. You become your own little certificate company, issuing certificates that all your servers trust. This is exactly what Matrix Installer does for you.
 
 ## The Big Picture
 
