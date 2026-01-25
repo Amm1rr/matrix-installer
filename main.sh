@@ -1070,7 +1070,7 @@ menu_with_root_ca() {
                         echo ""
 
                         if [[ "$(prompt_yes_no "Create Root CA with these settings?" "y")" == "yes" ]]; then
-                            ssl_manager_create_root_ca
+                            ssl_manager_create_root_ca "$org_input"
                         fi
 
                         # Restore defaults
@@ -1141,7 +1141,7 @@ menu_with_root_ca() {
                     echo ""
 
                     if [[ "$(prompt_yes_no "Create Root CA with these settings?" "y")" == "yes" ]]; then
-                        ssl_manager_create_root_ca
+                        ssl_manager_create_root_ca "$org_input"
                     fi
 
                     # Restore defaults
@@ -1243,7 +1243,7 @@ EOF
                 echo ""
 
                 if [[ "$(prompt_yes_no "Create Root CA with these settings?" "y")" == "yes" ]]; then
-                    if ssl_manager_create_root_ca; then
+                    if ssl_manager_create_root_ca "$org_input"; then
                         # Root CA created successfully, switch to main menu
                         print_message "success" "Root CA created. Switching to main menu..."
                         echo ""
@@ -1505,7 +1505,7 @@ create_new_root_ca_with_config() {
     echo ""
 
     if [[ "$(prompt_yes_no "Create Root CA with these settings?" "y")" == "yes" ]]; then
-        ssl_manager_create_root_ca
+        ssl_manager_create_root_ca "$org_input"
     fi
 
     # Restore defaults
