@@ -449,6 +449,18 @@ EOF
 
     print_message "success" "Server certificate created for: $server_name"
 
+    # Show certificate summary
+    echo ""
+    echo "=== Certificate Files ==="
+    echo "  Certificate directory: $server_cert_dir"
+    echo "  Private key:          ${server_cert_dir}/server.key"
+    echo "  Full chain cert:      ${server_cert_dir}/cert-full-chain.pem"
+    echo "  Server cert:          ${server_cert_dir}/server.crt"
+    echo ""
+    echo "  Root CA:              ${CERTS_DIR}/rootCA.crt"
+    echo "  Root CA key:          ${CERTS_DIR}/rootCA.key"
+    echo ""
+
     cd "$WORKING_DIR"
     return 0
 }
