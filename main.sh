@@ -48,6 +48,7 @@ ROOT_CA_DETECTED=""
 ROOT_CA_SOURCE_PATH=""
 SERVER_NAME=""
 ACTIVE_SERVER=""  # Currently selected server for addon installation
+ACTIVE_ROOT_CA_DIR=""  # Currently active Root CA directory
 
 # ===========================================
 # HELPER FUNCTIONS
@@ -151,12 +152,77 @@ is_ip_address() {
 }
 
 # ===========================================
+# ROOT CA HELPER FUNCTIONS
+# ===========================================
+
+get_active_root_ca_dir() {
+    echo "$ACTIVE_ROOT_CA_DIR"
+}
+
+set_active_root_ca() {
+    local root_ca_dir="$1"
+    ACTIVE_ROOT_CA_DIR="$root_ca_dir"
+}
+
+list_root_cas() {
+    local root_cas=()
+
+    # Check all subdirectories in certs/
+    for dir in "${CERTS_DIR}"/*/; do
+        if [[ -d "$dir" ]]; then
+            local root_ca_name
+            root_ca_name="$(basename "$dir")"
+
+            # Skip if not a Root CA directory (must have rootCA.key)
+            if [[ -f "${dir}/rootCA.key" ]] && [[ -f "${dir}/rootCA.crt" ]]; then
+                root_cas+=("$root_ca_name")
+            fi
+        fi
+    done
+
+    # Return list (only if we have Root CAs)
+    if [[ ${#root_cas[@]} -gt 0 ]]; then
+        printf '%s\n' "${root_cas[@]}"
+    fi
+}
+
+detect_root_ca_files_next_to_script() {
+    local found_pairs=()
+
+    # Find all .key/.crt pairs in SCRIPT_DIR
+    for key_file in "${SCRIPT_DIR}"/*.key; do
+        if [[ -f "$key_file" ]]; then
+            local base_name
+            base_name="$(basename "$key_file" .key)"
+            local cert_file="${SCRIPT_DIR}/${base_name}.crt"
+
+            # Check if matching .crt exists
+            if [[ -f "$cert_file" ]]; then
+                found_pairs+=("$base_name")
+            fi
+        fi
+    done
+
+    # Return list
+    if [[ ${#found_pairs[@]} -gt 0 ]]; then
+        printf '%s\n' "${found_pairs[@]}"
+    fi
+}
+
+# ===========================================
 # SERVER CERTIFICATE HELPER FUNCTIONS
 # ===========================================
 
 get_server_cert_dir() {
     local server_name="$1"
-    echo "${CERTS_DIR}/${server_name}"
+    local root_ca_dir="${2:-${ACTIVE_ROOT_CA_DIR}}"
+
+    if [[ -z "$root_ca_dir" ]]; then
+        echo "${CERTS_DIR}/${server_name}"
+        return
+    fi
+
+    echo "${root_ca_dir}/servers/${server_name}"
 }
 
 server_has_certs() {
@@ -171,9 +237,14 @@ server_has_certs() {
 
 list_servers_with_certs() {
     local servers=()
+    local root_ca_dir="${1:-${ACTIVE_ROOT_CA_DIR}}"
 
-    # Check all subdirectories in certs/
-    for dir in "${CERTS_DIR}"/*/; do
+    if [[ -z "$root_ca_dir" ]] || [[ ! -d "$root_ca_dir/servers" ]]; then
+        return
+    fi
+
+    # Check all subdirectories in active Root CA's servers/ directory
+    for dir in "${root_ca_dir}/servers"/*/; do
         if [[ -d "$dir" ]]; then
             local server_name
             server_name="$(basename "$dir")"
@@ -196,7 +267,8 @@ list_servers_with_certs() {
 # ===========================================
 
 get_root_ca_info() {
-    local root_ca_cert="${CERTS_DIR}/rootCA.crt"
+    local root_ca_dir="${1:-${ACTIVE_ROOT_CA_DIR}}"
+    local root_ca_cert="${root_ca_dir}/rootCA.crt"
 
     if [[ ! -f "$root_ca_cert" ]]; then
         return 1
@@ -267,19 +339,89 @@ ssl_manager_init() {
     # Create certs directory
     mkdir -p "$CERTS_DIR"
 
-    # Detect Root CA next to main.sh
-    detect_root_ca
+    # Detect Root CA files next to main.sh
+    detect_root_ca_files
 }
 
-detect_root_ca() {
+detect_root_ca_files() {
     ROOT_CA_DETECTED="false"
     ROOT_CA_SOURCE_PATH=""
+    ROOT_CA_FILES=()  # Array to store found Root CA file names
 
-    # Check for Root CA next to main.sh
-    if [[ -f "${SCRIPT_DIR}/rootCA.key" ]] && [[ -f "${SCRIPT_DIR}/rootCA.crt" ]]; then
+    # Find all .key/.crt pairs next to main.sh
+    mapfile -t ROOT_CA_FILES < <(detect_root_ca_files_next_to_script)
+
+    if [[ ${#ROOT_CA_FILES[@]} -gt 0 ]]; then
         ROOT_CA_DETECTED="true"
         ROOT_CA_SOURCE_PATH="$SCRIPT_DIR"
     fi
+}
+
+prompt_select_root_ca_from_files() {
+    local found_files=("$@")
+
+    if [[ ${#found_files[@]} -eq 0 ]]; then
+        return 1
+    fi
+
+    echo ""
+    print_message "info" "Multiple Root CA files found next to script:"
+    echo ""
+
+    # Display each Root CA with info
+    local index=1
+    for base_name in "${found_files[@]}"; do
+        local cert_file="${SCRIPT_DIR}/${base_name}.crt"
+
+        # Get certificate info
+        local subject="Unknown"
+        local expiry="Unknown"
+        local days="Unknown"
+
+        if [[ -f "$cert_file" ]]; then
+            subject=$(openssl x509 -in "$cert_file" -noout -subject 2>/dev/null | grep -o 'CN=[^,]*' | cut -d'=' -f2)
+            subject="${subject:-Unknown}"
+
+            local expiry_date
+            expiry_date=$(openssl x509 -in "$cert_file" -noout -enddate 2>/dev/null | cut -d'=' -f2)
+
+            if command -v date &> /dev/null && [[ -n "$expiry_date" ]]; then
+                local expiry_epoch
+                expiry_epoch=$(date -d "$expiry_date" +%s 2>/dev/null)
+                if [[ -n "$expiry_epoch" ]]; then
+                    local current_epoch
+                    current_epoch=$(date +%s)
+                    local seconds_diff=$((expiry_epoch - current_epoch))
+                    if [[ $seconds_diff -gt 0 ]]; then
+                        days=$((seconds_diff / 86400))
+                        expiry=$(date -d "$expiry_date" "+%Y-%m-%d" 2>/dev/null || echo "$expiry_date")
+                    else
+                        days="expired"
+                    fi
+                fi
+            fi
+        fi
+
+        echo "  $index) ${base_name} - ${subject} (expires: ${expiry}, ${days} days)"
+        ((index++))
+    done
+
+    echo "  $index) Skip and use Root CAs from certs/"
+    echo ""
+
+    while true; do
+        read -rp "Select which Root CA to use (1-$index): " choice
+
+        if [[ "$choice" -ge 1 ]] && [[ "$choice" -lt $index ]]; then
+            local selected_base="${found_files[$((choice-1))]}"
+            echo "$selected_base"
+            return 0
+        elif [[ "$choice" -eq $index ]]; then
+            return 1
+        else
+            print_message "error" "Invalid choice"
+        fi
+    done
 }
 
 prompt_use_existing_root_ca() {
@@ -287,53 +429,197 @@ prompt_use_existing_root_ca() {
         return 1
     fi
 
-    echo ""
-    print_message "info" "Root CA found at: ${ROOT_CA_SOURCE_PATH}"
-    if [[ "$(prompt_yes_no "Use this Root CA for Matrix Plus?" "n")" == "yes" ]]; then
-        # Check if files already exist in certs/ and warn user
-        if [[ -f "${CERTS_DIR}/rootCA.key" ]] || [[ -f "${CERTS_DIR}/rootCA.crt" ]]; then
-            echo ""
-            print_message "warning" "Root CA files already exist in certs/ directory!"
-            print_message "warning" "They will be overwritten with files from: ${ROOT_CA_SOURCE_PATH}"
-            echo ""
-            if [[ "$(prompt_yes_no "Continue with overwrite?" "y")" != "yes" ]]; then
-                print_message "info" "Skipped copying Root CA"
-                return 1
-            fi
+    local selected_base=""
+
+    # If multiple Root CA files found, prompt for selection
+    if [[ ${#ROOT_CA_FILES[@]} -gt 1 ]]; then
+        selected_base="$(prompt_select_root_ca_from_files "${ROOT_CA_FILES[@]}")"
+        if [[ -z "$selected_base" ]]; then
+            print_message "info" "Skipping Root CA files next to script"
+            return 1
         fi
-
-        # Copy to certs/
-        cp "${ROOT_CA_SOURCE_PATH}/rootCA.key" "${CERTS_DIR}/rootCA.key"
-        cp "${ROOT_CA_SOURCE_PATH}/rootCA.crt" "${CERTS_DIR}/rootCA.crt"
-
-        # Copy .srl if exists
-        if [[ -f "${ROOT_CA_SOURCE_PATH}/rootCA.srl" ]]; then
-            cp "${ROOT_CA_SOURCE_PATH}/rootCA.srl" "${CERTS_DIR}/rootCA.srl"
+    elif [[ ${#ROOT_CA_FILES[@]} -eq 1 ]]; then
+        selected_base="${ROOT_CA_FILES[0]}"
+        echo ""
+        print_message "info" "Root CA found at: ${ROOT_CA_SOURCE_PATH}/${selected_base}.{key,crt}"
+        if [[ "$(prompt_yes_no "Use this Root CA for Matrix Plus?" "n")" != "yes" ]]; then
+            return 1
         fi
+    else
+        return 1
+    fi
 
-        chmod 600 "${CERTS_DIR}/rootCA.key"
-        chmod 644 "${CERTS_DIR}/rootCA.crt"
+    # Get Root CA directory name from user
+    local root_ca_name=""
+    while true; do
+        root_ca_name="$(prompt_user "Enter a name for this Root CA directory (e.g., IP or domain)")"
+        if [[ -n "$root_ca_name" ]]; then
+            break
+        fi
+        echo "Root CA name cannot be empty."
+    done
 
-        print_message "success" "Root CA copied to certs/"
+    local new_root_ca_dir="${CERTS_DIR}/${root_ca_name}"
+
+    # Check if directory already exists
+    if [[ -d "$new_root_ca_dir" ]]; then
+        print_message "warning" "Directory ${root_ca_name} already exists!"
+        if [[ "$(prompt_yes_no "Backup existing and create new?" "y")" == "yes" ]]; then
+            local backup_name="${root_ca_name}.backup-$(date +%Y%m%d-%H%M%S)"
+            mv "$new_root_ca_dir" "${CERTS_DIR}/${backup_name}"
+            print_message "info" "Backed up to: ${backup_name}"
+        else
+            print_message "info" "Skipped copying Root CA"
+            return 1
+        fi
+    fi
+
+    # Create new Root CA directory structure
+    mkdir -p "$new_root_ca_dir/servers"
+
+    # Copy Root CA files
+    cp "${ROOT_CA_SOURCE_PATH}/${selected_base}.key" "${new_root_ca_dir}/rootCA.key"
+    cp "${ROOT_CA_SOURCE_PATH}/${selected_base}.crt" "${new_root_ca_dir}/rootCA.crt"
+
+    # Copy .srl if exists
+    if [[ -f "${ROOT_CA_SOURCE_PATH}/${selected_base}.srl" ]]; then
+        cp "${ROOT_CA_SOURCE_PATH}/${selected_base}.srl" "${new_root_ca_dir}/rootCA.srl"
+    fi
+
+    chmod 600 "${new_root_ca_dir}/rootCA.key"
+    chmod 644 "${new_root_ca_dir}/rootCA.crt"
+
+    # Set as active Root CA
+    ACTIVE_ROOT_CA_DIR="$new_root_ca_dir"
+
+    print_message "success" "Root CA copied to: ${new_root_ca_dir}"
+    return 0
+}
+
+prompt_select_root_ca_from_certs() {
+    local root_cas=("$@")
+
+    if [[ ${#root_cas[@]} -eq 0 ]]; then
+        return 1
+    fi
+
+    # If only one Root CA, auto-select it
+    if [[ ${#root_cas[@]} -eq 1 ]]; then
+        local root_ca_name="${root_cas[0]}"
+        ACTIVE_ROOT_CA_DIR="${CERTS_DIR}/${root_ca_name}"
         return 0
     fi
 
-    return 1
+    echo ""
+    print_message "info" "Multiple Root CAs found in certs/:"
+    echo ""
+
+    # Display each Root CA with info
+    local index=1
+    for root_ca_name in "${root_cas[@]}"; do
+        local root_ca_dir="${CERTS_DIR}/${root_ca_name}"
+        local root_ca_cert="${root_ca_dir}/rootCA.crt"
+
+        # Get certificate info
+        local subject="Unknown"
+        local expiry="Unknown"
+        local days="Unknown"
+
+        if [[ -f "$root_ca_cert" ]]; then
+            subject=$(openssl x509 -in "$root_ca_cert" -noout -subject 2>/dev/null | grep -o 'CN=[^,]*' | cut -d'=' -f2)
+            subject="${subject:-${root_ca_name}}"
+
+            local expiry_date
+            expiry_date=$(openssl x509 -in "$root_ca_cert" -noout -enddate 2>/dev/null | cut -d'=' -f2)
+
+            if command -v date &> /dev/null && [[ -n "$expiry_date" ]]; then
+                local expiry_epoch
+                expiry_epoch=$(date -d "$expiry_date" +%s 2>/dev/null)
+                if [[ -n "$expiry_epoch" ]]; then
+                    local current_epoch
+                    current_epoch=$(date +%s)
+                    local seconds_diff=$((expiry_epoch - current_epoch))
+                    if [[ $seconds_diff -gt 0 ]]; then
+                        days=$((seconds_diff / 86400))
+                        expiry=$(date -d "$expiry_date" "+%Y-%m-%d" 2>/dev/null || echo "$expiry_date")
+                    else
+                        days="expired"
+                    fi
+                fi
+            fi
+        fi
+
+        echo "  $index) ${root_ca_name} - ${subject} (expires in ${days} days)"
+        ((index++))
+    done
+
+    echo "  $index) Create new Root CA"
+    echo ""
+
+    while true; do
+        read -rp "Select active Root CA (1-$index): " choice
+
+        if [[ "$choice" -ge 1 ]] && [[ "$choice" -lt $index ]]; then
+            local selected_root_ca="${root_cas[$((choice-1))]}"
+            ACTIVE_ROOT_CA_DIR="${CERTS_DIR}/${selected_root_ca}"
+            print_message "success" "Selected Root CA: ${selected_root_ca}"
+            return 0
+        elif [[ "$choice" -eq $index ]]; then
+            return 1  # User wants to create new
+        else
+            print_message "error" "Invalid choice"
+        fi
+    done
 }
 
 ssl_manager_create_root_ca() {
+    local root_ca_name="${1:-}"
+
     print_message "info" "Creating new Root CA..."
 
-    # Warn if overwriting
-    if [[ -f "${CERTS_DIR}/rootCA.key" ]] || [[ -f "${CERTS_DIR}/rootCA.crt" ]]; then
-        print_message "warning" "Existing Root CA found in certs/"
-        if [[ "$(prompt_yes_no "Overwrite existing Root CA?" "y")" != "yes" ]]; then
-            return 1
+    # Get Root CA directory name if not provided
+    if [[ -z "$root_ca_name" ]]; then
+        # Detect local IP for default suggestion
+        local detected_ip=""
+        detected_ip="$(ip route get 1 2>/dev/null | awk '{for(i=1;i<=NF;i++)if($i=="src"){print $(i+1);exit}}')"
+        if [[ -z "$detected_ip" ]]; then
+            detected_ip="$(ip -4 addr show 2>/dev/null | grep -oP '(?<=inet\s)\d+(\.\d+){3}' | grep -v '127.0.0.1' | head -n1)"
         fi
-        rm -f "${CERTS_DIR}/rootCA.key" "${CERTS_DIR}/rootCA.crt" "${CERTS_DIR}/rootCA.srl"
+
+        while true; do
+            local prompt_text="Enter a name for the Root CA directory (e.g., IP or domain)"
+            if [[ -n "$detected_ip" ]]; then
+                root_ca_name="$(prompt_user "$prompt_text" "$detected_ip")"
+            else
+                root_ca_name="$(prompt_user "$prompt_text")"
+            fi
+
+            if [[ -n "$root_ca_name" ]]; then
+                break
+            fi
+            echo "Root CA name cannot be empty."
+        done
     fi
 
-    cd "$CERTS_DIR" || return 1
+    local new_root_ca_dir="${CERTS_DIR}/${root_ca_name}"
+
+    # Check if directory already exists
+    if [[ -d "$new_root_ca_dir" ]]; then
+        print_message "warning" "Root CA directory already exists: ${root_ca_name}"
+        if [[ "$(prompt_yes_no "Backup existing and create new Root CA?" "y")" == "yes" ]]; then
+            local backup_name="${root_ca_name}.backup-$(date +%Y%m%d-%H%M%S)"
+            mv "$new_root_ca_dir" "${CERTS_DIR}/${backup_name}"
+            print_message "info" "Backed up to: ${backup_name}"
+        else
+            print_message "info" "Root CA creation cancelled"
+            return 1
+        fi
+    fi
+
+    # Create new Root CA directory structure
+    mkdir -p "$new_root_ca_dir/servers"
+
+    cd "$new_root_ca_dir" || return 1
 
     # Generate Root CA private key
     openssl genrsa -out rootCA.key 4096 2>/dev/null
@@ -346,14 +632,18 @@ ssl_manager_create_root_ca() {
 
     chmod 644 rootCA.crt
 
+    # Set as active Root CA
+    ACTIVE_ROOT_CA_DIR="$new_root_ca_dir"
+
     print_message "success" "Root CA created (valid for $SSL_CA_DAYS days)"
 
     # Show Root CA summary
     echo ""
     echo "=== Root CA Files ==="
-    echo "  Certificate directory: $CERTS_DIR"
-    echo "  Root CA certificate:   ${CERTS_DIR}/rootCA.crt"
-    echo "  Root CA private key:   ${CERTS_DIR}/rootCA.key"
+    echo "  Root CA directory:    ${new_root_ca_dir}"
+    echo "  Root CA certificate:   ${new_root_ca_dir}/rootCA.crt"
+    echo "  Root CA private key:   ${new_root_ca_dir}/rootCA.key"
+    echo "  Servers directory:     ${new_root_ca_dir}/servers/"
     echo ""
 
     cd "$WORKING_DIR"
@@ -362,18 +652,26 @@ ssl_manager_create_root_ca() {
 
 ssl_manager_generate_server_cert() {
     local server_name="$1"
+    local root_ca_dir="${2:-${ACTIVE_ROOT_CA_DIR}}"
 
-    print_message "info" "Generating server certificate for: $server_name"
-
-    # Check Root CA exists
-    if [[ ! -f "${CERTS_DIR}/rootCA.key" ]] || [[ ! -f "${CERTS_DIR}/rootCA.crt" ]]; then
-        print_message "error" "Root CA not found. Please create Root CA first."
+    # Check if Root CA is set
+    if [[ -z "$root_ca_dir" ]]; then
+        print_message "error" "No active Root CA. Please select or create a Root CA first."
         return 1
     fi
 
-    # Create server subdirectory
+    print_message "info" "Generating server certificate for: $server_name"
+    print_message "info" "Using Root CA: $(basename "$root_ca_dir")"
+
+    # Check Root CA exists
+    if [[ ! -f "${root_ca_dir}/rootCA.key" ]] || [[ ! -f "${root_ca_dir}/rootCA.crt" ]]; then
+        print_message "error" "Root CA not found in ${root_ca_dir}"
+        return 1
+    fi
+
+    # Create server subdirectory under active Root CA
     local server_cert_dir
-    server_cert_dir="$(get_server_cert_dir "$server_name")"
+    server_cert_dir="${root_ca_dir}/servers/${server_name}"
     mkdir -p "$server_cert_dir"
 
     # Check if certs already exist for this server
@@ -440,13 +738,13 @@ EOF
 
     # Sign with Root CA
     openssl x509 -req -in server.csr \
-        -CA "${CERTS_DIR}/rootCA.crt" -CAkey "${CERTS_DIR}/rootCA.key" \
+        -CA "${root_ca_dir}/rootCA.crt" -CAkey "${root_ca_dir}/rootCA.key" \
         -CAcreateserial -out server.crt \
         -days "$SSL_CERT_DAYS" -sha256 \
         -extensions v3_req -extfile openssl.cnf 2>/dev/null
 
     # Create full chain
-    cat server.crt "${CERTS_DIR}/rootCA.crt" > cert-full-chain.pem
+    cat server.crt "${root_ca_dir}/rootCA.crt" > cert-full-chain.pem
     chmod 644 server.crt cert-full-chain.pem
 
     # Cleanup
@@ -460,13 +758,14 @@ EOF
     # Show certificate summary
     echo ""
     echo "=== Certificate Files ==="
-    echo "  Certificate directory: $server_cert_dir"
+    echo "  Root CA directory:     ${root_ca_dir}"
+    echo "  Server cert directory: ${server_cert_dir}"
     echo "  Private key:          ${server_cert_dir}/server.key"
     echo "  Full chain cert:      ${server_cert_dir}/cert-full-chain.pem"
     echo "  Server cert:          ${server_cert_dir}/server.crt"
     echo ""
-    echo "  Root CA:              ${CERTS_DIR}/rootCA.crt"
-    echo "  Root CA key:          ${CERTS_DIR}/rootCA.key"
+    echo "  Root CA:              ${root_ca_dir}/rootCA.crt"
+    echo "  Root CA key:          ${root_ca_dir}/rootCA.key"
     echo ""
 
     cd "$WORKING_DIR"
@@ -479,14 +778,22 @@ EOF
 
 env_provider_export_for_addon() {
     local server_name="$1"
+    local root_ca_dir="${2:-${ACTIVE_ROOT_CA_DIR}}"
+
+    # Check if Root CA is set
+    if [[ -z "$root_ca_dir" ]]; then
+        print_message "error" "No active Root CA. Cannot export environment."
+        return 1
+    fi
 
     # Get server certificate directory
     local server_cert_dir
-    server_cert_dir="$(get_server_cert_dir "$server_name")"
+    server_cert_dir="${root_ca_dir}/servers/${server_name}"
 
     # Check certificates exist
-    if [[ ! -f "${server_cert_dir}/server.key" ]] || [[ ! -f "${server_cert_dir}/cert-full-chain.pem" ]] || [[ ! -f "${CERTS_DIR}/rootCA.crt" ]]; then
+    if [[ ! -f "${server_cert_dir}/server.key" ]] || [[ ! -f "${server_cert_dir}/cert-full-chain.pem" ]] || [[ ! -f "${root_ca_dir}/rootCA.crt" ]]; then
         print_message "error" "SSL certificates not found for server: $server_name"
+        print_message "error" "Expected location: ${server_cert_dir}"
         return 1
     fi
 
@@ -494,7 +801,8 @@ env_provider_export_for_addon() {
     export SERVER_NAME="$server_name"
     export SSL_CERT="${server_cert_dir}/cert-full-chain.pem"
     export SSL_KEY="${server_cert_dir}/server.key"
-    export ROOT_CA="${CERTS_DIR}/rootCA.crt"
+    export ROOT_CA="${root_ca_dir}/rootCA.crt"
+    export ROOT_CA_DIR="$root_ca_dir"
     export CERTS_DIR="$CERTS_DIR"
     export WORKING_DIR="$WORKING_DIR"
 
@@ -584,19 +892,24 @@ menu_with_root_ca() {
     local addons
     mapfile -t addons < <(addon_loader_get_list)
 
+    # Get available Root CAs
+    mapfile -t FOUND_ROOT_CAS < <(list_root_cas)
+    local num_root_cas=${#FOUND_ROOT_CAS[@]}
+
     while true; do
         # Build menu dynamically with addons
         local addon_index_start=2
         local last_addon_index=$((addon_index_start + ${#addons[@]} - 1))
-        local root_ca_option=8
+        local switch_ca_option=8
+        local new_ca_option=9
         local exit_option=0
 
         echo ""
-        echo "Root CA: Available"
+        echo "Root CA: $(basename "$ACTIVE_ROOT_CA_DIR")"
 
         # Get and display Root CA info
         local ca_info
-        ca_info=$(get_root_ca_info 2>/dev/null)
+        ca_info=$(get_root_ca_info "$ACTIVE_ROOT_CA_DIR" 2>/dev/null)
 
         if [[ -n "$ca_info" ]]; then
             # Parse the info line by line
@@ -637,11 +950,19 @@ menu_with_root_ca() {
 
         echo ""
         echo "  ---------------------------"
-        echo "  $root_ca_option) Generate new Root CA (overwrite existing)"
+        if [[ $num_root_cas -gt 1 ]]; then
+            echo "  $switch_ca_option) Switch active Root CA"
+        fi
+        echo "  $new_ca_option) Create new Root CA"
         echo "  $exit_option) Exit"
         echo ""
 
-        read -rp "Enter your choice (0-8): " choice
+        local max_option=$new_ca_option
+        if [[ $num_root_cas -gt 1 ]]; then
+            read -rp "Enter your choice (0-$max_option): " choice
+        else
+            read -rp "Enter your choice (0-$new_ca_option, or 8 for new Root CA): " choice
+        fi
 
         case "$choice" in
             1)
@@ -688,14 +1009,15 @@ menu_with_root_ca() {
                 # Show summary and confirm
                 echo ""
                 echo "=== Certificate Summary ==="
-                echo "  Server: $server_input"
+                echo "  Root CA:     $(basename "$ACTIVE_ROOT_CA_DIR")"
+                echo "  Server:      $server_input"
                 local server_type="Domain"
                 if is_ip_address "$server_input"; then
                     server_type="IP Address"
                 fi
-                echo "  Type: $server_type"
-                echo "  Certificate directory: certs/$server_input/"
-                echo "  Validity: $SSL_CERT_DAYS days"
+                echo "  Type:        $server_type"
+                echo "  Certificate: ${ACTIVE_ROOT_CA_DIR}/servers/${server_input}/"
+                echo "  Validity:    $SSL_CERT_DAYS days"
                 echo ""
 
                 if [[ "$(prompt_yes_no "Generate certificate now?" "y")" == "yes" ]]; then
@@ -706,9 +1028,91 @@ menu_with_root_ca() {
                 fi
                 ;;
             8)
-                # Generate new Root CA
+                # Switch active Root CA (only if multiple exist)
+                if [[ $num_root_cas -gt 1 ]]; then
+                    echo ""
+                    if prompt_select_root_ca_from_certs "${FOUND_ROOT_CAS[@]}"; then
+                        print_message "success" "Switched to Root CA: $(basename "$ACTIVE_ROOT_CA_DIR")"
+                        # Refresh list
+                        mapfile -t FOUND_ROOT_CAS < <(list_root_cas)
+                        num_root_cas=${#FOUND_ROOT_CAS[@]}
+                    fi
+                else
+                    # Fall through to new Root CA if only one exists
+                    print_message "info" "Creating new Root CA..."
+                    echo ""
+                    if [[ "$(prompt_yes_no "This will create a new Root CA directory. Continue?" "y")" == "yes" ]]; then
+                        echo ""
+                        echo "=== Root CA Configuration ==="
+                        echo "Press Enter for default values"
+
+                        local org_input
+                        local country_input
+                        local state_input
+                        local city_input
+                        local days_input
+
+                        org_input="$(prompt_user "Organization" "$SSL_ORG")"
+                        # Validate country code (2 characters)
+                        while true; do
+                            country_input="$(prompt_user "Country Code (2 letters)" "$SSL_COUNTRY")"
+                            if [[ ${#country_input} -eq 2 ]]; then
+                                break
+                            fi
+                            echo "Country code must be exactly 2 letters (e.g., IR, US, DE)"
+                        done
+                        state_input="$(prompt_user "State/Province" "$SSL_STATE")"
+                        city_input="$(prompt_user "City" "$SSL_CITY")"
+                        days_input="$(prompt_user "Validity in days" "$SSL_CA_DAYS")"
+
+                        # Validate days is a number
+                        if [[ ! "$days_input" =~ ^[0-9]+$ ]]; then
+                            echo "Invalid days value, using default: $SSL_CA_DAYS"
+                            days_input="$SSL_CA_DAYS"
+                        fi
+
+                        # Update globals for this creation
+                        local old_org="$SSL_ORG"
+                        local old_country="$SSL_COUNTRY"
+                        local old_state="$SSL_STATE"
+                        local old_city="$SSL_CITY"
+                        local old_days="$SSL_CA_DAYS"
+
+                        SSL_ORG="$org_input"
+                        SSL_COUNTRY="$country_input"
+                        SSL_STATE="$state_input"
+                        SSL_CITY="$city_input"
+                        SSL_CA_DAYS="$days_input"
+
+                        echo ""
+                        echo "  Organization: $SSL_ORG"
+                        echo "  Country: $SSL_COUNTRY"
+                        echo "  State: $SSL_STATE"
+                        echo "  City: $SSL_CITY"
+                        echo "  Validity: $SSL_CA_DAYS days"
+                        echo ""
+
+                        if [[ "$(prompt_yes_no "Create Root CA with these settings?" "y")" == "yes" ]]; then
+                            ssl_manager_create_root_ca
+                        fi
+
+                        # Restore defaults
+                        SSL_ORG="$old_org"
+                        SSL_COUNTRY="$old_country"
+                        SSL_STATE="$old_state"
+                        SSL_CITY="$old_city"
+                        SSL_CA_DAYS="$old_days"
+
+                        # Refresh list
+                        mapfile -t FOUND_ROOT_CAS < <(list_root_cas)
+                        num_root_cas=${#FOUND_ROOT_CAS[@]}
+                    fi
+                fi
+                ;;
+            9)
+                # Create new Root CA
                 echo ""
-                if [[ "$(prompt_yes_no "This will overwrite the existing Root CA. Continue?" "y")" == "yes" ]]; then
+                if [[ "$(prompt_yes_no "This will create a new Root CA directory. Continue?" "y")" == "yes" ]]; then
                     echo ""
                     echo "=== Root CA Configuration ==="
                     echo "Press Enter for default values"
@@ -769,6 +1173,10 @@ menu_with_root_ca() {
                     SSL_STATE="$old_state"
                     SSL_CITY="$old_city"
                     SSL_CA_DAYS="$old_days"
+
+                    # Refresh list
+                    mapfile -t FOUND_ROOT_CAS < <(list_root_cas)
+                    num_root_cas=${#FOUND_ROOT_CAS[@]}
                 fi
                 ;;
             0)
@@ -1058,18 +1466,34 @@ main() {
     # Initialize SSL Manager
     ssl_manager_init
 
-    # Check for Root CA next to main.sh and prompt user
+    # Check for Root CA files next to main.sh and prompt user
     if [[ "$ROOT_CA_DETECTED" == "true" ]]; then
         if prompt_use_existing_root_ca; then
-            # Root CA copied successfully
+            # Root CA copied successfully, skip to menu
             :
         fi
     fi
 
+    # Discover Root CAs in certs/
+    mapfile -t FOUND_ROOT_CAS < <(list_root_cas)
+
     # Show appropriate menu based on Root CA availability
-    if [[ -f "${CERTS_DIR}/rootCA.crt" ]]; then
+    if [[ ${#FOUND_ROOT_CAS[@]} -gt 0 ]]; then
+        # Has Root CAs - may need to select one
+        if [[ ${#FOUND_ROOT_CAS[@]} -eq 1 ]] && [[ -z "$ACTIVE_ROOT_CA_DIR" ]]; then
+            # Auto-select single Root CA
+            ACTIVE_ROOT_CA_DIR="${CERTS_DIR}/${FOUND_ROOT_CAS[0]}"
+        elif [[ -z "$ACTIVE_ROOT_CA_DIR" ]]; then
+            # Multiple Root CAs and none selected - prompt user
+            if ! prompt_select_root_ca_from_certs "${FOUND_ROOT_CAS[@]}"; then
+                # User chose to create new Root CA
+                menu_without_root_ca
+                return
+            fi
+        fi
         menu_with_root_ca
     else
+        # No Root CAs found
         menu_without_root_ca
     fi
 }

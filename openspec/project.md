@@ -29,9 +29,14 @@ Matrix Plus is a modular installation system for Matrix homeservers. Its primary
 script/
 ├── main.sh              # Main orchestrator script
 ├── certs/               # SSL certificates (generated at runtime)
-│   ├── rootCA.key
-│   ├── rootCA.crt
-│   └── <server>/        # Per-server certificates
+│   └── <root-ca>/       # Root CA directory (named by IP/domain)
+│       ├── rootCA.key
+│       ├── rootCA.crt
+│       └── servers/     # Server certificates for this Root CA
+│           └── <server>/
+│               ├── server.key
+│               ├── server.crt
+│               └── cert-full-chain.pem
 ├── addons/              # Installation modules
 │   └── <addon-name>/
 │       └── install.sh
@@ -41,15 +46,18 @@ script/
 
 ### Architecture Patterns
 - **Modular Design**: Core system handles certificates only; installation delegated to addons
+- **Hierarchical Certificate Structure**: Each Root CA has its own directory with servers subdirectory
+- **Multi-Root CA Support**: Multiple Root CAs can coexist; user selects active one
 - **Environment Provider**: Certificates and configuration passed via exported environment variables
 - **Dynamic Discovery**: Addons auto-discovered by scanning `addons/*/install.sh`
 - **Handoff Pattern**: `main.sh` exits when addon takes control (addon becomes PID 1)
+- **Migration Support**: Automatic migration from old flat structure to new hierarchical structure
 
 ### Addon Interface Protocol
 Every addon must:
 1. Define `ADDON_NAME` variable in first 15 lines of `install.sh`
 2. Use `set -e -u -o pipefail` for error handling
-3. Read environment variables: `SERVER_NAME`, `SSL_CERT`, `SSL_KEY`, `ROOT_CA`, `CERTS_DIR`, `WORKING_DIR`
+3. Read environment variables: `SERVER_NAME`, `SSL_CERT`, `SSL_KEY`, `ROOT_CA`, `ROOT_CA_DIR`, `CERTS_DIR`, `WORKING_DIR`
 4. Create its own log file
 
 ### Testing Strategy
@@ -73,9 +81,12 @@ Matrix servers communicate using federation protocol which requires:
 
 ### Private Certificate Authority
 Matrix Plus uses a private Root CA approach:
-- Root CA created once per deployment (10-year validity)
+- Each Root CA stored in its own directory (named by IP/domain)
+- Root CA valid for 3650 days (10 years) by default
 - Server certificates signed by private Root CA (1-year validity)
 - Root CA certificate distributed to all servers for trust
+- Multiple Root CAs can coexist; one is active at a time
+- Old structure automatically migrated to new hierarchical structure
 
 ### Addon Types
 - **ansible-synapse**: Ansible-based installation for production environments
@@ -101,12 +112,13 @@ Matrix Plus uses a private Root CA approach:
 ## Certificate Reference
 
 ### Root CA
-- Location: `certs/rootCA.crt`, `certs/rootCA.key`
+- Location: `certs/<root-ca-name>/rootCA.crt`, `certs/<root-ca-name>/rootCA.key`
 - Default: 4096-bit RSA, SHA256
 - Validity: 3650 days (configurable)
+- Multiple Root CAs can exist in separate directories
 
 ### Server Certificates
-- Location: `certs/<server>/`
+- Location: `certs/<root-ca-name>/servers/<server>/`
 - Files: `server.key`, `server.crt`, `cert-full-chain.pem`
 - Default: 4096-bit RSA, SHA256
 - Validity: 365 days (configurable)
@@ -116,8 +128,9 @@ Matrix Plus uses a private Root CA approach:
 | Variable | Description | Example |
 |----------|-------------|---------|
 | `SERVER_NAME` | Server IP or domain | `192.168.1.100` |
-| `SSL_CERT` | Full certificate chain | `/path/to/certs/server/cert-full-chain.pem` |
-| `SSL_KEY` | Server private key | `/path/to/certs/server/server.key` |
-| `ROOT_CA` | Root CA certificate path | `/path/to/certs/rootCA.crt` |
+| `SSL_CERT` | Full certificate chain | `/path/to/certs/192.168.1.100/servers/192.168.1.100/cert-full-chain.pem` |
+| `SSL_KEY` | Server private key | `/path/to/certs/192.168.1.100/servers/192.168.1.100/server.key` |
+| `ROOT_CA` | Root CA certificate path | `/path/to/certs/192.168.1.100/rootCA.crt` |
+| `ROOT_CA_DIR` | Root CA directory path | `/path/to/certs/192.168.1.100` |
 | `CERTS_DIR` | Certificates directory | `/path/to/certs` |
 | `WORKING_DIR` | Script working directory | `/path/to/script` |

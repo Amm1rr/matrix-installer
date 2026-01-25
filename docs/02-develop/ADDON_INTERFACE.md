@@ -65,11 +65,28 @@ When `main.sh` invokes an addon, the following environment variables are exporte
 | Variable | Type | Description | Example |
 |----------|------|-------------|---------|
 | `SERVER_NAME` | string | Server IP address or domain name | `192.168.1.100` or `matrix.example.com` |
-| `SSL_CERT` | path | Full-chain certificate file | `/path/to/certs/192.168.1.100/cert-full-chain.pem` |
-| `SSL_KEY` | path | Server private key file | `/path/to/certs/192.168.1.100/server.key` |
-| `ROOT_CA` | path | Root CA certificate file | `/path/to/certs/rootCA.crt` |
+| `SSL_CERT` | path | Full-chain certificate file | `/path/to/certs/192.168.1.100/servers/192.168.1.100/cert-full-chain.pem` |
+| `SSL_KEY` | path | Server private key file | `/path/to/certs/192.168.1.100/servers/192.168.1.100/server.key` |
+| `ROOT_CA` | path | Root CA certificate file | `/path/to/certs/192.168.1.100/rootCA.crt` |
+| `ROOT_CA_DIR` | path | Root CA directory path | `/path/to/certs/192.168.1.100` |
 | `CERTS_DIR` | path | Certificates directory | `/path/to/certs` |
 | `WORKING_DIR` | path | Script working directory | `/path/to/script` |
+
+### Directory Structure
+
+```
+certs/
+├── 192.168.1.100/              # Root CA directory (named by IP/domain)
+│   ├── rootCA.key
+│   ├── rootCA.crt
+│   └── servers/                # Server certificates for this Root CA
+│       └── 192.168.1.100/
+│           ├── server.key
+│           ├── server.crt
+│           └── cert-full-chain.pem
+└── matrix.example.com/         # Another Root CA (if exists)
+    └── ...
+```
 
 ### Variable Guarantees
 
@@ -204,6 +221,7 @@ echo "Installing for: $SERVER_NAME"
 echo "Certificate: $SSL_CERT"
 echo "Private Key: $SSL_KEY"
 echo "Root CA: $ROOT_CA"
+echo "Root CA Directory: $ROOT_CA_DIR"
 
 # Your installation logic here
 # ...
@@ -259,20 +277,26 @@ addon_loader_validate() {
 
 ### How main.sh Exports Variables
 
-From `main.sh`, lines 480-502:
+From `main.sh` (updated for new structure):
 
 ```bash
 env_provider_export_for_addon() {
     local server_name="$1"
+    local root_ca_dir="${2:-${ACTIVE_ROOT_CA_DIR}}"
 
-    # Get server certificate directory
-    local server_cert_dir
-    server_cert_dir="$(get_server_cert_dir "$server_name")"
+    # Check if Root CA is set
+    if [[ -z "$root_ca_dir" ]]; then
+        print_message "error" "No active Root CA. Cannot export environment."
+        return 1
+    fi
+
+    # Get server certificate directory (under Root CA)
+    local server_cert_dir="${root_ca_dir}/servers/${server_name}"
 
     # Check certificates exist
     if [[ ! -f "${server_cert_dir}/server.key" ]] || \
        [[ ! -f "${server_cert_dir}/cert-full-chain.pem" ]] || \
-       [[ ! -f "${CERTS_DIR}/rootCA.crt" ]]; then
+       [[ ! -f "${root_ca_dir}/rootCA.crt" ]]; then
         print_message "error" "SSL certificates not found"
         return 1
     fi
@@ -281,7 +305,8 @@ env_provider_export_for_addon() {
     export SERVER_NAME="$server_name"
     export SSL_CERT="${server_cert_dir}/cert-full-chain.pem"
     export SSL_KEY="${server_cert_dir}/server.key"
-    export ROOT_CA="${CERTS_DIR}/rootCA.crt"
+    export ROOT_CA="${root_ca_dir}/rootCA.crt"
+    export ROOT_CA_DIR="$root_ca_dir"
     export CERTS_DIR="$CERTS_DIR"
     export WORKING_DIR="$WORKING_DIR"
 
