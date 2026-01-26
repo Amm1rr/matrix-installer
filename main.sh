@@ -929,7 +929,10 @@ addon_loader_get_list() {
     # Find all directories containing install.sh
     for dir in addons/*/; do
         if [[ -f "${dir}install.sh" ]]; then
-            found_addons+=("${dir%/}")
+            # Check if addon is hidden (only include if NOT hidden)
+            if ! grep -q "^ADDON_HIDDEN=\"true\"" "${dir}install.sh" 2>/dev/null; then
+                found_addons+=("${dir%/}")
+            fi
         fi
     done
 
