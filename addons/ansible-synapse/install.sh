@@ -4,7 +4,7 @@
 # ADDON METADATA
 # ===========================================
 ADDON_NAME="ansible-synapse"
-ADDON_NAME_MENU="Install synapse with Ansible"
+ADDON_NAME_MENU="Install Synapse (Ansible with Private Key)"
 ADDON_VERSION="0.1.0"
 ADDON_DESCRIPTION="Self-contained Ansible module for Synapse homeserver installation"
 ADDON_AUTHOR="Matrix Installer"
