@@ -31,7 +31,9 @@ The `install.sh` script is where everything happens. Here's what a minimal one l
 # ADDON METADATA
 # ===========================================
 ADDON_NAME="my-addon"
+ADDON_NAME_MENU="My Addon Display Name"
 ADDON_VERSION="1.0.0"
+ADDON_ORDER="50"
 ADDON_DESCRIPTION="Brief description of what this addon does"
 ADDON_AUTHOR="Your Name"
 
@@ -48,10 +50,13 @@ The metadata at the top is important. `main.sh` reads this to display your addon
 
 | Field | Required | Purpose |
 |-------|----------|---------|
-| `ADDON_NAME` | Yes | Display name in the menu |
+| `ADDON_NAME` | Yes | Internal addon identifier (alphanumeric, hyphens only) |
+| `ADDON_NAME_MENU` | No | Display name in the menu (defaults to ADDON_NAME if not set) |
 | `ADDON_VERSION` | Yes | Version number (use semantic versioning) |
+| `ADDON_ORDER` | No | Display order in menu (10, 20, 30... lower numbers shown first) |
 | `ADDON_DESCRIPTION` | Yes | Short description of what the addon does |
 | `ADDON_AUTHOR` | No | Who wrote it (good for credit/support) |
+| `ADDON_HIDDEN` | No | If set to `"true"`, addon won't appear in menu |
 
 ## Environment Variables
 
