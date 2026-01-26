@@ -1028,7 +1028,7 @@ menu_with_root_key() {
         local exit_option=0
 
         echo ""
-        echo -e "Root Key: ${GREEN}$(basename "$ACTIVE_ROOT_CA_DIR")${NC}"
+        echo -e "Root Key: ${BLUE}$(basename "$ACTIVE_ROOT_CA_DIR")${NC}"
 
         # Get and display Root Key info
         local ca_info
