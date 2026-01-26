@@ -6,9 +6,10 @@
 ADDON_NAME="example"
 ADDON_NAME_MENU="Example Addon (NOT YET IMPLEMENTED)"
 ADDON_VERSION="0.1.0"
+ADDON_ORDER="60"
 ADDON_DESCRIPTION="Placeholder for future Synapse deployment module (NOT YET IMPLEMENTED)"
-ADDON_AUTHOR="Matrix Installer"
-ADDON_HIDDEN="true"
+ADDON_AUTHOR="Yours"
+ADDON_HIDDEN="true" # Hide this addon from the menu
 
 # ===========================================
 # ENVIRONMENT VARIABLES FROM MAIN.SH
@@ -31,14 +32,10 @@ RED='\033[0;31m'
 YELLOW='\033[1;33m'
 NC='\033[0m'
 
-echo -e "${RED}[ERROR]${NC} zanjir-synapse addon is not yet implemented."
+echo -e "${RED}[ERROR]${NC} example-addon is not yet implemented."
 echo ""
 echo "This is a placeholder for a future alternative deployment method"
-echo "using the Zanjir orchestration system."
+echo "using the Example orchestration system."
 echo ""
-echo "Available addons:"
-echo "  - ansible-synapse: Fully functional Ansible-based installation"
-echo ""
-echo "For now, please use the ansible-synapse addon instead."
 
 exit 1
