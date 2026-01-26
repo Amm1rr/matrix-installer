@@ -4,7 +4,7 @@
 # ADDON METADATA
 # ===========================================
 ADDON_NAME="private-key-docker-compose-synapse"
-ADDON_NAME_MENU="Install Docker Compose Synapse (Root Key SSL)"
+ADDON_NAME_MENU="Install Docker Compose Synapse (With Key SSL)"
 ADDON_VERSION="0.1.0"
 ADDON_DESCRIPTION="Docker Compose installer with Private Key SSL (Root Key)"
 ADDON_AUTHOR="Matrix Installer"
@@ -285,7 +285,7 @@ check_prerequisites() {
 }
 
 check_environment_variables() {
-    print_message "info" "Checking environment variables from main.sh..."
+    print_message "info" "Checking environment variables..."
 
     local missing=()
 
@@ -305,12 +305,65 @@ check_environment_variables() {
         missing+=("ROOT_CA")
     fi
 
+    if [[ -z "${CERTS_DIR:-}" ]]; then
+        missing+=("CERTS_DIR")
+    fi
+
+    if [[ -z "${WORKING_DIR:-}" ]]; then
+        missing+=("WORKING_DIR")
+    fi
+
+    # Standalone mode: prompt for missing variables
     if [[ ${#missing[@]} -gt 0 ]]; then
-        print_message "error" "Missing environment variables: ${missing[*]}"
+        print_message "warning" "Running in standalone mode (not from main.sh)"
         echo ""
-        echo "This addon must be run from main.sh"
-        echo "Please generate server certificate first"
-        return 1
+        echo "This addon requires the following information to continue:"
+        echo ""
+
+        # Prompt for missing variables
+        for var in "${missing[@]}"; do
+            case "$var" in
+                SERVER_NAME)
+                    local default_server="172.19.39.69"
+                    SERVER_NAME="$(prompt_user "Server name or IP address" "$default_server")"
+                    export SERVER_NAME
+                    ;;
+                SSL_CERT)
+                    echo "  SSL_CERT: Full certificate chain (.pem file)"
+                    SSL_CERT="$(prompt_user "  Path to SSL certificate" "/path/to/cert-full-chain.pem")"
+                    export SSL_CERT
+                    ;;
+                SSL_KEY)
+                    echo "  SSL_KEY: SSL private key file"
+                    SSL_KEY="$(prompt_user "  Path to SSL private key" "/path/to/server.key")"
+                    export SSL_KEY
+                    ;;
+                ROOT_CA)
+                    echo "  ROOT_CA: Root CA certificate file"
+                    ROOT_CA="$(prompt_user "  Path to Root CA certificate" "/path/to/rootCA.crt")"
+                    export ROOT_CA
+                    ;;
+                CERTS_DIR)
+                    # Derive from SSL_CERT path
+                    if [[ -n "$SSL_CERT" ]]; then
+                        CERTS_DIR="$(dirname "$(dirname "$SSL_CERT")")"
+                    else
+                        CERTS_DIR="$(prompt_user "  Certificates directory" "/path/to/certs")"
+                    fi
+                    export CERTS_DIR
+                    ;;
+                WORKING_DIR)
+                    # Default to current directory or parent of certs
+                    if [[ -n "${CERTS_DIR:-}" ]]; then
+                        WORKING_DIR="$(dirname "$CERTS_DIR")"
+                    else
+                        WORKING_DIR="$(pwd)"
+                    fi
+                    export WORKING_DIR
+                    ;;
+            esac
+        done
+        echo ""
     fi
 
     # Verify certificate files exist
@@ -397,7 +450,8 @@ install_matrix() {
     # Check prerequisites
     check_prerequisites || exit 1
 
-    # Root privilege check - do this early so port check has full docker access
+    # Root privilege check - FIRST, before anything else
+    # This ensures we have sudo access before prompting for any inputs
     if [[ $EUID -ne 0 ]]; then
         print_message "warning" "This installation requires root privileges"
         if [[ "$(prompt_yes_no "Continue with sudo?" "y")" != "yes" ]]; then
@@ -405,26 +459,16 @@ install_matrix() {
             exit 0
         fi
 
-        # Configure registration BEFORE creating temp file (so variables are available)
-        configure_registration
-
-        # Save configuration to temp file for sudo execution (now with registration vars)
+        # Save configuration to temp file for sudo execution
+        # Note: Variables may be empty in standalone mode, will be prompted after re-exec
         local temp_config="/tmp/matrix-install-$$-config.sh"
         cat > "$temp_config" <<EOF
-export SERVER_NAME="${SERVER_NAME}"
-export SSL_CERT="${SSL_CERT}"
-export SSL_KEY="${SSL_KEY}"
-export ROOT_CA="${ROOT_CA}"
-export CERTS_DIR="${CERTS_DIR}"
-export WORKING_DIR="${WORKING_DIR}"
-export MAX_REG_DEFAULT="${MAX_REG_DEFAULT}"
-export ENABLE_REGISTRATION="${ENABLE_REGISTRATION}"
-export REGISTRATION_SHARED_SECRET="${REGISTRATION_SHARED_SECRET}"
-export POSTGRES_PASSWORD="${POSTGRES_PASSWORD}"
-export ADMIN_PASSWORD="${ADMIN_PASSWORD}"
-export MACAROON_SECRET_KEY="${MACAROON_SECRET_KEY}"
-export FORM_SECRET="${FORM_SECRET}"
-export DOMAIN="${DOMAIN}"
+export SERVER_NAME="${SERVER_NAME:-}"
+export SSL_CERT="${SSL_CERT:-}"
+export SSL_KEY="${SSL_KEY:-}"
+export ROOT_CA="${ROOT_CA:-}"
+export CERTS_DIR="${CERTS_DIR:-}"
+export WORKING_DIR="${WORKING_DIR:-}"
 export REEXECED="1"
 EOF
 
@@ -439,6 +483,13 @@ EOF
         # Variables are already exported by the source command in exec
         :
     fi
+
+    # Check environment variables (prompts in standalone mode, uses main.sh vars otherwise)
+    # This happens AFTER sudo re-exec, so all prompts are in the sudo context
+    check_environment_variables || exit 1
+
+    # Configure registration (happens after env vars are set)
+    configure_registration
 
     # Check for port conflicts - now with sudo access for complete container visibility
     set +e
@@ -455,14 +506,6 @@ EOF
 
     # Re-enable set -e after handling all cases
     set -e
-
-    # Check environment variables from main.sh
-    check_environment_variables || exit 1
-
-    # Configure registration (skip if already configured before sudo re-exec)
-    if [[ "${REEXECED:-}" != "1" ]]; then
-        configure_registration
-    fi
 
     # Check if already installed
     if [[ -d "$MATRIX_BASE" ]]; then
@@ -860,12 +903,8 @@ main() {
 ╚══════════════════════════════════════════════════════════╝
 EOF
 
-    # Check environment variables from main.sh
-    if [[ -z "${SERVER_NAME:-}" ]]; then
-        print_message "error" "SERVER_NAME environment variable not set"
-        print_message "info" "This addon must be run from main.sh"
-        exit 1
-    fi
+    # Note: Environment variable check moved to check_environment_variables()
+    # to support both main.sh and standalone modes
 
     # Main menu loop
     while true; do
