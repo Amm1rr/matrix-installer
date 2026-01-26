@@ -5,7 +5,7 @@
 # ===========================================
 ADDON_NAME="ansible-synapse"
 ADDON_NAME_MENU="Install synapse with Ansible"
-ADDON_VERSION=0.1.0"
+ADDON_VERSION="0.1.0"
 ADDON_DESCRIPTION="Self-contained Ansible module for Synapse homeserver installation"
 ADDON_AUTHOR="Matrix Installer"
 
@@ -245,10 +245,20 @@ get_os_family() {
             echo "unknown"
         fi
     else
-        # Remote OS detection via ansible (no become needed for checking /etc files)
-        ansible -i inventory/hosts "$target" -m shell \
-            -a "if [[ -f /etc/arch-release ]]; then echo 'arch'; elif [[ -f /etc/debian_version ]]; then echo 'debian'; else echo 'unknown'; fi" \
-            2>/dev/null | grep -v "$target |" | grep -v "WARNING" | head -n1 | tr -d ' \n\r'
+        # Remote OS detection via ansible
+        # Check for Arch Linux first, then Debian-based
+        local result
+        result=$(ansible -i inventory/hosts "$target" -m shell \
+            -a 'test -f /etc/arch-release && echo arch' \
+            2>/dev/null | grep -v "$target |" | grep -v "WARNING" | head -n1 | tr -d ' \n\r')
+
+        if [[ -z "$result" ]]; then
+            result=$(ansible -i inventory/hosts "$target" -m shell \
+                -a 'test -f /etc/debian_version && echo debian' \
+                2>/dev/null | grep -v "$target |" | grep -v "WARNING" | head -n1 | tr -d ' \n\r')
+        fi
+
+        echo "${result:-unknown}"
     fi
 }
 
@@ -836,7 +846,7 @@ cleanup_incorrect_signing_key() {
     # Check if signing key exists and has incorrect format (RSA key instead of ed25519)
     local check_output
     check_output=$(ansible -i inventory/hosts "$target" -m shell \
-        -a "if [[ -f '$signing_key_path' ]]; then head -n1 '$signing_key_path'; else echo 'NOT_FOUND'; fi" \
+        -a "test -f '$signing_key_path' && head -n1 '$signing_key_path' || echo 'NOT_FOUND'" \
         --become 2>/dev/null | grep -v "$target |" | grep -v "WARNING")
 
     if [[ "$check_output" == *"NOT_FOUND"* ]]; then
