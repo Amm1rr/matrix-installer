@@ -1168,7 +1168,12 @@ menu_with_root_key() {
                 # Check if it's an addon choice
                 if [[ "$choice" -ge $addon_index_start ]] && [[ "$choice" -le $last_addon_index ]]; then
                     local selected_addon="${addons[$((choice - addon_index_start))]}"
+                    # Run addon with error handling - return to menu on failure
+                    set +e
                     menu_run_addon "$selected_addon"
+                    local addon_result=$?
+                    set -e
+                    # If addon returned 1 (error), just continue to re-display menu
                 else
                     print_message "error" "Invalid choice"
                 fi
