@@ -1,0 +1,46 @@
+/* Zanjir Custom Styles - Vazirmatn Font */
+@import url('https://fonts.googleapis.com/css2?family=Vazirmatn:wght@300;400;500;600;700&display=swap');
+
+/* Apply Vazirmatn font globally */
+* {
+    font-family: 'Vazirmatn', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif !important;
+}
+
+/* RTL improvements */
+body {
+    direction: rtl;
+}
+
+/* Message bubbles */
+.mx_EventTile_content,
+.mx_EventTile_body {
+    font-family: 'Vazirmatn', sans-serif !important;
+    line-height: 1.7;
+}
+
+/* Input fields */
+.mx_BasicMessageComposer_input,
+.mx_Field input,
+.mx_Field textarea {
+    font-family: 'Vazirmatn', sans-serif !important;
+}
+
+/* Headers and titles */
+h1, h2, h3, h4, h5, h6,
+.mx_RoomHeader_name,
+.mx_RoomTile_title {
+    font-family: 'Vazirmatn', sans-serif !important;
+    font-weight: 700;
+}
+
+/* Buttons */
+.mx_AccessibleButton,
+button {
+    font-family: 'Vazirmatn', sans-serif !important;
+}
+
+/* Dialogs */
+.mx_Dialog,
+.mx_Dialog_content {
+    font-family: 'Vazirmatn', sans-serif !important;
+}

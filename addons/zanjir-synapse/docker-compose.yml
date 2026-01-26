@@ -1,0 +1,126 @@
+# Zanjir - Docker Compose Configuration
+# Self-hosted Matrix server with Dendrite, Element Web, and Caddy
+
+version: '3.8'
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: ${POSTGRES_IMAGE:-postgres:15-alpine}
+    container_name: zanjir-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-dendrite}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:-dendrite}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    networks:
+      - zanjir-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-dendrite}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Dendrite Matrix Homeserver
+  dendrite:
+    image: ${DENDRITE_IMAGE:-matrixdotorg/dendrite-monolith:latest}
+    container_name: zanjir-dendrite
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DOMAIN: ${DOMAIN}
+      POSTGRES_USER: ${POSTGRES_USER:-dendrite}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:-dendrite}
+      REGISTRATION_SHARED_SECRET: ${REGISTRATION_SHARED_SECRET}
+    volumes:
+      - ./dendrite/dendrite.yaml:/etc/dendrite/dendrite.yaml:ro
+      - ./dendrite/matrix_key.pem:/etc/dendrite/matrix_key.pem:ro
+      - dendrite-media:/var/dendrite/media
+      - dendrite-jetstream:/var/dendrite/jetstream
+      - dendrite-search:/var/dendrite/searchindex
+    networks:
+      - zanjir-network
+    command: --config /etc/dendrite/dendrite.yaml
+
+  # Element Web Client
+  element:
+    image: ${ELEMENT_IMAGE:-vectorim/element-web:v1.11.50}
+    container_name: zanjir-element
+    restart: unless-stopped
+    volumes:
+      - ./config/element-config.json:/app/config.json:ro
+      - ./config/welcome.html:/app/welcome.html:ro
+    networks:
+      - zanjir-network
+
+  # Caddy Reverse Proxy with Automatic HTTPS
+  caddy:
+    image: ${CADDY_IMAGE:-caddy:2-alpine}
+    container_name: zanjir-caddy
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      DOMAIN: ${DOMAIN}
+      SERVER_ADDRESS: ${SERVER_ADDRESS:-${DOMAIN}}
+    volumes:
+      - ./Caddyfile.active:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+      # Mount Element Web files for serving
+      - element-web:/srv/element:ro
+    networks:
+      - zanjir-network
+    depends_on:
+      - dendrite
+      - element
+
+  # Utility container to copy Element Web files
+  element-copy:
+    image: ${ELEMENT_COPY_IMAGE:-vectorim/element-web:v1.11.50}
+    container_name: zanjir-element-copy
+    user: root
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        cp -r /app/* /srv/element/
+        cp /config/config.json /srv/element/config.json
+        cp /config/welcome.html /srv/element/welcome.html
+        cp /config/logo.webp /srv/element/logo.webp
+        mkdir -p /srv/element/mobile_guide
+        cp /config/mobile_guide.html /srv/element/mobile_guide/index.html
+        echo "Element Web files copied successfully"
+    volumes:
+      - element-web:/srv/element
+      - ./config/element-config.json:/config/config.json:ro
+      - ./config/welcome.html:/config/welcome.html:ro
+      - ./config/logo.webp:/config/logo.webp:ro
+      - ./config/mobile_guide.html:/config/mobile_guide.html:ro
+    networks:
+      - zanjir-network
+
+networks:
+  zanjir-network:
+    driver: bridge
+
+volumes:
+  postgres-data:
+    name: zanjir-postgres-data
+  dendrite-media:
+    name: zanjir-dendrite-media
+  dendrite-jetstream:
+    name: zanjir-dendrite-jetstream
+  dendrite-search:
+    name: zanjir-dendrite-search
+  caddy-data:
+    name: zanjir-caddy-data
+  caddy-config:
+    name: zanjir-caddy-config
+  element-web:
+    name: zanjir-element-web

@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>زنجیر - نصب روی موبایل</title>
+    <link href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@400;700&display=swap" rel="stylesheet">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Vazirmatn', sans-serif;
+            min-height: 100vh;
+            background: linear-gradient(135deg, #0a0a1a, #1a1a3e);
+            color: #f1f5f9;
+            padding: 40px 20px;
+            direction: rtl;
+        }
+
+        .container {
+            max-width: 600px;
+            margin: 0 auto;
+            text-align: center;
+        }
+
+        h1 {
+            font-size: 2rem;
+            margin-bottom: 20px;
+            background: linear-gradient(135deg, #fff, #8b5cf6);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        p {
+            color: #94a3b8;
+            margin-bottom: 30px;
+            line-height: 1.8;
+        }
+
+        .steps {
+            text-align: right;
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 16px;
+            padding: 25px;
+            margin-bottom: 30px;
+        }
+
+        .step {
+            display: flex;
+            align-items: flex-start;
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+
+        .step:last-child {
+            margin-bottom: 0;
+        }
+
+        .step-num {
+            width: 30px;
+            height: 30px;
+            background: linear-gradient(135deg, #8b5cf6, #7c3aed);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 700;
+            flex-shrink: 0;
+        }
+
+        .step-text h3 {
+            color: #f1f5f9;
+            margin-bottom: 5px;
+        }
+
+        .step-text p {
+            color: #64748b;
+            font-size: 0.9rem;
+            margin: 0;
+        }
+
+        .btn {
+            display: inline-block;
+            padding: 15px 40px;
+            background: linear-gradient(135deg, #8b5cf6, #7c3aed);
+            color: white;
+            border-radius: 50px;
+            text-decoration: none;
+            font-weight: 700;
+            margin: 10px;
+        }
+
+        .btn:hover {
+            transform: translateY(-2px);
+        }
+
+        .btn-outline {
+            background: transparent;
+            border: 2px solid rgba(139, 92, 246, 0.5);
+            color: #c4b5fd;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <h1>نصب زنجیر روی موبایل</h1>
+        <p>برای استفاده از زنجیر روی گوشی، میتونید از اپلیکیشن Element استفاده کنید.</p>
+
+        <div class="steps">
+            <div class="step">
+                <div class="step-num">1</div>
+                <div class="step-text">
+                    <h3>دانلود Element</h3>
+                    <p>اپلیکیشن Element رو از کافه‌بازار، مایکت، یا Google Play نصب کنید.</p>
+                </div>
+            </div>
+            <div class="step">
+                <div class="step-num">2</div>
+                <div class="step-text">
+                    <h3>انتخاب سرور سفارشی</h3>
+                    <p>در صفحه ورود، "Other" یا "سرور دیگر" رو انتخاب کنید.</p>
+                </div>
+            </div>
+            <div class="step">
+                <div class="step-num">3</div>
+                <div class="step-text">
+                    <h3>وارد کردن آدرس سرور</h3>
+                    <p>آدرس سرور رو وارد کنید و وارد حساب کاربری خود بشید.</p>
+                </div>
+            </div>
+        </div>
+
+        <a href="/" class="btn">بازگشت به وب</a>
+        <a href="https://play.google.com/store/apps/details?id=im.vector.app" class="btn btn-outline"
+            target="_blank">Google Play</a>
+    </div>
+</body>
+
+</html>

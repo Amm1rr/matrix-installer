@@ -1,0 +1,80 @@
+{
+    "default_server_config": {
+        "m.homeserver": {
+            "base_url": "https://__DOMAIN_PLACEHOLDER__",
+            "server_name": "__DOMAIN_PLACEHOLDER__"
+        }
+    },
+    "brand": "زنجیر",
+    "integrations_ui_url": "",
+    "integrations_rest_url": "",
+    "integrations_widgets_urls": [],
+    "hosting_signup_link": "",
+    "bug_report_endpoint_url": "",
+    "uisi_autorageshake_app": "",
+    "show_labs_settings": false,
+    "features": {},
+    "default_country_code": "IR",
+    "default_theme": "dark",
+    "room_directory": {
+        "servers": []
+    },
+    "enable_presence_by_hs_url": {},
+    "disable_custom_urls": true,
+    "disable_guests": true,
+    "disable_login_language_selector": false,
+    "disable_3pid_login": true,
+    "setting_defaults": {
+        "language": "fa",
+        "breadcrumbs": true,
+        "UIFeature.showAdvancedSettings": false,
+        "UIFeature.feedback": false,
+        "UIFeature.voip": true,
+        "UIFeature.widgets": false,
+        "UIFeature.flair": false,
+        "UIFeature.communities": false,
+        "UIFeature.advancedSettings": false,
+        "UIFeature.registration": false,
+        "UIFeature.passwordReset": true,
+        "UIFeature.deactivate": false,
+        "UIFeature.advancedEncryption": true,
+        "UIFeature.roomHistorySettings": true,
+        "UIFeature.TimelineEnableRelativeDates": true,
+        "layout": "group",
+        "useCompactLayout": false,
+        "showHiddenEventsInTimeline": false,
+        "showRedactions": false,
+        "enableWidgetScreenshots": false,
+        "webRtcAllowPeerToPeer": false,
+        "MessageComposerInput.showStickersButton": true,
+        "MessageComposerInput.showPollsButton": false
+    },
+    "branding": {
+        "welcome_background_url": null,
+        "auth_header_logo_url": "logo.webp",
+        "auth_footer_links": [
+            {
+                "text": "",
+                "url": ""
+            }
+        ]
+    },
+    "custom_themes": [],
+    "sso_redirect_options": {
+        "immediate": false
+    },
+    "embedded_pages": {
+        "welcome_url": "/welcome.html"
+    },
+    "map_style_url": "",
+    "permalink_prefix": "https://__DOMAIN_PLACEHOLDER__",
+    "mobile_builds": {
+        "ios": null,
+        "android": null,
+        "fdroid": null
+    },
+    "desktop_builds": {
+        "available": false
+    },
+    "mobile_guide_toast": false
+}
