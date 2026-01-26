@@ -7,7 +7,7 @@
 # Application Metadata
 MATRIX_PLUS_NAME="Matrix Installer"
 MATRIX_PLUS_VERSION="0.1.0"
-MATRIX_PLUS_DESCRIPTION="Private Key Installer"
+MATRIX_PLUS_DESCRIPTION="Federation Manager"
 MATRIX_PLUS_BUILD_DATE="$(date +%Y-%m-%d)"
 
 set -e
@@ -28,7 +28,7 @@ LOG_FILE="${WORKING_DIR}/main.log"
 SSL_COUNTRY="IR"
 SSL_STATE="Tehran"
 SSL_CITY="Tehran"
-SSL_ORG="MatrixCA"
+SSL_ORG="MatrixIR"
 SSL_OU="IT"
 SSL_CERT_DAYS=365
 SSL_CA_DAYS=3650
@@ -178,7 +178,7 @@ print_menu_header() {
     echo "╚══════════════════════════════════════════════════════════╝"
 }
 
-# Prompt for Root CA configuration (returns: org|country|state|city|days)
+# Prompt for Root Key configuration (returns: org|country|state|city|days)
 prompt_root_ca_config() {
     local org_input
     local country_input
@@ -187,7 +187,7 @@ prompt_root_ca_config() {
     local days_input
 
     echo "" >&2
-    echo "=== Root CA Configuration ===" >&2
+    echo "=== Root Key Configuration ===" >&2
     echo "Press Enter for default values" >&2
 
     org_input="$(prompt_user "Organization" "$SSL_ORG")"
@@ -224,10 +224,10 @@ prompt_root_ca_config() {
     echo "${org_input}|${country_input}|${state_input}|${city_input}|${days_input}"
 }
 
-# Create Root CA from menu (handles config prompt and creation)
+# Create Root Key from menu (handles config prompt and creation)
 create_root_ca_from_menu() {
     echo ""
-    if [[ "$(prompt_yes_no "This will create a new Root CA directory. Continue?" "y")" != "yes" ]]; then
+    if [[ "$(prompt_yes_no "This will create a new Root Key directory. Continue?" "y")" != "yes" ]]; then
         return 0
     fi
 
@@ -256,7 +256,7 @@ create_root_ca_from_menu() {
     SSL_CITY="$city_input"
     SSL_CA_DAYS="$days_input"
 
-    if [[ "$(prompt_yes_no "Create Root CA with these settings?" "y")" == "yes" ]]; then
+    if [[ "$(prompt_yes_no "Create Root Key with these settings?" "y")" == "yes" ]]; then
         ssl_manager_create_root_ca "$org_input"
     fi
 
@@ -269,7 +269,7 @@ create_root_ca_from_menu() {
 }
 
 # ===========================================
-# ROOT CA HELPER FUNCTIONS
+# ROOT KEY HELPER FUNCTIONS
 # ===========================================
 
 get_active_root_ca_dir() {
@@ -397,7 +397,7 @@ get_root_ca_info() {
 
     # Default subject if not found
     if [[ -z "$subject" ]]; then
-        subject="Matrix Root CA"
+        subject="Matrix Root Key"
     fi
 
     # Get Country (C)
@@ -482,10 +482,10 @@ prompt_select_root_ca_from_files() {
     fi
 
     echo ""
-    print_message "info" "Multiple Root CA files found next to script:"
+    print_message "info" "Multiple Root Key files found next to script:"
     echo ""
 
-    # Display each Root CA key file
+    # Display each Root Key file
     local index=1
     for base_name in "${found_files[@]}"; do
         echo "  $index) ${base_name}.key"
@@ -493,12 +493,12 @@ prompt_select_root_ca_from_files() {
     done
 
     echo "  -------------"
-    echo "  $index) Skip and use Root CAs from certs/"
+    echo "  $index) Skip and use Root Keys from certs/"
     echo "  0) Back to previous menu"
     echo ""
 
     while true; do
-        read -rp "Select which Root CA to use (0-$index): " choice || true
+        read -rp "Select which Root Key to use (0-$index): " choice || true
 
         # Handle empty input (Enter) as Skip
         if [[ -z "$choice" ]]; then
@@ -534,32 +534,32 @@ prompt_use_existing_root_ca() {
         selected_base="$SELECTED_ROOT_CA_BASE"
         if [[ $select_result -eq 3 ]]; then
             # Back to previous menu - skip and show certs menu
-            print_message "info" "Skipping Root CA files next to script"
+            print_message "info" "Skipping Root Key files next to script"
             return 1
         fi
         if [[ -z "$selected_base" ]]; then
-            print_message "info" "Skipping Root CA files next to script"
+            print_message "info" "Skipping Root Key files next to script"
             return 1
         fi
     elif [[ ${#ROOT_CA_FILES[@]} -eq 1 ]]; then
         selected_base="${ROOT_CA_FILES[0]}"
         echo ""
-        print_message "info" "Root CA found at: ${ROOT_CA_SOURCE_PATH}/${selected_base}.{key,crt}"
-        if [[ "$(prompt_yes_no "Use this Root CA for ${MATRIX_PLUS_NAME}?" "n")" != "yes" ]]; then
+        print_message "info" "Root Key found at: ${ROOT_CA_SOURCE_PATH}/${selected_base}.{key,crt}"
+        if [[ "$(prompt_yes_no "Use this Root Key for ${MATRIX_PLUS_NAME}?" "n")" != "yes" ]]; then
             return 1
         fi
     else
         return 1
     fi
 
-    # Get Root CA directory name from user (use selected_base as default)
+    # Get Root Key directory name from user (use selected_base as default)
     local root_ca_name=""
     while true; do
-        root_ca_name="$(prompt_user "Enter a name for this Root CA directory (e.g., IP or domain)" "$selected_base")"
+        root_ca_name="$(prompt_user "Enter a name for this Root Key directory (e.g., IP or domain)" "$selected_base")"
         if [[ -n "$root_ca_name" ]]; then
             break
         fi
-        echo "Root CA name cannot be empty."
+        echo "Root Key name cannot be empty."
     done
 
     local new_root_ca_dir="${CERTS_DIR}/${root_ca_name}"
@@ -572,15 +572,15 @@ prompt_use_existing_root_ca() {
             mv "$new_root_ca_dir" "${CERTS_DIR}/${backup_name}"
             print_message "info" "Backed up to: ${backup_name}"
         else
-            print_message "info" "Skipped copying Root CA"
+            print_message "info" "Skipped copying Root Key"
             return 1
         fi
     fi
 
-    # Create new Root CA directory structure
+    # Create new Root Key directory structure
     mkdir -p "$new_root_ca_dir/servers"
 
-    # Copy Root CA files
+    # Copy Root Key files
     cp "${ROOT_CA_SOURCE_PATH}/${selected_base}.key" "${new_root_ca_dir}/rootCA.key"
     cp "${ROOT_CA_SOURCE_PATH}/${selected_base}.crt" "${new_root_ca_dir}/rootCA.crt"
 
@@ -595,7 +595,7 @@ prompt_use_existing_root_ca() {
     # Set as active Root CA
     ACTIVE_ROOT_CA_DIR="$new_root_ca_dir"
 
-    print_message "success" "Root CA copied to: ${new_root_ca_dir}"
+    print_message "success" "Root Key copied to: ${new_root_ca_dir}"
     return 0
 }
 
@@ -606,7 +606,7 @@ prompt_select_root_ca_from_certs() {
         return 1
     fi
 
-    # If only one Root CA, auto-select it
+    # If only one Root Key, auto-select it
     if [[ ${#root_cas[@]} -eq 1 ]]; then
         local root_ca_name="${root_cas[0]}"
         ACTIVE_ROOT_CA_DIR="${CERTS_DIR}/${root_ca_name}"
@@ -614,10 +614,10 @@ prompt_select_root_ca_from_certs() {
     fi
 
     echo ""
-    print_message "info" "Multiple Root CAs found in certs/:"
+    print_message "info" "Multiple Root Keys found in certs/:"
     echo ""
 
-    # Display each Root CA with info
+    # Display each Root Key with info
     local index=1
     for root_ca_name in "${root_cas[@]}"; do
         local root_ca_dir="${CERTS_DIR}/${root_ca_name}"
@@ -657,12 +657,12 @@ prompt_select_root_ca_from_certs() {
     done
 
     echo "  -----------------------"
-    echo "  $index) Create new Root CA"
+    echo "  $index) Create new Root Key"
     echo "  0) Back to previous menu"
     echo ""
 
     while true; do
-        read -rp "Select active Root CA (0-$index): " choice || true
+        read -rp "Select active Root Key (0-$index): " choice || true
 
         # Handle empty input (Enter) as Back to previous menu
         if [[ -z "$choice" ]]; then
@@ -672,7 +672,7 @@ prompt_select_root_ca_from_certs() {
         if [[ "$choice" -ge 1 ]] && [[ "$choice" -le ${#root_cas[@]} ]]; then
             local selected_root_ca="${root_cas[$((choice-1))]}"
             ACTIVE_ROOT_CA_DIR="${CERTS_DIR}/${selected_root_ca}"
-            print_message "success" "Selected Root CA: ${selected_root_ca}"
+            print_message "success" "Selected Root Key: ${selected_root_ca}"
             return 0
         elif [[ "$choice" -eq $index ]]; then
             return 1  # User wants to create new
@@ -687,18 +687,18 @@ prompt_select_root_ca_from_certs() {
 ssl_manager_create_root_ca() {
     local root_ca_name="${1:-}"
 
-    print_message "info" "Creating new Root CA..."
+    print_message "info" "Creating new Root Key..."
 
-    # Determine default name for Root CA directory
+    # Determine default name for Root Key directory
     local default_name="$root_ca_name"
     if [[ -z "$default_name" ]]; then
         # Detect local IP for default suggestion
         default_name="$(get_detected_ip)"
     fi
 
-    # Get Root CA directory name (use provided name or detected IP as default)
+    # Get Root Key directory name (use provided name or detected IP as default)
     while true; do
-        local prompt_text="Enter a name for the Root CA directory (e.g., IP or domain)"
+        local prompt_text="Enter a name for the Root Key directory (e.g., IP or domain)"
         if [[ -n "$default_name" ]]; then
             root_ca_name="$(prompt_user "$prompt_text" "$default_name")"
         else
@@ -708,25 +708,25 @@ ssl_manager_create_root_ca() {
         if [[ -n "$root_ca_name" ]]; then
             break
         fi
-        echo "Root CA name cannot be empty."
+        echo "Root Key name cannot be empty."
     done
 
     local new_root_ca_dir="${CERTS_DIR}/${root_ca_name}"
 
     # Check if directory already exists
     if [[ -d "$new_root_ca_dir" ]]; then
-        print_message "warning" "Root CA directory already exists: ${root_ca_name}"
-        if [[ "$(prompt_yes_no "Backup existing and create new Root CA?" "y")" == "yes" ]]; then
+        print_message "warning" "Root Key directory already exists: ${root_ca_name}"
+        if [[ "$(prompt_yes_no "Backup existing and create new Root Key?" "y")" == "yes" ]]; then
             local backup_name="${root_ca_name}.backup-$(date +%Y%m%d-%H%M%S)"
             mv "$new_root_ca_dir" "${CERTS_DIR}/${backup_name}"
             print_message "info" "Backed up to: ${backup_name}"
         else
-            print_message "info" "Root CA creation cancelled"
+            print_message "info" "Root Key creation cancelled"
             return 1
         fi
     fi
 
-    # Create new Root CA directory structure
+    # Create new Root Key directory structure
     mkdir -p "$new_root_ca_dir/servers"
 
     cd "$new_root_ca_dir" || return 1
@@ -742,17 +742,17 @@ ssl_manager_create_root_ca() {
 
     chmod 644 rootCA.crt
 
-    # Set as active Root CA
+    # Set as active Root Key
     ACTIVE_ROOT_CA_DIR="$new_root_ca_dir"
 
-    print_message "success" "Root CA created (valid for $SSL_CA_DAYS days)"
+    print_message "success" "Root Key created (valid for $SSL_CA_DAYS days)"
 
-    # Show Root CA summary
+    # Show Root Key summary
     echo ""
-    echo "=== Root CA Files ==="
-    echo "  Root CA directory:    ${new_root_ca_dir}"
-    echo "  Root CA certificate:   ${new_root_ca_dir}/rootCA.crt"
-    echo "  Root CA private key:   ${new_root_ca_dir}/rootCA.key"
+    echo "=== Root Key Files ==="
+    echo "  Root Key directory:    ${new_root_ca_dir}"
+    echo "  Root Key certificate:   ${new_root_ca_dir}/rootCA.crt"
+    echo "  Root Key private key:   ${new_root_ca_dir}/rootCA.key"
     echo "  Servers directory:     ${new_root_ca_dir}/servers/"
     echo ""
 
@@ -764,18 +764,18 @@ ssl_manager_generate_server_cert() {
     local server_name="$1"
     local root_ca_dir="${2:-${ACTIVE_ROOT_CA_DIR}}"
 
-    # Check if Root CA is set
+    # Check if Root Key is set
     if [[ -z "$root_ca_dir" ]]; then
-        print_message "error" "No active Root CA. Please select or create a Root CA first."
+        print_message "error" "No active Root Key. Please select or create a Root Key first."
         return 1
     fi
 
     print_message "info" "Generating server certificate for: $server_name"
-    print_message "info" "Using Root CA: $(basename "$root_ca_dir")"
+    print_message "info" "Using Root Key: $(basename "$root_ca_dir")"
 
-    # Check Root CA exists
+    # Check Root Key exists
     if [[ ! -f "${root_ca_dir}/rootCA.key" ]] || [[ ! -f "${root_ca_dir}/rootCA.crt" ]]; then
-        print_message "error" "Root CA not found in ${root_ca_dir}"
+        print_message "error" "Root Key not found in ${root_ca_dir}"
         return 1
     fi
 
@@ -868,14 +868,14 @@ EOF
     # Show certificate summary
     echo ""
     echo "=== Certificate Files ==="
-    echo "  Root CA directory:     ${root_ca_dir}"
+    echo "  Root Key directory:     ${root_ca_dir}"
     echo "  Server cert directory: ${server_cert_dir}"
     echo "  Private key:          ${server_cert_dir}/server.key"
     echo "  Full chain cert:      ${server_cert_dir}/cert-full-chain.pem"
     echo "  Server cert:          ${server_cert_dir}/server.crt"
     echo ""
-    echo "  Root CA:              ${root_ca_dir}/rootCA.crt"
-    echo "  Root CA key:          ${root_ca_dir}/rootCA.key"
+    echo "  Root Key:              ${root_ca_dir}/rootCA.crt"
+    echo "  Root Key key:          ${root_ca_dir}/rootCA.key"
     echo ""
 
     cd "$WORKING_DIR"
@@ -890,9 +890,9 @@ env_provider_export_for_addon() {
     local server_name="$1"
     local root_ca_dir="${2:-${ACTIVE_ROOT_CA_DIR}}"
 
-    # Check if Root CA is set
+    # Check if Root Key is set
     if [[ -z "$root_ca_dir" ]]; then
-        print_message "error" "No active Root CA. Cannot export environment."
+        print_message "error" "No active Root Key. Cannot export environment."
         return 1
     fi
 
@@ -997,12 +997,12 @@ addon_loader_validate() {
 # MENU SYSTEM
 # ===========================================
 
-menu_with_root_ca() {
+menu_with_root_key() {
     # Get addons list
     local addons
     mapfile -t addons < <(addon_loader_get_list)
 
-    # Get available Root CAs
+    # Get available Root Keys
     mapfile -t FOUND_ROOT_CAS < <(list_root_cas)
     local num_root_cas=${#FOUND_ROOT_CAS[@]}
 
@@ -1015,15 +1015,15 @@ menu_with_root_ca() {
         local exit_option=0
 
         echo ""
-        echo "Root CA: $(basename "$ACTIVE_ROOT_CA_DIR")"
+        echo "Root Key: $(basename "$ACTIVE_ROOT_CA_DIR")"
 
-        # Get and display Root CA info
+        # Get and display Root Key info
         local ca_info
         ca_info=$(get_root_ca_info "$ACTIVE_ROOT_CA_DIR" 2>/dev/null)
 
         if [[ -n "$ca_info" ]]; then
             # Parse the info line by line
-            local ca_subject="Matrix Root CA"
+            local ca_subject="Matrix Root Key"
             local ca_country="IR"
             local ca_expiry="unknown"
             local ca_days="unknown"
@@ -1061,9 +1061,9 @@ menu_with_root_ca() {
         echo ""
         echo "  ---------------------------"
         if [[ $num_root_cas -gt 1 ]]; then
-            echo "  $switch_ca_option) Switch active Root CA"
+            echo "  $switch_ca_option) Switch active Root Key"
         fi
-        echo "  $new_ca_option) Create new Root CA"
+        echo "  $new_ca_option) Create new Root Key"
         echo "  $exit_option) Exit"
         echo ""
 
@@ -1071,7 +1071,7 @@ menu_with_root_ca() {
         if [[ $num_root_cas -gt 1 ]]; then
             read -rp "Enter your choice (0-$max_option): " choice || true
         else
-            read -rp "Enter your choice (0-$new_ca_option, or 8 for new Root CA): " choice || true
+            read -rp "Enter your choice (0-$new_ca_option, or 8 for new Root Key): " choice || true
         fi
 
         case "$choice" in
@@ -1098,7 +1098,7 @@ menu_with_root_ca() {
                 # Show summary and confirm
                 echo ""
                 echo "=== Certificate Summary ==="
-                echo "  Root CA:     $(basename "$ACTIVE_ROOT_CA_DIR")"
+                echo "  Root Key:     $(basename "$ACTIVE_ROOT_CA_DIR")"
                 echo "  Server:      $server_input"
                 local server_type="Domain"
                 if is_ip_address "$server_input"; then
@@ -1123,18 +1123,18 @@ menu_with_root_ca() {
                     prompt_select_root_ca_from_certs "${FOUND_ROOT_CAS[@]}" || select_result=$?
                     select_result="${select_result:-0}"
                     if [[ $select_result -eq 0 ]]; then
-                        print_message "success" "Switched to Root CA: $(basename "$ACTIVE_ROOT_CA_DIR")"
+                        print_message "success" "Switched to Root Key: $(basename "$ACTIVE_ROOT_CA_DIR")"
                         mapfile -t FOUND_ROOT_CAS < <(list_root_cas)
                         num_root_cas=${#FOUND_ROOT_CAS[@]}
                     elif [[ $select_result -eq 1 ]]; then
-                        # User chose to create new Root CA
+                        # User chose to create new Root Key
                         create_root_ca_from_menu
                         mapfile -t FOUND_ROOT_CAS < <(list_root_cas)
                         num_root_cas=${#FOUND_ROOT_CAS[@]}
                     fi
                     # If return code 3 (Back), just continue to re-display menu
                 else
-                    # Only one Root CA, create new
+                    # Only one Root Key, create new
                     create_root_ca_from_menu
                     mapfile -t FOUND_ROOT_CAS < <(list_root_cas)
                     num_root_cas=${#FOUND_ROOT_CAS[@]}
@@ -1162,7 +1162,7 @@ menu_with_root_ca() {
     done
 }
 
-menu_without_root_ca() {
+menu_without_root_key() {
     while true; do
         cat <<EOF
 
@@ -1170,9 +1170,9 @@ menu_without_root_ca() {
 ║             ${MATRIX_PLUS_NAME} - Main Menu               ║
 ╚══════════════════════════════════════════════════════════╝
 
-Root CA: Not Available
+Root Key: Not Available
 
-  1) Generate new Root CA
+  1) Generate new Root Key
   2) Exit
 
 EOF
@@ -1181,7 +1181,7 @@ EOF
 
         case "$choice" in
             1)
-                if [[ "$(prompt_yes_no "This will create a new Root CA directory. Continue?" "y")" != "yes" ]]; then
+                if [[ "$(prompt_yes_no "This will create a new Root Key directory. Continue?" "y")" != "yes" ]]; then
                     continue
                 fi
 
@@ -1209,15 +1209,15 @@ EOF
                 SSL_CITY="$city_input"
                 SSL_CA_DAYS="$days_input"
 
-                if [[ "$(prompt_yes_no "Create Root CA with these settings?" "y")" == "yes" ]]; then
+                if [[ "$(prompt_yes_no "Create Root Key with these settings?" "y")" == "yes" ]]; then
                     if ssl_manager_create_root_ca "$org_input"; then
-                        print_message "success" "Root CA created. Switching to main menu..."
+                        print_message "success" "Root Key created. Switching to main menu..."
                         SSL_ORG="$old_org"
                         SSL_COUNTRY="$old_country"
                         SSL_STATE="$old_state"
                         SSL_CITY="$old_city"
                         SSL_CA_DAYS="$old_days"
-                        menu_with_root_ca
+                        menu_with_root_key
                         return
                     fi
                 fi
@@ -1419,16 +1419,16 @@ main() {
             prompt_select_root_ca_from_certs "${FOUND_ROOT_CAS[@]}" || select_result=$?
             select_result="${select_result:-0}"
             if [[ $select_result -eq 1 ]]; then
-                # User chose to create new Root CA
+                # User chose to create new Root Key
                 create_root_ca_from_menu
                 mapfile -t FOUND_ROOT_CAS < <(list_root_cas)
             fi
-            # If return code 0 (auto-selected) or 3 (Back), just continue to menu_with_root_ca
+            # If return code 0 (auto-selected) or 3 (Back), just continue to menu_with_root_key
         fi
-        menu_with_root_ca
+        menu_with_root_key
     else
-        # No Root CAs found
-        menu_without_root_ca
+        # No Root Keys found
+        menu_without_root_key
     fi
 }
 

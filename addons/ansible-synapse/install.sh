@@ -16,7 +16,7 @@ ADDON_AUTHOR="Matrix Installer Team"
 # SERVER_NAME="172.19.39.69"                    # Server IP or domain name
 # SSL_CERT="/path/to/certs/172.19.39.69/cert-full-chain.pem"  # Full chain certificate
 # SSL_KEY="/path/to/certs/172.19.39.69/server.key"            # SSL private key
-# ROOT_CA="/path/to/certs/rootCA.crt"                       # Root CA certificate
+# ROOT_CA="/path/to/certs/rootCA.crt"                       # Root Key certificate
 # CERTS_DIR="/path/to/certs"                                # Certificates directory
 # WORKING_DIR="/path/to/script"                              # Script working directory
 # ===========================================
@@ -60,7 +60,7 @@ NC='\033[0m'
 # - SERVER_NAME: Matrix server identity (IP or domain)
 # - SSL_CERT: Full chain certificate path
 # - SSL_KEY: Private key path
-# - ROOT_CA: Root CA certificate path
+# - ROOT_CA: Root Key certificate path
 # - CERTS_DIR: Certificate directory
 # - WORKING_DIR: Working directory
 
@@ -684,7 +684,7 @@ configure_firewall() {
 install_root_ca_on_system() {
     local mode="$1"
 
-    print_message "info" "Installing Root CA in system trust store..."
+    print_message "info" "Installing Root Key in system trust store..."
 
     cd_playbook_and_setup_direnv || return 1
 
@@ -738,7 +738,7 @@ install_root_ca_on_system() {
             ;;
     esac
 
-    print_message "success" "Root CA installed in system trust store"
+    print_message "success" "Root Key installed in system trust store"
     return 0
 }
 

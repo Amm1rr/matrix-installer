@@ -1,80 +1,80 @@
 ## ADDED Requirements
 
-### Requirement: Root CA Directory Structure
-The system SHALL organize all certificate files under a Root CA-specific directory structure where each Root CA is stored in a subdirectory named by the server identifier (IP address or domain name).
+### Requirement: Root Key Directory Structure
+The system SHALL organize all certificate files under a Root Key-specific directory structure where each Root Key is stored in a subdirectory named by the server identifier (IP address or domain name).
 
-#### Scenario: Creating new Root CA creates directory
-- **WHEN** user creates a new Root CA with server name "192.168.1.100"
+#### Scenario: Creating new Root Key creates directory
+- **WHEN** user creates a new Root Key with server name "192.168.1.100"
 - **THEN** the system SHALL create directory `certs/192.168.1.100/`
 - **AND** store rootCA.key, rootCA.crt, and rootCA.srl in that directory
 - **AND** create a `servers/` subdirectory for server certificates
 
-#### Scenario: Root CA with domain name
-- **WHEN** user creates a new Root CA with server name "matrix.example.com"
+#### Scenario: Root Key with domain name
+- **WHEN** user creates a new Root Key with server name "matrix.example.com"
 - **THEN** the system SHALL create directory `certs/matrix.example.com/`
-- **AND** store all Root CA files in that directory
+- **AND** store all Root Key files in that directory
 
 ### Requirement: Server Certificate Subdirectory
-Server certificates SHALL be stored in a `servers/` subdirectory under their associated Root CA directory.
+Server certificates SHALL be stored in a `servers/` subdirectory under their associated Root Key directory.
 
 #### Scenario: Server certificate placement
-- **WHEN** generating a server certificate for "192.168.1.100" under Root CA "192.168.1.100"
+- **WHEN** generating a server certificate for "192.168.1.100" under Root Key "192.168.1.100"
 - **THEN** the system SHALL create `certs/192.168.1.100/servers/192.168.1.100/`
 - **AND** store server.key, server.crt, and cert-full-chain.pem in that subdirectory
 
-#### Scenario: Additional server under same Root CA
-- **WHEN** generating a certificate for "other.local" under Root CA "192.168.1.100"
+#### Scenario: Additional server under same Root Key
+- **WHEN** generating a certificate for "other.local" under Root Key "192.168.1.100"
 - **THEN** the system SHALL create `certs/192.168.1.100/servers/other.local/`
 - **AND** store the server certificates in that subdirectory
 
-### Requirement: Duplicate Root CA Directory Handling
-When a Root CA directory with the same name already exists, the system SHALL prompt the user to backup the existing directory before creating a new one.
+### Requirement: Duplicate Root Key Directory Handling
+When a Root Key directory with the same name already exists, the system SHALL prompt the user to backup the existing directory before creating a new one.
 
 #### Scenario: Duplicate directory with user confirmation
-- **WHEN** creating Root CA "192.168.1.100" and directory already exists
+- **WHEN** creating Root Key "192.168.1.100" and directory already exists
 - **THEN** the system SHALL warn the user about existing directory
 - **AND** prompt for confirmation to backup and create new
 - **AND** if confirmed, rename existing to "192.168.1.100.backup-YYYY-MM-DD-HHMMSS"
 - **AND** create new empty "192.168.1.100/" directory
 
 #### Scenario: Duplicate directory with user rejection
-- **WHEN** creating Root CA "192.168.1.100" and directory already exists
+- **WHEN** creating Root Key "192.168.1.100" and directory already exists
 - **AND** user rejects backup and create option
-- **THEN** the system SHALL cancel Root CA creation
+- **THEN** the system SHALL cancel Root Key creation
 - **AND** keep existing directory unchanged
 
-### Requirement: Root CA Discovery
-The system SHALL discover all available Root CA directories by scanning the `certs/` directory for subdirectories containing rootCA.key and rootCA.crt files.
+### Requirement: Root Key Discovery
+The system SHALL discover all available Root Key directories by scanning the `certs/` directory for subdirectories containing rootCA.key and rootCA.crt files.
 
-#### Scenario: Single Root CA found
-- **WHEN** scanning certs/ and only one Root CA directory exists
-- **THEN** the system SHALL use that Root CA as active
-- **AND** display Root CA information in menu
+#### Scenario: Single Root Key found
+- **WHEN** scanning certs/ and only one Root Key directory exists
+- **THEN** the system SHALL use that Root Key as active
+- **AND** display Root Key information in menu
 
-#### Scenario: Multiple Root CAs found - user selection menu
-- **WHEN** scanning certs/ and multiple Root CA directories exist
+#### Scenario: Multiple Root Keys found - user selection menu
+- **WHEN** scanning certs/ and multiple Root Key directories exist
 - **THEN** the system SHALL display a selection menu with:
-  - List of available Root CA names
-  - Expiration date for each Root CA
-  - Option to create a new Root CA
-- **AND** prompt user to select active Root CA
-- **AND** set the selected Root CA as active
+  - List of available Root Key names
+  - Expiration date for each Root Key
+  - Option to create a new Root Key
+- **AND** prompt user to select active Root Key
+- **AND** set the selected Root Key as active
 
-#### Scenario: Multiple Root CAs menu display format
-- **WHEN** displaying the Root CA selection menu
-- **THEN** the system SHALL show each Root CA with:
+#### Scenario: Multiple Root Keys menu display format
+- **WHEN** displaying the Root Key selection menu
+- **THEN** the system SHALL show each Root Key with:
   - Directory name (e.g., "192.168.1.100" or "matrix.local")
   - Subject/organization from certificate
   - Days remaining until expiration
 - **AND** number each option for easy selection
 
-### Requirement: Active Root CA Tracking
-The system SHALL track which Root CA directory is currently active for certificate operations.
+### Requirement: Active Root Key Tracking
+The system SHALL track which Root Key directory is currently active for certificate operations.
 
-#### Scenario: Setting active Root CA
-- **WHEN** user selects or creates a Root CA
-- **THEN** the system SHALL set that Root CA directory as active
-- **AND** all certificate operations SHALL use the active Root CA
+#### Scenario: Setting active Root Key
+- **WHEN** user selects or creates a Root Key
+- **THEN** the system SHALL set that Root Key directory as active
+- **AND** all certificate operations SHALL use the active Root Key
 
 ### Requirement: Old Structure Migration
 On first run after upgrade, the system SHALL automatically detect and migrate the old flat certificate structure to the new hierarchical structure.
@@ -90,27 +90,27 @@ On first run after upgrade, the system SHALL automatically detect and migrate th
 - **THEN** the system SHALL skip migration
 - **AND** continue normal operation
 
-### Requirement: Multiple Root CA Files Next to main.sh
-When multiple Root CA key/certificate pairs exist next to main.sh, the system SHALL display a list and prompt user to select which one to use.
+### Requirement: Multiple Root Key Files Next to main.sh
+When multiple Root Key key/certificate pairs exist next to main.sh, the system SHALL display a list and prompt user to select which one to use.
 
-#### Scenario: Multiple Root CA pairs found next to main.sh
+#### Scenario: Multiple Root Key pairs found next to main.sh
 - **WHEN** scanning SCRIPT_DIR and multiple .key/.crt pairs are found
 - **THEN** the system SHALL display a selection menu showing:
-  - List of found Root CA file pairs (e.g., rootCA.key/crt, rootCA-backup.key/crt)
+  - List of found Root Key file pairs (e.g., rootCA.key/crt, rootCA-backup.key/crt)
   - Subject/organization from each certificate
-  - Expiration date for each Root CA
-- **AND** prompt user to select which Root CA to copy to certs/
-- **AND** copy only the selected Root CA files
+  - Expiration date for each Root Key
+- **AND** prompt user to select which Root Key to copy to certs/
+- **AND** copy only the selected Root Key files
 
-#### Scenario: Single Root CA pair found next to main.sh
+#### Scenario: Single Root Key pair found next to main.sh
 - **WHEN** scanning SCRIPT_DIR and only rootCA.key/rootCA.crt exists
-- **THEN** the system SHALL prompt if user wants to use this Root CA
+- **THEN** the system SHALL prompt if user wants to use this Root Key
 - **AND** if confirmed, copy files to certs/<name>/ directory
 
-#### Scenario: No Root CA files found next to main.sh
-- **WHEN** scanning SCRIPT_DIR and no Root CA files exist
+#### Scenario: No Root Key files found next to main.sh
+- **WHEN** scanning SCRIPT_DIR and no Root Key files exist
 - **THEN** the system SHALL continue to normal menu flow
-- **AND** offer to create new Root CA if needed in certs/
+- **AND** offer to create new Root Key if needed in certs/
 
 ## MODIFIED Requirements
 
@@ -118,7 +118,7 @@ When multiple Root CA key/certificate pairs exist next to main.sh, the system SH
 The system SHALL export environment variables to addons pointing to certificate files in the new directory structure.
 
 #### Scenario: Exporting new environment variables
-- **WHEN** running an addon with active Root CA "192.168.1.100" and server "192.168.1.100"
+- **WHEN** running an addon with active Root Key "192.168.1.100" and server "192.168.1.100"
 - **THEN** the system SHALL export:
   - `SERVER_NAME="192.168.1.100"`
   - `SSL_CERT="certs/192.168.1.100/servers/192.168.1.100/cert-full-chain.pem"`
@@ -132,9 +132,9 @@ The system SHALL export environment variables to addons pointing to certificate 
 SSL Manager module functions SHALL operate on the new directory structure.
 
 #### Scenario: get_server_cert_dir with new structure
-- **WHEN** calling `get_server_cert_dir "192.168.1.100"` with active Root CA "192.168.1.100"
+- **WHEN** calling `get_server_cert_dir "192.168.1.100"` with active Root Key "192.168.1.100"
 - **THEN** the function SHALL return "certs/192.168.1.100/servers/192.168.1.100"
 
 #### Scenario: server_has_certs with new structure
-- **WHEN** checking if server "192.168.1.100" has certificates under Root CA "192.168.1.100"
+- **WHEN** checking if server "192.168.1.100" has certificates under Root Key "192.168.1.100"
 - **THEN** the system SHALL check for files in `certs/192.168.1.100/servers/192.168.1.100/`

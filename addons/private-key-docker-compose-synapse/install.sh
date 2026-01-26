@@ -5,7 +5,7 @@
 # ===========================================
 ADDON_NAME="private-key-docker-compose-synapse"
 ADDON_VERSION="1.0.0"
-ADDON_DESCRIPTION="Docker Compose installer with Private Key SSL (Root CA)"
+ADDON_DESCRIPTION="Docker Compose installer with Private Key SSL (Root Key)"
 ADDON_AUTHOR="Matrix Installer Team"
 
 # ===========================================
@@ -16,7 +16,7 @@ ADDON_AUTHOR="Matrix Installer Team"
 # SERVER_NAME="172.19.39.69"                    # Server IP or domain name
 # SSL_CERT="/path/to/certs/172.19.39.69/cert-full-chain.pem"  # Full chain certificate
 # SSL_KEY="/path/to/certs/172.19.39.69/server.key"            # SSL private key
-# ROOT_CA="/path/to/certs/rootCA.crt"                       # Root CA certificate
+# ROOT_CA="/path/to/certs/rootCA.crt"                       # Root Key certificate
 # CERTS_DIR="/path/to/certs"                                # Certificates directory
 # WORKING_DIR="/path/to/script"                              # Script working directory
 # ===========================================
@@ -230,7 +230,7 @@ check_environment_variables() {
     fi
 
     if [[ ! -f "$ROOT_CA" ]]; then
-        print_message "error" "Root CA certificate not found: $ROOT_CA"
+        print_message "error" "Root Key certificate not found: $ROOT_CA"
         return 1
     fi
 
@@ -703,7 +703,7 @@ PRIVATE-KEY-DOCKER-COMPOSE-SYNAPSE INSTALLATION COMPLETE
     echo -e "${BLUE}SSL Certificates:${NC}
   - Certificate: ${SSL_DIR}/cert-full-chain.pem
   - Private Key: ${SSL_DIR}/server.key
-  - Root CA: ${SSL_DIR}/rootCA.crt
+  - Root Key: ${SSL_DIR}/rootCA.crt
 "
 
     echo -e "${BLUE}Docker Compose:${NC}
@@ -739,7 +739,7 @@ main() {
 ║                       Version 1.0.0                      ║
 ║                                                          ║
 ║       Docker Compose installer with Private Key SSL      ║
-║              (Root CA from main.sh)                      ║
+║              (Root Key from main.sh)                     ║
 ║                                                          ║
 ╚══════════════════════════════════════════════════════════╝
 EOF

@@ -12,11 +12,11 @@ Think of it this way: Matrix Installer is like a project manager that coordinate
 
 Here's how it works:
 
-1. **First**, you create a Root CA (Certificate Authority)—this is like being your own certificate company
+1. **First**, you create a Root Key (Certificate Authority)—this is like being your own certificate company
 2. **Then**, you create certificates for each server you want to run
 3. **Finally**, you pick an addon to handle the actual installation
 
-The beauty of this approach is that when you use the same Root CA for multiple servers, they can automatically trust each other and communicate securely—this is called "federation."
+The beauty of this approach is that when you use the same Root Key for multiple servers, they can automatically trust each other and communicate securely—this is called "federation."
 
 ## Getting Started
 
@@ -31,24 +31,24 @@ cd /path/to/matrix-second/script
 
 You'll see a welcome banner and the main menu.
 
-### Step 2: Your First Time - Create a Root CA
+### Step 2: Your First Time - Create a Root Key
 
-If this is your first time, you won't have a Root CA yet. The menu will look simple:
+If this is your first time, you won't have a Root Key yet. The menu will look simple:
 
 ```
-Root CA: Not Available
+Root Key: Not Available
 
-  1) Generate new Root CA
+  1) Generate new Root Key
   2) Exit
 ```
 
-Choose option 1. You'll be asked for some information about your Root CA:
+Choose option 1. You'll be asked for some information about your Root Key:
 
 - **Organization**: A name for your organization (like "MatrixCA" or your company name)
 - **Country**: A two-letter country code (like "IR" for Iran, "US" for United States)
 - **State/Province**: Your state or province
 - **City**: Your city
-- **Validity**: How long the Root CA should be valid (default is 10 years)
+- **Validity**: How long the Root Key should be valid (default is 10 years)
 
 Most of these have defaults you can accept by just pressing Enter. The important one is the organization name—pick something memorable.
 
@@ -56,11 +56,11 @@ Once created, you'll see confirmation with the file locations. Keep these files 
 
 ### Step 3: Generate a Server Certificate
 
-Now that you have a Root CA, the menu expands. You'll see:
+Now that you have a Root Key, the menu expands. You'll see:
 
 ```
-Root CA: Available
-  | Subject: Matrix Root CA
+Root Key: Available
+  | Subject: Matrix Root Key
   | Expires: 2034-01-25 (in 3650 days)
   | Country: IR
 
@@ -71,7 +71,7 @@ Root CA: Available
   5) Install zanjir-synapse
 
   ---------------------------
-  8) Generate new Root CA (overwrite existing)
+  8) Generate new Root Key (overwrite existing)
   0) Exit
 ```
 
@@ -85,7 +85,7 @@ Choose option 1 to create a server certificate. The script will try to detect yo
 
 After confirming, the script generates:
 - A private key for your server
-- A certificate signed by your Root CA
+- A certificate signed by your Root Key
 - A full-chain file that includes both
 
 These files are stored in `certs/<your-server-ip-or-domain>/` so you can have certificates for multiple servers.
@@ -102,20 +102,20 @@ The addon will take over from here. It already knows where your certificates are
 
 Each addon is different, but they all follow this same pattern of getting the certificate information from Matrix Installer.
 
-## Using an Existing Root CA
+## Using an Existing Root Key
 
-If you already have a Root CA from another Matrix Installer installation (or you created one separately), you can reuse it. Just place `rootCA.key` and `rootCA.crt` in the same directory as `main.sh` before running it.
+If you already have a Root Key from another Matrix Installer installation (or you created one separately), you can reuse it. Just place `rootCA.key` and `rootCA.crt` in the same directory as `main.sh` before running it.
 
 When you start the script, you'll see:
 
 ```
-[INFO] Root CA found at: /path/to/script
-Use this Root CA for Matrix Installer? [y/N]:
+[INFO] Root Key found at: /path/to/script
+Use this Root Key for Matrix Installer? [y/N]:
 ```
 
 Type `y` to use it. This is useful when:
 - You're setting up multiple servers that need to federate
-- You want to keep your Root CA in a central, secure location
+- You want to keep your Root Key in a central, secure location
 - You're moving to a new machine but want to use the same certificates
 
 ## Working with Multiple Servers
@@ -150,7 +150,7 @@ Addons are the actual installation methods. Here's what you'll typically find:
 
 - **docker-compose-synapse**: A simpler Docker Compose setup. Good if you prefer straightforward Docker Compose files over Ansible.
 
-- **private-key-docker-compose-synapse**: Similar to docker-compose-synapse but specifically designed for private Root CA setups.
+- **private-key-docker-compose-synapse**: Similar to docker-compose-synapse but specifically designed for private Root Key setups.
 
 - **zanjir-synapse**: A placeholder for the Zanjir project (currently under development).
 
@@ -167,13 +167,13 @@ Open a web browser and go to:
 
 The first time, you'll get a security warning because you're using self-signed certificates. This is normal and expected. You can:
 - Proceed anyway (you'll need to do this each time)
-- Import the Root CA certificate into your browser to permanently trust it
+- Import the Root Key certificate into your browser to permanently trust it
 
-To import the Root CA permanently:
+To import the Root Key permanently:
 - **Chrome/Edge**: Go to Settings → Privacy and security → Security → Manage certificates → Authorities → Import
 - **Firefox**: Settings → Privacy & Security → Certificates → View Certificates → Authorities → Import
 
-The Root CA file is at `certs/rootCA.crt`.
+The Root Key file is at `certs/rootCA.crt`.
 
 ### Log In
 
@@ -201,7 +201,7 @@ The certificates Matrix Installer generates are just as secure as ones from a co
 
 ### Can I change my certificates later?
 
-Yes. If you need to regenerate a server certificate, just run `main.sh` again and choose to generate a new certificate for that server. The old one will be replaced. If you need to create a new Root CA entirely, choose option 8 from the main menu (but be aware this will require updating all your servers).
+Yes. If you need to regenerate a server certificate, just run `main.sh` again and choose to generate a new certificate for that server. The old one will be replaced. If you need to create a new Root Key entirely, choose option 8 from the main menu (but be aware this will require updating all your servers).
 
 ### What happens if something goes wrong?
 
@@ -217,9 +217,9 @@ These files contain detailed information about what happened and can help identi
 
 2. **Take notes**: Write down your passwords, server addresses, and any choices you make during installation.
 
-3. **Test federation**: Once you have two servers set up with the same Root CA, try creating a room on one and joining it from the other to verify federation is working.
+3. **Test federation**: Once you have two servers set up with the same Root Key, try creating a room on one and joining it from the other to verify federation is working.
 
-4. **Backup your Root CA**: Keep a safe copy of `rootCA.key` and `rootCA.crt` in a secure location. Without these, you can't create new certificates for your federation.
+4. **Backup your Root Key**: Keep a safe copy of `rootCA.key` and `rootCA.crt` in a secure location. Without these, you can't create new certificates for your federation.
 
 ## Getting Help
 
@@ -227,7 +227,7 @@ If you run into issues:
 
 1. Check the log files mentioned above
 2. Review the [Federation Troubleshooting Guide](FEDERATION_TROUBLESHOOTING.md) for federation-specific issues
-3. Look at the [Root CA Workflow](ROOT_CA_WORKFLOW.md) for more details on certificate management
+3. Look at the [Root Key Workflow](ROOT_CA_WORKFLOW.md) for more details on certificate management
 4. Check the addon-specific documentation if available
 
 ---

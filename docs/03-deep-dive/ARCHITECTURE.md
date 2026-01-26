@@ -18,14 +18,14 @@ Matrix Installer is a modular installation system for Matrix homeservers. It han
 │  ┌──────────────┐  ┌──────────────┐  ┌──────────────────────┐   │
 │  │ SSL Manager  │  │ Addon Loader │  │ Environment Provider │   │
 │  │              │  │              │  │                      │   │
-│  │ • Root CA    │  │ • Discover   │  │ • Export variables   │   │
+│  │ • Root Key    │  │ • Discover   │  │ • Export variables   │   │
 │  │ • Server     │  │ • Validate   │  │ • Verify certs       │   │
 │  │   Certs      │  │ • Execute    │  │ • Pass to addons     │   │
 │  └──────────────┘  └──────────────┘  └──────────────────────┘   │
 │                                                                 │
 │  ┌──────────────────────────────────────────────────────────┐   │
 │  │                    Menu System                           │   │
-│  │  • Dynamic based on Root CA availability                 │   │
+│  │  • Dynamic based on Root Key availability                 │   │
 │  │  • Auto-displays available addons                        │   │
 │  │  • Interactive prompts                                   │   │
 │  └──────────────────────────────────────────────────────────┘   │
@@ -35,7 +35,7 @@ Matrix Installer is a modular installation system for Matrix homeservers. It han
                     ┌─────────────────┐
                     │   certs/        │
                     │                 │
-                    │  <root-ca>/     │  ← Root CA named by IP/domain
+                    │  <root-ca>/     │  ← Root Key named by IP/domain
                     │    rootCA.key   │
                     │    rootCA.crt   │
                     │    servers/     │
@@ -81,32 +81,32 @@ Handles all certificate operations. This is the heart of the system—without pr
 | Function | Purpose |
 |----------|---------|
 | `ssl_manager_init()` | Create certs directory, detect old structure, migrate if needed |
-| `detect_root_ca_files()` | Check for Root CA files next to main.sh |
-| `ssl_manager_create_root_ca()` | Generate new Root CA in named directory |
-| `ssl_manager_generate_server_cert()` | Generate server certificate under active Root CA |
-| `get_server_cert_dir()` | Get certificate directory for a server (under active Root CA) |
+| `detect_root_ca_files()` | Check for Root Key files next to main.sh |
+| `ssl_manager_create_root_ca()` | Generate new Root Key in named directory |
+| `ssl_manager_generate_server_cert()` | Generate server certificate under active Root Key |
+| `get_server_cert_dir()` | Get certificate directory for a server (under active Root Key) |
 | `server_has_certs()` | Check if a server has certificates |
-| `list_servers_with_certs()` | List all servers with existing certificates (under active Root CA) |
-| `list_root_cas()` | List all available Root CA directories |
-| `get_root_ca_info()` | Get Root CA certificate information |
+| `list_servers_with_certs()` | List all servers with existing certificates (under active Root Key) |
+| `list_root_cas()` | List all available Root Key directories |
+| `get_root_ca_info()` | Get Root Key certificate information |
 | `migrate_old_cert_structure()` | Migrate old flat structure to new hierarchical structure |
 
 **Directory Structure:**
 
 ```
 certs/
-├── 192.168.1.100/              # Root CA directory (named by IP/domain)
+├── 192.168.1.100/              # Root Key directory (named by IP/domain)
 │   ├── rootCA.key
 │   ├── rootCA.crt
 │   ├── rootCA.srl
-│   └── servers/                # Server certificates for this Root CA
+│   └── servers/                # Server certificates for this Root Key
 │       ├── 192.168.1.100/
 │       │   ├── server.key
 │       │   ├── server.crt
 │       │   └── cert-full-chain.pem
 │       └── matrix.local/
 │           └── ...
-└── matrix.example.com/         # Another Root CA
+└── matrix.example.com/         # Another Root Key
     ├── rootCA.key
     ├── rootCA.crt
     └── servers/
@@ -120,29 +120,29 @@ certs/
    ├─ Check for old flat structure (rootCA files in certs/)
    │   └─ If found → Offer to migrate to new structure
    │
-   ├─ Check for Root CA files next to main.sh
+   ├─ Check for Root Key files next to main.sh
    │   └─ If found → Offer to import to new structure
    │
-   └─ Scan for Root CA directories in certs/
+   └─ Scan for Root Key directories in certs/
 
-2. Root CA Selection
+2. Root Key Selection
    │
-   ├─ No Root CAs found → Prompt to create new Root CA
+   ├─ No Root Keys found → Prompt to create new Root Key
    │
-   ├─ Single Root CA found → Auto-select as active
+   ├─ Single Root Key found → Auto-select as active
    │
-   └─ Multiple Root CAs found → Show selection menu
-       └─ User selects or creates new Root CA
+   └─ Multiple Root Keys found → Show selection menu
+       └─ User selects or creates new Root Key
 
-3. Create Root CA (if needed)
+3. Create Root Key (if needed)
    │
-   ├─ Prompt for Root CA directory name (IP or domain)
+   ├─ Prompt for Root Key directory name (IP or domain)
    ├─ Check if directory exists
    │   └─ If yes → Backup existing directory
    ├─ Create certs/<name>/ directory
    ├─ Generate private key (4096-bit RSA)
    ├─ Create self-signed certificate (10 years)
-   └─ Set as active Root CA
+   └─ Set as active Root Key
 
 4. Generate Server Certificate
    │
@@ -150,9 +150,9 @@ certs/
    ├─ Create certs/<root-ca>/servers/<server>/ directory
    ├─ Generate server private key (4096-bit RSA)
    ├─ Create CSR with proper SAN
-   ├─ Sign CSR with active Root CA
+   ├─ Sign CSR with active Root Key
    ├─ Create full-chain file
-   └─ Return to menu with Root CA available
+   └─ Return to menu with Root Key available
 ```
 
 2. Get server name (IP or domain)
@@ -162,10 +162,10 @@ certs/
 3. Create server certificate
    ├─ Create server private key (4096-bit RSA)
    ├─ Create CSR with proper SAN
-   ├─ Sign CSR with Root CA
+   ├─ Sign CSR with Root Key
    ├─ Create full-chain file
    └─ Save to certs/<server>/        │
-4. Return to menu with Root CA available
+4. Return to menu with Root Key available
 ```
 
 ### 3. Addon Loader
@@ -211,7 +211,7 @@ SERVER_NAME="$server_name"                    # From user input or detection
 SSL_CERT="${root_ca_dir}/servers/${server_name}/cert-full-chain.pem"
 SSL_KEY="${root_ca_dir}/servers/${server_name}/server.key"
 ROOT_CA="${root_ca_dir}/rootCA.crt"
-ROOT_CA_DIR="${root_ca_dir}"                  # NEW: Root CA directory path
+ROOT_CA_DIR="${root_ca_dir}"                  # NEW: Root Key directory path
 CERTS_DIR="$CERTS_DIR"
 WORKING_DIR="$WORKING_DIR"
 ```
@@ -222,21 +222,21 @@ Provides the interactive user interface.
 
 **Three modes:**
 
-1. **Without Root CA** (`menu_without_root_ca()`):
-   - Only option is to create Root CA
+1. **Without Root Key** (`menu_without_root_ca()`):
+   - Only option is to create Root Key
    - Minimal options since nothing else works without certificates
 
-2. **With Root CA** (`menu_with_root_ca()`):
+2. **With Root Key** (`menu_with_root_ca()`):
    - Full menu with all options
    - Dynamically lists available addons
-   - Shows active Root CA information
-   - Option to switch between multiple Root CAs (if available)
-   - Option to create new Root CA
+   - Shows active Root Key information
+   - Option to switch between multiple Root Keys (if available)
+   - Option to create new Root Key
 
-3. **Multiple Root CAs Selection** (`prompt_select_root_ca_from_certs()`):
-   - Shows list of available Root CAs with expiration info
-   - Allows user to select active Root CA
-   - Option to create new Root CA instead
+3. **Multiple Root Keys Selection** (`prompt_select_root_ca_from_certs()`):
+   - Shows list of available Root Keys with expiration info
+   - Allows user to select active Root Key
+   - Option to create new Root Key instead
 
 **Menu construction:**
 
@@ -259,12 +259,12 @@ User runs ./main.sh
         ▼
 ┌─────────────────────────────────────┐
 │ Initialize: Create certs/ directory │
-│ Detect existing Root CA             │
+│ Detect existing Root Key             │
 └────────────┬────────────────────────┘
              │
              ▼
       ┌──────────────┐
-      │ Root CA exists? │
+      │ Root Key exists? │
       └──┬───────────┘
          │
     No   │   Yes
@@ -337,19 +337,19 @@ User runs ./main.sh
 ### Creation
 
 ```
-Root CA Creation (per Root CA directory):
-  1. Prompt for Root CA name (IP or domain)
+Root Key Creation (per Root Key directory):
+  1. Prompt for Root Key name (IP or domain)
   2. Create certs/<name>/ directory
   3. openssl genrsa → certs/<name>/rootCA.key (4096-bit, 0600)
   4. openssl req -x509 → certs/<name>/rootCA.crt (10 years, 0644)
   5. Create certs/<name>/servers/ subdirectory
 
-Server Certificate Creation (per server, per Root CA):
+Server Certificate Creation (per server, per Root Key):
   1. Prompt for server name
   2. Create certs/<root-ca>/servers/<server>/ directory
   3. openssl genrsa → server.key (4096-bit, 0600)
   4. openssl req → server.csr (with SAN)
-  5. openssl x509 -req → server.crt (signed by active Root CA, 1 year)
+  5. openssl x509 -req → server.crt (signed by active Root Key, 1 year)
   6. cat server.crt ../rootCA.crt → cert-full-chain.pem
 ```
 
@@ -360,27 +360,27 @@ Traefik/Reverse Proxy:
   Reads: certs/<root-ca>/servers/<server>/cert-full-chain.pem
          certs/<root-ca>/servers/<server>/server.key
   Presents: cert-full-chain.pem to clients
-  Validates: Against Root CA (for federation)
+  Validates: Against Root Key (for federation)
 
 Matrix Synapse:
-  Trusts: Root CA installed in system
+  Trusts: Root Key installed in system
   Presents: server certificate for federation
-  Validates: Peer certificates against Root CA
+  Validates: Peer certificates against Root Key
 ```
 
 ### Expiration
 
 ```
 Timeline:
-  Year 0:  Root CA created (valid for 10 years)
+  Year 0:  Root Key created (valid for 10 years)
   Year 0:  Server cert created (valid for 1 year)
-  Year 1:  Server cert expires → regenerate (same Root CA)
-  Year 2:  Server cert expires → regenerate (same Root CA)
+  Year 1:  Server cert expires → regenerate (same Root Key)
+  Year 2:  Server cert expires → regenerate (same Root Key)
   ...
-  Year 10: Root CA expires → regenerate all certificates (create new Root CA)
+  Year 10: Root Key expires → regenerate all certificates (create new Root Key)
 
-Note: Multiple Root CAs can exist simultaneously, each with their own
-      server certificates. The active Root CA is selected by the user.
+Note: Multiple Root Keys can exist simultaneously, each with their own
+      server certificates. The active Root Key is selected by the user.
 ```
 
 ## Configuration Sources
@@ -424,7 +424,7 @@ This applies to both `main.sh` and all addons.
 
 | Error Type | Handling |
 |------------|----------|
-| Missing Root CA | Prompt to create one |
+| Missing Root Key | Prompt to create one |
 | Missing server cert | Prompt to create one |
 | Invalid addon | Skip, show warning |
 | Addon failure | Exit, show log location |
@@ -463,7 +463,7 @@ my_new_function() {
 
 ```
 ┌─────────────────────────────────────────────┐
-│              Root CA (you)                   │
+│              Root Key (you)                   │
 │         Most trusted component              │
 │         (never exposed to network)           │
 └─────────────────┬───────────────────────────┘
@@ -493,7 +493,7 @@ my_new_function() {
 
 ### Attack Surface Considerations
 
-1. **Root CA key compromise**: Attacker can issue trusted certificates
+1. **Root Key key compromise**: Attacker can issue trusted certificates
    - **Mitigation**: Keep offline, encrypted backups, access control
 
 2. **Server key compromise**: Attacker can impersonate that server
@@ -508,7 +508,7 @@ my_new_function() {
 
 | Operation | Time | Notes |
 |-----------|------|-------|
-| Root CA creation | <1 second | One-time operation |
+| Root Key creation | <1 second | One-time operation |
 | Server certificate | <1 second | Per server |
 | Addon execution | 10-20 minutes | Depends on addon |
 
@@ -547,7 +547,7 @@ fi
 ### Potential Improvements
 
 1. **Configuration file**: `~/.matrix-plus.conf` for user preferences
-2. **Remote Root CA**: Fetch from URL instead of local file
+2. **Remote Root Key**: Fetch from URL instead of local file
 3. **Certificate auto-renewal**: Check expiration and regenerate
 4. **Addon marketplace**: Discover and install addons from repository
 5. **Web UI**: Browser-based interface for certificate management

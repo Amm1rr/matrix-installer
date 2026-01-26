@@ -17,10 +17,10 @@ The system SHALL provide a centralized `get_detected_ip()` function that detects
 - **WHEN** both detection methods fail
 - **THEN** the function SHALL return empty string
 
-### Requirement: Root CA Configuration Helper Function
-The system SHALL provide a `prompt_root_ca_config()` function that prompts for all Root CA configuration values and returns them as pipe-delimited output.
+### Requirement: Root Key Configuration Helper Function
+The system SHALL provide a `prompt_root_ca_config()` function that prompts for all Root Key configuration values and returns them as pipe-delimited output.
 
-#### Scenario: Prompt for all Root CA configuration
+#### Scenario: Prompt for all Root Key configuration
 - **WHEN** `prompt_root_ca_config()` is called
 - **THEN** the system SHALL prompt for:
   - Organization (default: $SSL_ORG)
@@ -43,21 +43,21 @@ The system SHALL provide a `prompt_root_ca_config()` function that prompts for a
 - **THEN** the system SHALL display: "Invalid days value, using default: $SSL_CA_DAYS"
 - **AND** use the default value
 
-### Requirement: Root CA Creation from Menu Helper Function
-The system SHALL provide a `create_root_ca_from_menu()` function that handles the complete Root CA creation flow from menu options.
+### Requirement: Root Key Creation from Menu Helper Function
+The system SHALL provide a `create_root_ca_from_menu()` function that handles the complete Root Key creation flow from menu options.
 
-#### Scenario: Create Root CA with confirmation
+#### Scenario: Create Root Key with confirmation
 - **WHEN** `create_root_ca_from_menu()` is called
-- **THEN** the system SHALL prompt for confirmation: "This will create a new Root CA directory. Continue?"
+- **THEN** the system SHALL prompt for confirmation: "This will create a new Root Key directory. Continue?"
 - **AND** if confirmed, call `prompt_root_ca_config()`
 - **AND** temporarily set global SSL_* variables with user values
-- **AND** prompt for confirmation: "Create Root CA with these settings?"
+- **AND** prompt for confirmation: "Create Root Key with these settings?"
 - **AND** if confirmed, call `ssl_manager_create_root_ca()` with organization name
 - **AND** restore original global SSL_* variables
 
-#### Scenario: User cancels Root CA creation
+#### Scenario: User cancels Root Key creation
 - **WHEN** user declines confirmation prompt
-- **THEN** the function SHALL return without creating Root CA
+- **THEN** the function SHALL return without creating Root Key
 - **AND** global SSL_* variables remain unchanged
 
 ### Requirement: Menu Header Helper Function

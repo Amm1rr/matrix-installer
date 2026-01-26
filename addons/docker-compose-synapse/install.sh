@@ -202,7 +202,7 @@ Requirements:
 
 NOTE: This addon uses Let's Encrypt for automatic
 SSL certificate management. It does NOT use the
-custom Root CA certificates from main.sh.
+custom Root Key certificates from main.sh.
 
 ========================================
 

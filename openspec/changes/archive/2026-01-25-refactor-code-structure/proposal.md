@@ -4,7 +4,7 @@
 
 The current `main.sh` has several maintainability issues:
 
-1. **Code duplication**: Root CA configuration prompts are repeated 4 times (lines 1021-1082, 1092-1157, 1196-1268, 1457-1517)
+1. **Code duplication**: Root Key configuration prompts are repeated 4 times (lines 1021-1082, 1092-1157, 1196-1268, 1457-1517)
 2. **Inconsistent prompting**: Some prompts use `prompt_user()`, others use `read -rp` directly
 3. **IP detection repetition**: Same IP detection code appears in multiple places (lines 945-948, 1304-1307, 1374-1377)
 4. **No navigation back**: Selection menus (`prompt_select_root_ca_from_files`, `prompt_select_root_ca_from_certs`) have no "back to main menu" option
@@ -18,8 +18,8 @@ These issues make the code harder to maintain and extend.
 
 **New helper functions:**
 - `get_detected_ip()` - Centralized IP address detection
-- `prompt_root_ca_config()` - Reusable Root CA configuration prompts
-- `create_root_ca_from_menu()` - Unified Root CA creation flow
+- `prompt_root_ca_config()` - Reusable Root Key configuration prompts
+- `create_root_ca_from_menu()` - Unified Root Key creation flow
 - `print_menu_header()` - Unified menu styling
 
 **Functions removed:**

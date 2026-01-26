@@ -2,12 +2,12 @@
 
 ## Why
 
-The current certificate directory structure (`certs/`) mixes Root CA files and server certificates in a single flat directory. This creates several problems:
+The current certificate directory structure (`certs/`) mixes Root Key files and server certificates in a single flat directory. This creates several problems:
 
-1. **Root CA mixing**: When loading a new Root CA, the old files are simply overwritten, breaking the trust chain for existing server certificates
-2. **No isolation**: Server certificates signed by different Root CAs are indistinguishable
-3. **Unsafe deletion**: Overwriting files loses the previous Root CA permanently with no backup
-4. **Multi-root CA support**: Cannot maintain multiple Root CAs simultaneously
+1. **Root Key mixing**: When loading a new Root Key, the old files are simply overwritten, breaking the trust chain for existing server certificates
+2. **No isolation**: Server certificates signed by different Root Keys are indistinguishable
+3. **Unsafe deletion**: Overwriting files loses the previous Root Key permanently with no backup
+4. **Multi-root CA support**: Cannot maintain multiple Root Keys simultaneously
 
 ## What Changes
 
@@ -30,18 +30,18 @@ certs/
 **After:**
 ```
 certs/
-├── 192.168.1.100/              # Root CA named by server IP/domain
+├── 192.168.1.100/              # Root Key named by server IP/domain
 │   ├── rootCA.key
 │   ├── rootCA.crt
 │   ├── rootCA.srl
-│   └── servers/                # Server certificates for this Root CA
+│   └── servers/                # Server certificates for this Root Key
 │       ├── 192.168.1.100/
 │       │   ├── server.key
 │       │   ├── server.crt
 │       │   └── cert-full-chain.pem
 │       └── other-server.local/
 │           └── ...
-└── matrix.local/               # Another Root CA
+└── matrix.local/               # Another Root Key
     ├── rootCA.key
     ├── rootCA.crt
     └── servers/
@@ -49,10 +49,10 @@ certs/
 
 ### Behavior Changes
 
-1. **Root CA creation/loading**: Now creates a subdirectory named by the server IP/domain
+1. **Root Key creation/loading**: Now creates a subdirectory named by the server IP/domain
 2. **Duplicate handling**: If directory exists, user is prompted to backup the old directory before creating new one
-3. **Server certificates**: Stored in `servers/` subdirectory under their Root CA
-4. **Active Root CA tracking**: System needs to track which Root CA is currently active
+3. **Server certificates**: Stored in `servers/` subdirectory under their Root Key
+4. **Active Root Key tracking**: System needs to track which Root Key is currently active
 5. **Migration**: Old flat structure needs automatic migration to new structure
 
 ### Breaking Changes

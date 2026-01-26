@@ -15,7 +15,7 @@ Failed to fetch federation endpoint: SSL: CERTIFICATE_VERIFY_FAILED
 
 **Causes:**
 - Self-signed certificates not trusted
-- Root CA not installed in system trust store
+- Root Key not installed in system trust store
 - Certificate chain incomplete
 
 **Solutions:**
@@ -29,19 +29,19 @@ matrix_synapse_configuration_extension_yaml: |
   federation_verify_certificates: false
 ```
 
-#### Option B: Install Root CA in System Trust Store
+#### Option B: Install Root Key in System Trust Store
 
 For domain-based deployments with proper certificates:
 
 ```bash
-# Copy Root CA to system trust store
+# Copy Root Key to system trust store
 sudo cp certs/rootCA.crt /usr/local/share/ca-certificates/matrix-root-ca.crt
 sudo update-ca-certificates
 ```
 
 #### Option C: Use Full Chain Certificate
 
-Ensure `cert-full-chain.pem` includes both server certificate and Root CA:
+Ensure `cert-full-chain.pem` includes both server certificate and Root Key:
 
 ```bash
 cat certs/server.crt certs/rootCA.crt > certs/cert-full-chain.pem
@@ -143,7 +143,7 @@ Create `.well-known/matrix/client` file:
 }
 ```
 
-### 5. Root CA Mismatch Between Servers
+### 5. Root Key Mismatch Between Servers
 
 **Symptom:**
 ```
@@ -151,21 +151,21 @@ Servers cannot verify each other's certificates
 ```
 
 **Causes:**
-- Each server has different Root CA
+- Each server has different Root Key
 - Servers not configured to trust the same CA chain
 
 **Solution:**
 
-#### Option A: Use Same Root CA
+#### Option A: Use Same Root Key
 
-1. Generate Root CA on first server
+1. Generate Root Key on first server
 2. Copy `rootCA.key` and `rootCA.crt` to other servers
 3. Place next to `main.sh` and accept prompt
 4. Generate server certificates signed by same CA
 
-#### Option B: Cross-Trust Root CAs
+#### Option B: Cross-Trust Root Keys
 
-Copy each server's Root CA to the other:
+Copy each server's Root Key to the other:
 
 ```bash
 # On Server A

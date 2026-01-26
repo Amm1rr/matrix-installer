@@ -100,7 +100,7 @@ This addon uses **Let's Encrypt** for SSL certificate management. Certificates a
 - Stored in `/opt/matrix/data/traefik/acme.json`
 - Auto-renewed by Traefik
 
-**Note**: This does NOT use the custom Root CA certificates from main.sh. Let's Encrypt certificates are trusted by all clients automatically.
+**Note**: This does NOT use the custom Root Key certificates from main.sh. Let's Encrypt certificates are trusted by all clients automatically.
 
 ## Registration Configuration
 
@@ -157,7 +157,7 @@ curl "https://www.duckdns.org/update?domains=YOUR_SUBDOMAIN&token=YOUR_TOKEN&ip=
 | Feature | docker-compose-synapse | ansible-synapse |
 |---------|----------------------|-----------------|
 | **Speed** | ~2-5 minutes | ~10-20 minutes |
-| **SSL** | Let's Encrypt (automatic) | Custom Root CA (manual) |
+| **SSL** | Let's Encrypt (automatic) | Custom Root Key (manual) |
 | **Target** | Local only | Local OR remote via SSH |
 | **Execution** | Runs as root | Uses sudo password |
 | **Deployment** | Direct docker-compose | Ansible playbook |

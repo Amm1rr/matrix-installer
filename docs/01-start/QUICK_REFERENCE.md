@@ -11,20 +11,20 @@ cd /path/to/script
 
 ## Menu System
 
-### Without Root CA
+### Without Root Key
 
 ```
-Root CA: Not Available
+Root Key: Not Available
 
-  1) Generate new Root CA
+  1) Generate new Root Key
   2) Exit
 ```
 
-### With Root CA
+### With Root Key
 
 ```
-Root CA: Available
-  | Subject: Matrix Root CA
+Root Key: Available
+  | Subject: Matrix Root Key
   | Expires: 2034-01-25 (in 3650 days)
   | Country: IR
 
@@ -35,7 +35,7 @@ Root CA: Available
   5) Install zanjir-synapse
 
   ---------------------------
-  8) Generate new Root CA (overwrite existing)
+  8) Generate new Root Key (overwrite existing)
   0) Exit
 ```
 
@@ -47,8 +47,8 @@ The addon list (options 2-5) is dynamic—all addons in `addons/` appear here.
 script/
 ├── main.sh                 # Main orchestrator
 ├── certs/                  # Certificate storage
-│   ├── rootCA.key          # Root CA private key
-│   ├── rootCA.crt          # Root CA certificate
+│   ├── rootCA.key          # Root Key private key
+│   ├── rootCA.crt          # Root Key certificate
 │   └── <server>/           # Per-server certificates
 │       ├── server.key
 │       ├── server.crt
@@ -64,7 +64,7 @@ script/
 ### First Time Setup
 
 1. Run `./main.sh`
-2. Choose "Generate new Root CA"
+2. Choose "Generate new Root Key"
 3. Choose "Generate server certificate"
 4. Select an addon to install
 
@@ -74,11 +74,11 @@ script/
 2. Choose "Generate server certificate" (for new server)
 3. Select an addon to install
 
-### Reusing an Existing Root CA
+### Reusing an Existing Root Key
 
 1. Copy `rootCA.key` and `rootCA.crt` next to `main.sh`
 2. Run `./main.sh`
-3. Accept the prompt to use existing Root CA
+3. Accept the prompt to use existing Root Key
 
 ## Environment Variables Passed to Addons
 
@@ -87,7 +87,7 @@ script/
 | `SERVER_NAME` | Server IP or domain |
 | `SSL_CERT` | Path to full-chain certificate |
 | `SSL_KEY` | Path to private key |
-| `ROOT_CA` | Path to Root CA certificate |
+| `ROOT_CA` | Path to Root Key certificate |
 | `CERTS_DIR` | Certificates directory |
 | `WORKING_DIR` | Working directory |
 
@@ -100,7 +100,7 @@ script/
 
 | Problem | Solution |
 |---------|----------|
-| Root CA not detected | Check that both `rootCA.key` and `rootCA.crt` exist next to `main.sh` |
+| Root Key not detected | Check that both `rootCA.key` and `rootCA.crt` exist next to `main.sh` |
 | Certificate errors | Regenerate server certificate from menu |
 | Addon not showing | Check `install.sh` has `ADDON_NAME` in first 15 lines |
 | Installation failed | Check relevant log file in working directory |
@@ -108,9 +108,9 @@ script/
 ## Security Notes
 
 1. **Keep `rootCA.key` private** - anyone with this file can issue trusted certificates
-2. **Backup your Root CA** - store encrypted copies in a safe location
+2. **Backup your Root Key** - store encrypted copies in a safe location
 3. **File permissions** - private keys should be 0600, certificates 0644
-4. **Monitor expiration** - Root CA valid for 10 years, server certs for 1 year
+4. **Monitor expiration** - Root Key valid for 10 years, server certs for 1 year
 
 ## Documentation Index
 
@@ -118,5 +118,5 @@ script/
 - [Addon Development Guide](ADDON_DEVELOPMENT_GUIDE.md) - Creating addons
 - [Addon Interface Protocol](ADDON_INTERFACE.md) - Technical interface specs
 - [Manual SSL Certificates](MANUAL_SSL_CERTIFICATES.md) - SSL certificate details
-- [Root CA Workflow](ROOT_CA_WORKFLOW.md) - Certificate authority management
+- [Root Key Workflow](ROOT_CA_WORKFLOW.md) - Certificate authority management
 - [Federation Troubleshooting](FEDERATION_TROUBLESHOOTING.md) - Federation issues

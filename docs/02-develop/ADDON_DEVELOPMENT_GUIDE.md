@@ -64,7 +64,7 @@ When `main.sh` runs your addon, it exports several environment variables that yo
 | `SERVER_NAME` | The server's IP or domain | `192.168.1.100` or `matrix.example.com` |
 | `SSL_CERT` | Path to full-chain certificate | `/path/to/certs/192.168.1.100/cert-full-chain.pem` |
 | `SSL_KEY` | Path to private key | `/path/to/certs/192.168.1.100/server.key` |
-| `ROOT_CA` | Path to Root CA certificate | `/path/to/certs/rootCA.crt` |
+| `ROOT_CA` | Path to Root Key certificate | `/path/to/certs/rootCA.crt` |
 | `CERTS_DIR` | The certs directory | `/path/to/certs` |
 | `WORKING_DIR` | Where the script is running from | `/path/to/script` |
 

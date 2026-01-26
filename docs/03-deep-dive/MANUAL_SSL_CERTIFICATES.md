@@ -13,13 +13,13 @@ That's where having your own Certificate Authority (CA) comes in. You become you
 Here's the hierarchy:
 
 ```
-Root CA (your certificate authority)
+Root Key (your certificate authority)
     └── Server Certificate (for server1)
     └── Server Certificate (for server2)
     └── Server Certificate (for server3)
 ```
 
-The Root CA signs each server certificate. When servers need to talk to each other, they verify that the certificate was signed by a CA they trust (yours).
+The Root Key signs each server certificate. When servers need to talk to each other, they verify that the certificate was signed by a CA they trust (yours).
 
 ## Directory Structure
 
@@ -27,8 +27,8 @@ All certificates live in the `certs/` directory:
 
 ```
 certs/
-├── rootCA.key              # Root CA private key (VERY IMPORTANT - keep safe!)
-├── rootCA.crt              # Root CA certificate (share this)
+├── rootCA.key              # Root Key private key (VERY IMPORTANT - keep safe!)
+├── rootCA.crt              # Root Key certificate (share this)
 ├── rootCA.srl              # Serial number file (auto-generated)
 │
 ├── 192.168.1.100/          # Server 1 certificates
@@ -42,9 +42,9 @@ certs/
     └── cert-full-chain.pem
 ```
 
-## Step 1: Creating a Root CA
+## Step 1: Creating a Root Key
 
-The Root CA is the foundation. Everything else builds on this.
+The Root Key is the foundation. Everything else builds on this.
 
 ### What You're Doing
 
@@ -62,9 +62,9 @@ openssl genrsa -out rootCA.key 4096
 # Set restrictive permissions (only you can read it)
 chmod 600 rootCA.key
 
-# Create the Root CA certificate (valid for 10 years)
+# Create the Root Key certificate (valid for 10 years)
 openssl req -x509 -new -nodes -key rootCA.key -sha256 -days 3650 \
-  -subj "/C=IR/ST=Tehran/L=Tehran/O=MatrixCA/OU=IT/CN=Matrix Root CA" \
+  -subj "/C=IR/ST=Tehran/L=Tehran/O=MatrixCA/OU=IT/CN=Matrix Root Key" \
   -out rootCA.crt
 
 # Make the certificate readable
@@ -83,7 +83,7 @@ chmod 644 rootCA.crt
   - `OU`: Organizational unit (like "IT" or "Security")
   - `CN`: Common name (the CA's name)
 
-### Verifying Your Root CA
+### Verifying Your Root Key
 
 ```bash
 # Check the certificate details
@@ -105,7 +105,7 @@ Now you'll create a certificate for one of your servers.
 
 ### What You're Doing
 
-You're generating a certificate specifically for one server, signed by your Root CA. This certificate will include the server's IP address or domain name so other servers can verify they're talking to the right place.
+You're generating a certificate specifically for one server, signed by your Root Key. This certificate will include the server's IP address or domain name so other servers can verify they're talking to the right place.
 
 ### The Commands
 
@@ -151,7 +151,7 @@ EOF
 # Generate a certificate signing request (CSR)
 openssl req -new -key server.key -out server.csr -config openssl.cnf
 
-# Sign the CSR with your Root CA
+# Sign the CSR with your Root Key
 openssl x509 -req -in server.csr \
   -CA ../rootCA.crt -CAkey ../rootCA.key \
   -CAcreateserial -out server.crt \
@@ -224,9 +224,9 @@ aux_file_definitions:
 
 Traefik (the reverse proxy) then uses these files to terminate SSL connections.
 
-### Installing the Root CA on Servers
+### Installing the Root Key on Servers
 
-For federation to work properly, each server needs to trust your Root CA. The ansible-synapse addon does this automatically:
+For federation to work properly, each server needs to trust your Root Key. The ansible-synapse addon does this automatically:
 
 ```bash
 # On Debian/Ubuntu systems
@@ -238,19 +238,19 @@ sudo cp rootCA.crt /etc/ca-certificates/trust-source/anchors/matrix-root-ca.crt
 sudo trust extract-compat
 ```
 
-This tells the operating system to trust any certificate signed by your Root CA.
+This tells the operating system to trust any certificate signed by your Root Key.
 
 ## Understanding Certificate Expiration
 
 Certificates don't last forever. Here's the timeline:
 
-- **Root CA**: Valid for 10 years (3650 days)
+- **Root Key**: Valid for 10 years (3650 days)
 - **Server Certificates**: Valid for 1 year (365 days)
 
 ### Checking Expiration
 
 ```bash
-# Check Root CA expiration
+# Check Root Key expiration
 openssl x509 -in certs/rootCA.crt -noout -enddate
 
 # Check server certificate expiration
@@ -267,7 +267,7 @@ cd certs/192.168.1.100
 # Generate a new CSR (you can reuse the existing key)
 openssl req -new -key server.key -out server.csr -config openssl.cnf
 
-# Sign it with your Root CA
+# Sign it with your Root Key
 openssl x509 -req -in server.csr \
   -CA ../rootCA.crt -CAkey ../rootCA.key \
   -CAcreateserial -out server.crt \
@@ -282,9 +282,9 @@ cat server.crt ../rootCA.crt > cert-full-chain.pem
 
 ### Problem: "Certificate verify failed"
 
-**Cause**: The server doesn't trust your Root CA.
+**Cause**: The server doesn't trust your Root Key.
 
-**Solution**: Install the Root CA in the system trust store (see above).
+**Solution**: Install the Root Key in the system trust store (see above).
 
 ### Problem: "Hostname mismatch"
 
@@ -321,13 +321,13 @@ If they don't match, you'll need to generate a new certificate-key pair.
 
 ## Security Best Practices
 
-1. **Protect the Root CA key**: The `rootCA.key` file should never leave your control. Anyone with this file can issue certificates that your servers will trust.
+1. **Protect the Root Key key**: The `rootCA.key` file should never leave your control. Anyone with this file can issue certificates that your servers will trust.
 
 2. **Use strong passphrases**: For production, consider adding a passphrase to your private keys (though this adds complexity to automation).
 
 3. **Limit certificate validity**: Don't make certificates valid for longer than necessary. One year for server certificates is reasonable.
 
-4. **Keep backups**: Store encrypted backups of your Root CA key and certificate in a secure location.
+4. **Keep backups**: Store encrypted backups of your Root Key key and certificate in a secure location.
 
 5. **Monitor expiration**: Set up reminders or monitoring to alert you before certificates expire.
 
@@ -337,7 +337,7 @@ If they don't match, you'll need to generate a new certificate-key pair.
 
 Everything `main.sh` does in the SSL Manager is what you've just learned manually. The script automates these exact steps:
 
-1. Creates the Root CA with the settings you provide
+1. Creates the Root Key with the settings you provide
 2. Generates server certificates with proper SAN entries
 3. Combines certificates into full-chain files
 4. Sets correct permissions on all files

@@ -67,8 +67,8 @@ When `main.sh` invokes an addon, the following environment variables are exporte
 | `SERVER_NAME` | string | Server IP address or domain name | `192.168.1.100` or `matrix.example.com` |
 | `SSL_CERT` | path | Full-chain certificate file | `/path/to/certs/192.168.1.100/servers/192.168.1.100/cert-full-chain.pem` |
 | `SSL_KEY` | path | Server private key file | `/path/to/certs/192.168.1.100/servers/192.168.1.100/server.key` |
-| `ROOT_CA` | path | Root CA certificate file | `/path/to/certs/192.168.1.100/rootCA.crt` |
-| `ROOT_CA_DIR` | path | Root CA directory path | `/path/to/certs/192.168.1.100` |
+| `ROOT_CA` | path | Root Key certificate file | `/path/to/certs/192.168.1.100/rootCA.crt` |
+| `ROOT_CA_DIR` | path | Root Key directory path | `/path/to/certs/192.168.1.100` |
 | `CERTS_DIR` | path | Certificates directory | `/path/to/certs` |
 | `WORKING_DIR` | path | Script working directory | `/path/to/script` |
 
@@ -76,15 +76,15 @@ When `main.sh` invokes an addon, the following environment variables are exporte
 
 ```
 certs/
-├── 192.168.1.100/              # Root CA directory (named by IP/domain)
+├── 192.168.1.100/              # Root Key directory (named by IP/domain)
 │   ├── rootCA.key
 │   ├── rootCA.crt
-│   └── servers/                # Server certificates for this Root CA
+│   └── servers/                # Server certificates for this Root Key
 │       └── 192.168.1.100/
 │           ├── server.key
 │           ├── server.crt
 │           └── cert-full-chain.pem
-└── matrix.example.com/         # Another Root CA (if exists)
+└── matrix.example.com/         # Another Root Key (if exists)
     └── ...
 ```
 
@@ -141,7 +141,7 @@ The certificate files provided are:
 
 This is the full certificate chain, containing:
 1. The server certificate
-2. The Root CA certificate
+2. The Root Key certificate
 
 Used by web servers and reverse proxies for TLS termination.
 
@@ -158,7 +158,7 @@ This is the server's private key.
 
 ### File: `rootCA.crt`
 
-This is the Root CA certificate used to sign the server certificate.
+This is the Root Key certificate used to sign the server certificate.
 
 **Format**: PEM (X.509)
 **Validity**: 10 years (3650 days)
@@ -171,7 +171,7 @@ This is the Root CA certificate used to sign the server certificate.
 | Key Size | 4096-bit RSA |
 | Signature Algorithm | SHA-256 |
 | Server Certificate Validity | 1 year (365 days) |
-| Root CA Validity | 10 years (3650 days) |
+| Root Key Validity | 10 years (3650 days) |
 | SAN Includes | Server IP/domain, `matrix.local`, `localhost`, `127.0.0.1` |
 
 ## Execution Flow
@@ -220,8 +220,8 @@ fi
 echo "Installing for: $SERVER_NAME"
 echo "Certificate: $SSL_CERT"
 echo "Private Key: $SSL_KEY"
-echo "Root CA: $ROOT_CA"
-echo "Root CA Directory: $ROOT_CA_DIR"
+echo "Root Key: $ROOT_CA"
+echo "Root Key Directory: $ROOT_CA_DIR"
 
 # Your installation logic here
 # ...
@@ -284,13 +284,13 @@ env_provider_export_for_addon() {
     local server_name="$1"
     local root_ca_dir="${2:-${ACTIVE_ROOT_CA_DIR}}"
 
-    # Check if Root CA is set
+    # Check if Root Key is set
     if [[ -z "$root_ca_dir" ]]; then
-        print_message "error" "No active Root CA. Cannot export environment."
+        print_message "error" "No active Root Key. Cannot export environment."
         return 1
     fi
 
-    # Get server certificate directory (under Root CA)
+    # Get server certificate directory (under Root Key)
     local server_cert_dir="${root_ca_dir}/servers/${server_name}"
 
     # Check certificates exist

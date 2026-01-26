@@ -1,7 +1,7 @@
 # Project Context
 
 ## Purpose
-Matrix Installer is a modular installation system for Matrix homeservers. Its primary goal is to simplify the deployment of private Matrix federated servers by handling complex SSL/TLS certificate management and delegating actual installation to specialized addons. The system uses a private Root CA approach to enable federation between self-hosted Matrix servers without requiring public certificate authorities.
+Matrix Installer is a modular installation system for Matrix homeservers. Its primary goal is to simplify the deployment of private Matrix federated servers by handling complex SSL/TLS certificate management and delegating actual installation to specialized addons. The system uses a private Root Key approach to enable federation between self-hosted Matrix servers without requiring public certificate authorities.
 
 ## Tech Stack
 - **Shell Script (Bash)** - Core orchestrator and certificate management
@@ -29,10 +29,10 @@ Matrix Installer is a modular installation system for Matrix homeservers. Its pr
 script/
 ├── main.sh              # Main orchestrator script
 ├── certs/               # SSL certificates (generated at runtime)
-│   └── <root-ca>/       # Root CA directory (named by IP/domain)
+│   └── <root-ca>/       # Root Key directory (named by IP/domain)
 │       ├── rootCA.key
 │       ├── rootCA.crt
-│       └── servers/     # Server certificates for this Root CA
+│       └── servers/     # Server certificates for this Root Key
 │           └── <server>/
 │               ├── server.key
 │               ├── server.crt
@@ -46,8 +46,8 @@ script/
 
 ### Architecture Patterns
 - **Modular Design**: Core system handles certificates only; installation delegated to addons
-- **Hierarchical Certificate Structure**: Each Root CA has its own directory with servers subdirectory
-- **Multi-Root CA Support**: Multiple Root CAs can coexist; user selects active one
+- **Hierarchical Certificate Structure**: Each Root Key has its own directory with servers subdirectory
+- **Multi-Root Key Support**: Multiple Root Keys can coexist; user selects active one
 - **Environment Provider**: Certificates and configuration passed via exported environment variables
 - **Dynamic Discovery**: Addons auto-discovered by scanning `addons/*/install.sh`
 - **Handoff Pattern**: `main.sh` exits when addon takes control (addon becomes PID 1)
@@ -80,12 +80,12 @@ Matrix servers communicate using federation protocol which requires:
 3. Well-known federation endpoints (`/.well-known/matrix/server`)
 
 ### Private Certificate Authority
-Matrix Installer uses a private Root CA approach:
-- Each Root CA stored in its own directory (named by IP/domain)
-- Root CA valid for 3650 days (10 years) by default
-- Server certificates signed by private Root CA (1-year validity)
-- Root CA certificate distributed to all servers for trust
-- Multiple Root CAs can coexist; one is active at a time
+Matrix Installer uses a private Root Key approach:
+- Each Root Key stored in its own directory (named by IP/domain)
+- Root Key valid for 3650 days (10 years) by default
+- Server certificates signed by private Root Key (1-year validity)
+- Root Key certificate distributed to all servers for trust
+- Multiple Root Keys can coexist; one is active at a time
 - Old structure automatically migrated to new hierarchical structure
 
 ### Addon Types
@@ -95,9 +95,9 @@ Matrix Installer uses a private Root CA approach:
 - **zanjir-synapse**: Custom deployment variant
 
 ## Important Constraints
-- Root CA private key (`rootCA.key`) must never be exposed to network
+- Root Key private key (`rootCA.key`) must never be exposed to network
 - Server certificates valid for 365 days by default
-- Root CA valid for 3650 days (10 years) by default
+- Root Key valid for 3650 days (10 years) by default
 - All private keys must have 0600 permissions
 - Scripts require Bash 4+ (specific features used)
 - Requires OpenSSL installed on host system
@@ -111,11 +111,11 @@ Matrix Installer uses a private Root CA approach:
 
 ## Certificate Reference
 
-### Root CA
+### Root Key
 - Location: `certs/<root-ca-name>/rootCA.crt`, `certs/<root-ca-name>/rootCA.key`
 - Default: 4096-bit RSA, SHA256
 - Validity: 3650 days (configurable)
-- Multiple Root CAs can exist in separate directories
+- Multiple Root Keys can exist in separate directories
 
 ### Server Certificates
 - Location: `certs/<root-ca-name>/servers/<server>/`
@@ -130,7 +130,7 @@ Matrix Installer uses a private Root CA approach:
 | `SERVER_NAME` | Server IP or domain | `192.168.1.100` |
 | `SSL_CERT` | Full certificate chain | `/path/to/certs/192.168.1.100/servers/192.168.1.100/cert-full-chain.pem` |
 | `SSL_KEY` | Server private key | `/path/to/certs/192.168.1.100/servers/192.168.1.100/server.key` |
-| `ROOT_CA` | Root CA certificate path | `/path/to/certs/192.168.1.100/rootCA.crt` |
-| `ROOT_CA_DIR` | Root CA directory path | `/path/to/certs/192.168.1.100` |
+| `ROOT_CA` | Root Key certificate path | `/path/to/certs/192.168.1.100/rootCA.crt` |
+| `ROOT_CA_DIR` | Root Key directory path | `/path/to/certs/192.168.1.100` |
 | `CERTS_DIR` | Certificates directory | `/path/to/certs` |
 | `WORKING_DIR` | Script working directory | `/path/to/script` |

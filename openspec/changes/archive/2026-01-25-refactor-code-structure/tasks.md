@@ -18,7 +18,7 @@
   - Returns pipe-delimited: `org|country|state|city|days`
 
 - [x] Add `create_root_ca_from_menu()` function
-  - Prompts for confirmation to create Root CA
+  - Prompts for confirmation to create Root Key
   - Calls `prompt_root_ca_config()` for input
   - Temporarily sets global SSL_* variables
   - Prompts for final confirmation
@@ -41,7 +41,7 @@
   - Handle return code 2 from `prompt_select_root_ca_from_files()`
   - Return to main menu flow when code 2 received
 
-- [x] Update `main()` Root CA selection handling (lines 1543-1553)
+- [x] Update `main()` Root Key selection handling (lines 1543-1553)
   - Handle return code 2 from `prompt_select_root_ca_from_certs()`
   - Show `menu_without_root_ca()` when user goes back
 
@@ -61,16 +61,16 @@
   - Use `get_detected_ip()` helper
   - Use `prompt_user()` consistently (replace direct `read -rp`)
 
-- [x] Simplify option 8 (Switch/Create Root CA)
+- [x] Simplify option 8 (Switch/Create Root Key)
   - Use `create_root_ca_from_menu()` helper
   - Handle new return code 2 from selection menu
 
-- [x] Simplify option 9 (Create new Root CA)
+- [x] Simplify option 9 (Create new Root Key)
   - Use `create_root_ca_from_menu()` helper
 
 ## 5. Refactor menu_without_root_ca() to use helpers (lines 1176-1279)
 
-- [x] Simplify option 1 (Generate new Root CA)
+- [x] Simplify option 1 (Generate new Root Key)
   - Use `prompt_root_ca_config()` helper
   - Parse pipe-delimited config output
   - Use `ssl_manager_create_root_ca()` directly
@@ -95,26 +95,26 @@
 
 ## 8. Validation
 
-- [x] Test Root CA selection with "Back" option
-  - Run script with multiple Root CAs in certs/
+- [x] Test Root Key selection with "Back" option
+  - Run script with multiple Root Keys in certs/
   - Select option 0 to go back
   - Verify returns to main menu
 
-- [x] Test Root CA selection from files with "Back" option
-  - Run script with Root CA files next to main.sh
+- [x] Test Root Key selection from files with "Back" option
+  - Run script with Root Key files next to main.sh
   - Select option 0 to go back
   - Verify continues to certs/ menu
 
 - [x] Test IP detection in all prompts
   - Verify server certificate generation shows detected IP
   - Verify addon menu shows detected IP
-  - Verify Root CA directory prompt shows detected IP
+  - Verify Root Key directory prompt shows detected IP
 
-- [x] Test Root CA creation from all menu options
-  - Create from option 8 (single Root CA)
-  - Create from option 8 (multiple Root CAs - select create new)
+- [x] Test Root Key creation from all menu options
+  - Create from option 8 (single Root Key)
+  - Create from option 8 (multiple Root Keys - select create new)
   - Create from option 9
-  - Create from menu without Root CA (option 1)
+  - Create from menu without Root Key (option 1)
 
 - [x] Test addon functionality
   - Verify addons receive correct environment variables
