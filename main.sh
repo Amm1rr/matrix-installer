@@ -1177,7 +1177,7 @@ menu_without_root_key() {
         cat <<EOF
 
 ╔══════════════════════════════════════════════════════════╗
-║             ${MATRIX_PLUS_NAME} - Main Menu               ║
+║             ${MATRIX_PLUS_NAME} - Main Menu              ║
 ╚══════════════════════════════════════════════════════════╝
 
 Root Key: Not Available
