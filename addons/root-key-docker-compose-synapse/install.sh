@@ -287,84 +287,180 @@ check_prerequisites() {
 check_environment_variables() {
     print_message "info" "Checking environment variables..."
 
+    # Check for missing variables
     local missing=()
+    [[ -z "${SERVER_NAME:-}" ]] && missing+=("SERVER_NAME")
+    [[ -z "${SSL_CERT:-}" ]] && missing+=("SSL_CERT")
+    [[ -z "${SSL_KEY:-}" ]] && missing+=("SSL_KEY")
+    [[ -z "${ROOT_CA:-}" ]] && missing+=("ROOT_CA")
 
-    if [[ -z "${SERVER_NAME:-}" ]]; then
-        missing+=("SERVER_NAME")
-    fi
+    # If no variables missing, just verify and return
+    if [[ ${#missing[@]} -eq 0 ]]; then
+        # Set CERTS_DIR and WORKING_DIR if not set
+        [[ -z "${CERTS_DIR:-}" ]] && export CERTS_DIR="$(dirname "$(dirname "$SSL_CERT")")"
+        [[ -z "${WORKING_DIR:-}" ]] && export WORKING_DIR="${CERTS_DIR}/.."
 
-    if [[ -z "${SSL_CERT:-}" ]]; then
-        missing+=("SSL_CERT")
-    fi
+        # Verify files exist
+        if [[ ! -f "$SSL_CERT" ]]; then
+            print_message "error" "SSL certificate not found: $SSL_CERT"
+            return 1
+        fi
+        if [[ ! -f "$SSL_KEY" ]]; then
+            print_message "error" "SSL private key not found: $SSL_KEY"
+            return 1
+        fi
+        if [[ ! -f "$ROOT_CA" ]]; then
+            print_message "error" "Root Key certificate not found: $ROOT_CA"
+            return 1
+        fi
 
-    if [[ -z "${SSL_KEY:-}" ]]; then
-        missing+=("SSL_KEY")
-    fi
-
-    if [[ -z "${ROOT_CA:-}" ]]; then
-        missing+=("ROOT_CA")
-    fi
-
-    if [[ -z "${CERTS_DIR:-}" ]]; then
-        missing+=("CERTS_DIR")
-    fi
-
-    if [[ -z "${WORKING_DIR:-}" ]]; then
-        missing+=("WORKING_DIR")
+        print_message "success" "All environment variables verified"
+        print_message "info" "  SERVER_NAME: ${SERVER_NAME}"
+        print_message "info" "  SSL_CERT: ${SSL_CERT}"
+        print_message "info" "  SSL_KEY: ${SSL_KEY}"
+        print_message "info" "  ROOT_CA: ${ROOT_CA}"
+        return 0
     fi
 
     # Standalone mode: prompt for missing variables
-    if [[ ${#missing[@]} -gt 0 ]]; then
-        print_message "warning" "Running in standalone mode (not from main.sh)"
+    print_message "warning" "Running in standalone mode (not from main.sh)"
+    echo ""
+    echo "This addon requires SSL certificates."
+    echo ""
+
+    # First, prompt for SERVER_NAME if needed
+    if [[ " ${missing[*]} " =~ " SERVER_NAME " ]]; then
+        local default_server="172.19.39.69"
+        SERVER_NAME="$(prompt_user "Server name or IP address" "$default_server")"
+        export SERVER_NAME
+        # Remove from missing array
+        missing=("${missing[@]/SERVER_NAME}")
+    fi
+
+    # Check if certificate files are needed
+    local need_certs=false
+    [[ " ${missing[*]} " =~ " SSL_CERT " ]] && need_certs=true
+    [[ " ${missing[@]} " =~ " SSL_KEY " ]] && need_certs=true
+    [[ " ${missing[@]} " =~ " ROOT_CA " ]] && need_certs=true
+
+    if [[ "$need_certs" == "true" ]]; then
         echo ""
-        echo "This addon requires the following information to continue:"
+        echo "Provide certificates directory, and I'll search for:"
+        echo "  - cert-full-chain.pem (server certificate chain)"
+        echo "  - server.crt (server certificate)"
+        echo "  - server.key (server private key)"
+        echo "  - rootCA.crt (Root CA certificate)"
+        echo "  - rootCA.key (Root CA private key)"
         echo ""
 
-        # Prompt for missing variables
-        for var in "${missing[@]}"; do
-            case "$var" in
-                SERVER_NAME)
-                    local default_server="172.19.39.69"
-                    SERVER_NAME="$(prompt_user "Server name or IP address" "$default_server")"
-                    export SERVER_NAME
-                    ;;
-                SSL_CERT)
-                    echo "  SSL_CERT: Full certificate chain (.pem file)"
-                    SSL_CERT="$(prompt_user "  Path to SSL certificate" "/path/to/cert-full-chain.pem")"
+        local certs_dir
+        certs_dir="$(prompt_user "Certificates directory (or press Enter for individual paths)" "")"
+
+        if [[ -n "$certs_dir" && -d "$certs_dir" ]]; then
+            # Search for files
+            local found_cert=""
+            local found_key=""
+            local found_ca=""
+            local found_ca_key=""
+
+            # Search for server certificate (in provided directory)
+            [[ -f "$certs_dir/cert-full-chain.pem" ]] && found_cert="$certs_dir/cert-full-chain.pem"
+            [[ -z "$found_cert" && -f "$certs_dir/server.crt" ]] && found_cert="$certs_dir/server.crt"
+
+            # Search for server private key (in provided directory)
+            [[ -f "$certs_dir/server.key" ]] && found_key="$certs_dir/server.key"
+
+            # Search for Root CA files (in provided directory, then up to 2 levels up)
+            if [[ ! -f "$certs_dir/rootCA.crt" ]]; then
+                # Try parent directory
+                local parent_dir="$(dirname "$certs_dir")"
+                [[ -f "$parent_dir/rootCA.crt" ]] && found_ca="$parent_dir/rootCA.crt"
+
+                # Try grandparent directory (2 levels up)
+                if [[ -z "$found_ca" ]]; then
+                    local grandparent_dir="$(dirname "$parent_dir")"
+                    [[ -f "$grandparent_dir/rootCA.crt" ]] && found_ca="$grandparent_dir/rootCA.crt"
+                fi
+            else
+                found_ca="$certs_dir/rootCA.crt"
+            fi
+
+            # Same for rootCA.key
+            if [[ ! -f "$certs_dir/rootCA.key" ]]; then
+                local parent_dir="$(dirname "$certs_dir")"
+                [[ -f "$parent_dir/rootCA.key" ]] && found_ca_key="$parent_dir/rootCA.key"
+
+                if [[ -z "$found_ca_key" ]]; then
+                    local grandparent_dir="$(dirname "$parent_dir")"
+                    [[ -f "$grandparent_dir/rootCA.key" ]] && found_ca_key="$grandparent_dir/rootCA.key"
+                fi
+            else
+                found_ca_key="$certs_dir/rootCA.key"
+            fi
+
+            # Report findings
+            [[ -n "$found_cert" ]] && print_message "success" "Found certificate: $found_cert"
+            [[ -n "$found_key" ]] && print_message "success" "Found private key: $found_key"
+            [[ -n "$found_ca" ]] && print_message "success" "Found Root CA: $found_ca"
+            [[ -n "$found_ca_key" ]] && print_message "success" "Found Root CA key: $found_ca_key"
+
+            echo ""
+
+            # Set found variables
+            [[ -n "$found_cert" ]] && SSL_CERT="$found_cert" && export SSL_CERT
+            [[ -n "$found_key" ]] && SSL_KEY="$found_key" && export SSL_KEY
+            [[ -n "$found_ca" ]] && ROOT_CA="$found_ca" && export ROOT_CA
+
+            # Check for missing files and prompt
+            local missing_files=()
+            [[ -z "$SSL_CERT" ]] && missing_files+=("SSL_CERT")
+            [[ -z "$SSL_KEY" ]] && missing_files+=("SSL_KEY")
+            [[ -z "$ROOT_CA" ]] && missing_files+=("ROOT_CA")
+
+            if [[ ${#missing_files[@]} -gt 0 ]]; then
+                print_message "info" "Some files were not found. Please provide paths:"
+                echo ""
+
+                [[ " ${missing_files[*]} " =~ " SSL_CERT " ]] && {
+                    SSL_CERT="$(prompt_user "  Path to SSL certificate (cert-full-chain.pem or server.crt)" "/path/to/cert-full-chain.pem")"
                     export SSL_CERT
-                    ;;
-                SSL_KEY)
-                    echo "  SSL_KEY: SSL private key file"
-                    SSL_KEY="$(prompt_user "  Path to SSL private key" "/path/to/server.key")"
+                }
+
+                [[ " ${missing_files[*]} " =~ " SSL_KEY " ]] && {
+                    SSL_KEY="$(prompt_user "  Path to SSL private key (server.key)" "/path/to/server.key")"
                     export SSL_KEY
-                    ;;
-                ROOT_CA)
-                    echo "  ROOT_CA: Root CA certificate file"
-                    ROOT_CA="$(prompt_user "  Path to Root CA certificate" "/path/to/rootCA.crt")"
+                }
+
+                [[ " ${missing_files[*]} " =~ " ROOT_CA " ]] && {
+                    ROOT_CA="$(prompt_user "  Path to Root CA certificate (rootCA.crt)" "/path/to/rootCA.crt")"
                     export ROOT_CA
-                    ;;
-                CERTS_DIR)
-                    # Derive from SSL_CERT path
-                    if [[ -n "$SSL_CERT" ]]; then
-                        CERTS_DIR="$(dirname "$(dirname "$SSL_CERT")")"
-                    else
-                        CERTS_DIR="$(prompt_user "  Certificates directory" "/path/to/certs")"
-                    fi
-                    export CERTS_DIR
-                    ;;
-                WORKING_DIR)
-                    # Default to current directory or parent of certs
-                    if [[ -n "${CERTS_DIR:-}" ]]; then
-                        WORKING_DIR="$(dirname "$CERTS_DIR")"
-                    else
-                        WORKING_DIR="$(pwd)"
-                    fi
-                    export WORKING_DIR
-                    ;;
-            esac
-        done
-        echo ""
+                }
+            fi
+        else
+            # No directory provided (or invalid), prompt for all
+            echo "Please provide individual file paths:"
+            echo ""
+
+            [[ -z "$SSL_CERT" ]] && {
+                SSL_CERT="$(prompt_user "  Path to SSL certificate (cert-full-chain.pem or server.crt)" "/path/to/cert-full-chain.pem")"
+                export SSL_CERT
+            }
+
+            [[ -z "$SSL_KEY" ]] && {
+                SSL_KEY="$(prompt_user "  Path to SSL private key (server.key)" "/path/to/server.key")"
+                export SSL_KEY
+            }
+
+            [[ -z "$ROOT_CA" ]] && {
+                ROOT_CA="$(prompt_user "  Path to Root CA certificate (rootCA.crt)" "/path/to/rootCA.crt")"
+                export ROOT_CA
+            }
+        fi
     fi
+
+    # Set CERTS_DIR and WORKING_DIR if not set
+    [[ -z "${CERTS_DIR:-}" ]] && export CERTS_DIR="$(dirname "$(dirname "$SSL_CERT")")"
+    [[ -z "${WORKING_DIR:-}" ]] && export WORKING_DIR="$(dirname "$CERTS_DIR")"
 
     # Verify certificate files exist
     if [[ ! -f "$SSL_CERT" ]]; then
