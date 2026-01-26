@@ -1354,8 +1354,8 @@ menu_run_addon() {
     # Run addon
     addon_loader_run "$selected_addon"
 
-    # Exit after addon completes (addons take full control)
-    exit 0
+    # Return to menu after addon completes (don't exit)
+    # Addons no longer take full control - user can return to main menu
 }
 
 # ===========================================
