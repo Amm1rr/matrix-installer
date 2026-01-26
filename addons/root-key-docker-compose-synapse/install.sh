@@ -241,7 +241,6 @@ check_port_conflicts() {
             echo "  docker stop <container-name>"
             echo "  docker rm <container-name>"
             echo ""
-            echo "[DEBUG] Returning to menu..." >&2
             return 2  # Return 2 to indicate user cancelled (return to menu)
         fi
     fi
@@ -398,18 +397,21 @@ install_matrix() {
     # Check prerequisites
     check_prerequisites || exit 1
 
-    # Check for port conflicts
+    # Check for port conflicts - temporarily disable set -e to handle user cancellation
+    set +e
     check_port_conflicts
     local port_check_result=$?
-    echo "[DEBUG] check_port_conflicts returned: $port_check_result" >&2
+
     if [[ $port_check_result -eq 2 ]]; then
-        # User cancelled, return 2 to stay in menu
-        echo "[DEBUG] User cancelled, returning 2 to menu" >&2
+        # User cancelled, return 2 to stay in menu (don't re-enable set -e before return!)
         return 2
     elif [[ $port_check_result -ne 0 ]]; then
-        echo "[DEBUG] Port check failed with code: $port_check_result" >&2
+        set -e
         exit 1
     fi
+
+    # Re-enable set -e after handling all cases
+    set -e
 
     # Check environment variables from main.sh
     check_environment_variables || exit 1
@@ -878,15 +880,14 @@ EOF
 
         case "$choice" in
             1)
+                set +e
                 install_matrix "$@"
                 install_result=$?
-                echo "[DEBUG] install_matrix returned: $install_result" >&2
+                set -e
                 # Only break on success (0) or error (1), not on user cancel (2)
                 if [[ $install_result -ne 2 ]]; then
-                    echo "[DEBUG] Breaking from menu" >&2
                     break
                 fi
-                echo "[DEBUG] Continuing menu loop" >&2
                 ;;
             2)
                 uninstall_matrix
