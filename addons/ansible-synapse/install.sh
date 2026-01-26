@@ -98,6 +98,9 @@ HOST_VARS_DIR=""
 VARS_YML_PATH=""
 INVENTORY_PATH=""
 
+# Certificate paths (for standalone mode)
+STANDALONE_CERTS_DIR=""
+
 # ===========================================
 # HELPER FUNCTIONS
 # ===========================================
@@ -213,6 +216,199 @@ cd_playbook_and_setup_direnv() {
             direnv allow . 2>/dev/null || true
         fi
     fi
+
+    return 0
+}
+
+# ===========================================
+# ENVIRONMENT VARIABLES CHECK (STANDALONE SUPPORT)
+# ===========================================
+
+check_environment_variables() {
+    print_message "info" "Checking environment variables..."
+
+    local missing=()
+    [[ -z "${SERVER_NAME:-}" ]] && missing+=("SERVER_NAME")
+    [[ -z "${SSL_CERT:-}" ]] && missing+=("SSL_CERT")
+    [[ -z "${SSL_KEY:-}" ]] && missing+=("SSL_KEY")
+    [[ -z "${ROOT_CA:-}" ]] && missing+=("ROOT_CA")
+
+    # If no variables missing, just verify files exist and return
+    if [[ ${#missing[@]} -eq 0 ]]; then
+        # Verify certificate files exist
+        if [[ ! -f "$SSL_CERT" ]]; then
+            print_message "error" "SSL certificate file not found: $SSL_CERT"
+            exit 1
+        fi
+        if [[ ! -f "$SSL_KEY" ]]; then
+            print_message "error" "SSL key file not found: $SSL_KEY"
+            exit 1
+        fi
+        if [[ ! -f "$ROOT_CA" ]]; then
+            print_message "error" "Root CA file not found: $ROOT_CA"
+            exit 1
+        fi
+
+        # Derive CERTS_DIR from certificate paths
+        CERTS_DIR="$(dirname "$SSL_CERT")"
+        while [[ "$CERTS_DIR" != "/" && ! -d "$CERTS_DIR/certs" && "$(basename "$CERTS_DIR")" != "certs" ]]; do
+            CERTS_DIR="$(dirname "$CERTS_DIR")"
+        done
+        if [[ "$(basename "$CERTS_DIR")" != "certs" ]]; then
+            CERTS_DIR="$(dirname "$SSL_CERT")"
+        fi
+
+        return 0
+    fi
+
+    # ============================================
+    # STANDALONE MODE: Prompt for certificates
+    # ============================================
+
+    print_message "warning" "Running in standalone mode (not from main.sh)"
+    echo ""
+    echo "Provide certificates directory, and I'll search for:"
+    echo "  - cert-full-chain.pem (server certificate chain)"
+    echo "  - server.crt (server certificate)"
+    echo "  - server.key (server private key)"
+    echo "  - rootCA.crt (Root CA certificate)"
+    echo "  - rootCA.key (Root CA private key)"
+    echo ""
+
+    local found_cert=""
+    local found_key=""
+    local found_ca=""
+    local found_ca_key=""
+
+    # Prompt for certificates directory
+    local certs_dir
+    while true; do
+        certs_dir="$(prompt_user "Certificates directory (or press Enter for individual paths)" "")"
+
+        if [[ -z "$certs_dir" ]]; then
+            # User wants to provide individual paths
+            break
+        fi
+
+        if [[ ! -d "$certs_dir" ]]; then
+            print_message "error" "Directory not found: $certs_dir"
+            continue
+        fi
+
+        # Search for certificate files in the provided directory
+        [[ -f "$certs_dir/cert-full-chain.pem" ]] && found_cert="$certs_dir/cert-full-chain.pem"
+        [[ -z "$found_cert" && -f "$certs_dir/server.crt" ]] && found_cert="$certs_dir/server.crt"
+        [[ -f "$certs_dir/server.key" ]] && found_key="$certs_dir/server.key"
+
+        # Search for Root CA files (in provided directory, then up to 2 levels up)
+        if [[ ! -f "$certs_dir/rootCA.crt" ]]; then
+            # Try parent directory
+            local parent_dir="$(dirname "$certs_dir")"
+            [[ -f "$parent_dir/rootCA.crt" ]] && found_ca="$parent_dir/rootCA.crt"
+
+            # Try grandparent directory (2 levels up)
+            if [[ -z "$found_ca" ]]; then
+                local grandparent_dir="$(dirname "$parent_dir")"
+                [[ -f "$grandparent_dir/rootCA.crt" ]] && found_ca="$grandparent_dir/rootCA.crt"
+            fi
+        else
+            found_ca="$certs_dir/rootCA.crt"
+        fi
+
+        if [[ ! -f "$certs_dir/rootCA.key" ]]; then
+            # Try parent directory
+            local parent_dir="$(dirname "$certs_dir")"
+            [[ -f "$parent_dir/rootCA.key" ]] && found_ca_key="$parent_dir/rootCA.key"
+
+            # Try grandparent directory (2 levels up)
+            if [[ -z "$found_ca_key" ]]; then
+                local grandparent_dir="$(dirname "$parent_dir")"
+                [[ -f "$grandparent_dir/rootCA.key" ]] && found_ca_key="$grandparent_dir/rootCA.key"
+            fi
+        else
+            found_ca_key="$certs_dir/rootCA.key"
+        fi
+
+        # Check what we found
+        local missing_files=()
+        [[ -z "$found_cert" ]] && missing_files+=("cert-full-chain.pem or server.crt")
+        [[ -z "$found_key" ]] && missing_files+=("server.key")
+        [[ -z "$found_ca" ]] && missing_files+=("rootCA.crt")
+        [[ -z "$found_ca_key" ]] && missing_files+=("rootCA.key")
+
+        if [[ ${#missing_files[@]} -eq 0 ]]; then
+            # Found all files
+            print_message "success" "All certificate files found!"
+            break
+        fi
+
+        print_message "warning" "Missing files: ${missing_files[*]}"
+        if [[ "$(prompt_yes_no "Try a different directory?" "y")" == "yes" ]]; then
+            continue
+        fi
+
+        # Fall through to individual prompts
+        break
+    done
+
+    # ============================================
+    # FALLBACK: Prompt for individual paths
+    # ============================================
+
+    if [[ -z "$found_cert" ]]; then
+        while [[ ! -f "$found_cert" ]]; do
+            found_cert="$(prompt_user "Path to server certificate (cert-full-chain.pem or server.crt)")"
+            if [[ ! -f "$found_cert" ]]; then
+                print_message "error" "File not found: $found_cert"
+            fi
+        done
+    fi
+
+    if [[ -z "$found_key" ]]; then
+        while [[ ! -f "$found_key" ]]; do
+            found_key="$(prompt_user "Path to server private key (server.key)")"
+            if [[ ! -f "$found_key" ]]; then
+                print_message "error" "File not found: $found_key"
+            fi
+        done
+    fi
+
+    if [[ -z "$found_ca" ]]; then
+        while [[ ! -f "$found_ca" ]]; do
+            found_ca="$(prompt_user "Path to Root CA certificate (rootCA.crt)")"
+            if [[ ! -f "$found_ca" ]]; then
+                print_message "error" "File not found: $found_ca"
+            fi
+        done
+    fi
+
+    if [[ -z "$found_ca_key" ]]; then
+        while [[ ! -f "$found_ca_key" ]]; do
+            found_ca_key="$(prompt_user "Path to Root CA private key (rootCA.key)")"
+            if [[ ! -f "$found_ca_key" ]]; then
+                print_message "error" "File not found: $found_ca_key"
+            fi
+        done
+    fi
+
+    # Export the found paths
+    export SERVER_NAME="${SERVER_NAME:-$(prompt_user "Server name (IP or domain)")}"
+    export SSL_CERT="$found_cert"
+    export SSL_KEY="$found_key"
+    export ROOT_CA="$found_ca"
+
+    # Derive CERTS_DIR from certificate paths
+    STANDALONE_CERTS_DIR="$(dirname "$found_cert")"
+    export CERTS_DIR="$STANDALONE_CERTS_DIR"
+    export ROOT_CA_DIR="$(dirname "$found_ca")"
+    export WORKING_DIR="${WORKING_DIR:-$(pwd)}"
+
+    print_message "success" "Environment variables configured:"
+    echo "  SERVER_NAME=$SERVER_NAME"
+    echo "  SSL_CERT=$SSL_CERT"
+    echo "  SSL_KEY=$SSL_KEY"
+    echo "  ROOT_CA=$ROOT_CA"
+    echo ""
 
     return 0
 }
@@ -962,18 +1158,8 @@ main() {
 ╚══════════════════════════════════════════════════════════╝
 EOF
 
-    # Check environment variables from main.sh
-    if [[ -z "${SERVER_NAME:-}" ]]; then
-        print_message "error" "SERVER_NAME environment variable not set"
-        print_message "info" "This addon must be run from main.sh"
-        exit 1
-    fi
-
-    if [[ -z "${SSL_CERT:-}" ]] || [[ -z "${SSL_KEY:-}" ]] || [[ -z "${ROOT_CA:-}" ]]; then
-        print_message "error" "SSL certificate environment variables not set"
-        print_message "info" "Please generate server certificate from main.sh first"
-        exit 1
-    fi
+    # Check environment variables (supports standalone mode)
+    check_environment_variables || exit 1
 
     SERVER_IP="$SERVER_NAME"
     SERVER_IS_IP="false"
