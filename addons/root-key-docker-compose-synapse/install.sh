@@ -397,29 +397,7 @@ install_matrix() {
     # Check prerequisites
     check_prerequisites || exit 1
 
-    # Check for port conflicts - temporarily disable set -e to handle user cancellation
-    set +e
-    check_port_conflicts
-    local port_check_result=$?
-
-    if [[ $port_check_result -eq 2 ]]; then
-        # User cancelled, return 2 to stay in menu (don't re-enable set -e before return!)
-        return 2
-    elif [[ $port_check_result -ne 0 ]]; then
-        set -e
-        exit 1
-    fi
-
-    # Re-enable set -e after handling all cases
-    set -e
-
-    # Check environment variables from main.sh
-    check_environment_variables || exit 1
-
-    # Configure registration
-    configure_registration
-
-    # Root privilege check
+    # Root privilege check - do this early so port check has full docker access
     if [[ $EUID -ne 0 ]]; then
         print_message "warning" "This installation requires root privileges"
         if [[ "$(prompt_yes_no "Continue with sudo?" "y")" != "yes" ]]; then
@@ -427,7 +405,10 @@ install_matrix() {
             exit 0
         fi
 
-        # Save configuration to temp file for sudo execution
+        # Configure registration BEFORE creating temp file (so variables are available)
+        configure_registration
+
+        # Save configuration to temp file for sudo execution (now with registration vars)
         local temp_config="/tmp/matrix-install-$$-config.sh"
         cat > "$temp_config" <<EOF
 export SERVER_NAME="${SERVER_NAME}"
@@ -457,6 +438,30 @@ EOF
     if [[ "${REEXECED:-}" == "1" ]]; then
         # Variables are already exported by the source command in exec
         :
+    fi
+
+    # Check for port conflicts - now with sudo access for complete container visibility
+    set +e
+    check_port_conflicts
+    local port_check_result=$?
+
+    if [[ $port_check_result -eq 2 ]]; then
+        # User cancelled, return 2 to stay in menu (don't re-enable set -e before return!)
+        return 2
+    elif [[ $port_check_result -ne 0 ]]; then
+        set -e
+        exit 1
+    fi
+
+    # Re-enable set -e after handling all cases
+    set -e
+
+    # Check environment variables from main.sh
+    check_environment_variables || exit 1
+
+    # Configure registration (skip if already configured before sudo re-exec)
+    if [[ "${REEXECED:-}" != "1" ]]; then
+        configure_registration
     fi
 
     # Check if already installed
