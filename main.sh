@@ -657,12 +657,12 @@ prompt_select_root_ca_from_certs() {
     done
 
     echo "  -----------------------"
-    echo "  $index) Create new Root Key"
+    echo "  N) Create new Root Key"
     echo "  0) Back to previous menu"
     echo ""
 
     while true; do
-        read -rp "Select active Root Key (0-$index): " choice || true
+        read -rp "Select active Root Key (0-$((index-1)), N=New): " choice || true
 
         # Handle empty input (Enter) as Back to previous menu
         if [[ -z "$choice" ]]; then
@@ -674,7 +674,7 @@ prompt_select_root_ca_from_certs() {
             ACTIVE_ROOT_CA_DIR="${CERTS_DIR}/${selected_root_ca}"
             print_message "success" "Selected Root Key: ${selected_root_ca}"
             return 0
-        elif [[ "$choice" -eq $index ]]; then
+        elif [[ "$choice" == "N" ]] || [[ "$choice" == "n" ]]; then
             return 1  # User wants to create new
         elif [[ "$choice" -eq 0 ]]; then
             return 3  # Back to previous menu
@@ -1023,8 +1023,8 @@ menu_with_root_key() {
         # Build menu dynamically with addons
         local addon_index_start=2
         local last_addon_index=$((addon_index_start + ${#addons[@]} - 1))
-        local switch_ca_option=8
-        local new_ca_option=9
+        local switch_ca_option="S"
+        local new_ca_option="N"
         local exit_option=0
 
         echo ""
@@ -1080,12 +1080,14 @@ menu_with_root_key() {
         echo "  $exit_option) Exit"
         echo ""
 
-        local max_option=$new_ca_option
+        # Build prompt text based on available options
+        local prompt_text="Enter your choice (1-${last_addon_index}"
         if [[ $num_root_cas -gt 1 ]]; then
-            read -rp "Enter your choice (0-$max_option): " choice || true
+            prompt_text="${prompt_text}, S=Switch, N=New, 0=Exit): "
         else
-            read -rp "Enter your choice (0-$new_ca_option, or 8 for new Root Key): " choice || true
+            prompt_text="${prompt_text}, N=New, 0=Exit): "
         fi
+        read -rp "$prompt_text" choice || true
 
         case "$choice" in
             1)
@@ -1129,7 +1131,7 @@ menu_with_root_key() {
                     print_message "info" "Certificate generation cancelled"
                 fi
                 ;;
-            8)
+            [Ss])
                 if [[ $num_root_cas -gt 1 ]]; then
                     echo ""
                     local select_result
@@ -1153,7 +1155,7 @@ menu_with_root_key() {
                     num_root_cas=${#FOUND_ROOT_CAS[@]}
                 fi
                 ;;
-            9)
+            [Nn])
                 create_root_ca_from_menu
                 mapfile -t FOUND_ROOT_CAS < <(list_root_cas)
                 num_root_cas=${#FOUND_ROOT_CAS[@]}
