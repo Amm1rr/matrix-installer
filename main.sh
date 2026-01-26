@@ -944,10 +944,20 @@ addon_loader_get_name() {
 
     if [[ -f "$addon_install" ]]; then
         local name
-        name=$(grep "^ADDON_NAME=" "$addon_install" | cut -d'=' -f2)
+        # First check for ADDON_NAME_MENU (menu display name)
+        name=$(grep "^ADDON_NAME_MENU=" "$addon_install" | cut -d'=' -f2)
         # Remove quotes if present
         name="${name%\"}"
         name="${name#\"}"
+
+        # If ADDON_NAME_MENU not found, fall back to ADDON_NAME
+        if [[ -z "$name" ]]; then
+            name=$(grep "^ADDON_NAME=" "$addon_install" | cut -d'=' -f2)
+            # Remove quotes if present
+            name="${name%\"}"
+            name="${name#\"}"
+        fi
+
         echo "${name:-$addon_dir}"
     else
         echo "$addon_dir"
@@ -1054,7 +1064,7 @@ menu_with_root_key() {
                 local addon_num=$((i + addon_index_start))
                 local addon_name
                 addon_name="$(addon_loader_get_name "${addons[$i]}")"
-                echo "  $addon_num) Install $addon_name"
+                echo "  $addon_num) $addon_name"
             done
         fi
 

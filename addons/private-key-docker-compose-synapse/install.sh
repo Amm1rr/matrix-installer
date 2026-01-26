@@ -4,9 +4,10 @@
 # ADDON METADATA
 # ===========================================
 ADDON_NAME="private-key-docker-compose-synapse"
-ADDON_VERSION="1.0.0"
+ADDON_NAME_MENU="Install Docker Compose Synapse (Root Key SSL)"
+ADDON_VERSION="0.1.0"
 ADDON_DESCRIPTION="Docker Compose installer with Private Key SSL (Root Key)"
-ADDON_AUTHOR="Matrix Installer Team"
+ADDON_AUTHOR="Matrix Installer"
 
 # ===========================================
 # ENVIRONMENT VARIABLES FROM MAIN.SH

@@ -4,9 +4,10 @@
 # ADDON METADATA
 # ===========================================
 ADDON_NAME="ansible-synapse"
-ADDON_VERSION="1.0.0"
+ADDON_NAME_MENU="Install synapse with Ansible"
+ADDON_VERSION=0.1.0"
 ADDON_DESCRIPTION="Self-contained Ansible module for Synapse homeserver installation"
-ADDON_AUTHOR="Matrix Installer Team"
+ADDON_AUTHOR="Matrix Installer"
 
 # ===========================================
 # ENVIRONMENT VARIABLES FROM MAIN.SH
