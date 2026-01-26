@@ -1028,7 +1028,7 @@ menu_with_root_key() {
         local exit_option=0
 
         echo ""
-        echo "Root Key: $(basename "$ACTIVE_ROOT_CA_DIR")"
+        echo -e "Root Key: ${GREEN}$(basename "$ACTIVE_ROOT_CA_DIR")${NC}"
 
         # Get and display Root Key info
         local ca_info
@@ -1177,18 +1177,16 @@ menu_with_root_key() {
 
 menu_without_root_key() {
     while true; do
-        cat <<EOF
-
-╔══════════════════════════════════════════════════════════╗
-║             ${MATRIX_PLUS_NAME} - Main Menu              ║
-╚══════════════════════════════════════════════════════════╝
-
-Root Key: Not Available
-
-  1) Generate new Root Key
-  2) Exit
-
-EOF
+        echo ""
+        echo "╔══════════════════════════════════════════════════════════╗"
+        echo "║             ${MATRIX_PLUS_NAME} - Main Menu              ║"
+        echo "╚══════════════════════════════════════════════════════════╝"
+        echo ""
+        echo -e "Root Key: ${YELLOW}Not Available${NC}"
+        echo ""
+        echo "  1) Generate new Root Key"
+        echo "  2) Exit"
+        echo ""
 
         read -rp "Enter your choice (1-2): " choice || true
 
