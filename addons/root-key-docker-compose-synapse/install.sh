@@ -155,6 +155,101 @@ is_ip_address() {
 # PREREQUISITES CHECK
 # ===========================================
 
+check_port_conflicts() {
+    print_message "info" "Checking for port conflicts..."
+
+    local required_ports=("443" "80" "8080")
+    local conflicts=()
+    local conflicting_containers=()
+    local containers_using_port
+    local container
+    local port
+    local item
+    local existing
+    local duplicate
+    local already_tracked
+    local unique_conflicts
+    local conflict
+
+    for port in "${required_ports[@]}"; do
+        # Check if any container is using this port
+        containers_using_port=$(docker ps --format "{{.Names}}\t{{.Ports}}" 2>/dev/null | grep -E "0.0.0.0:${port}->" | awk '{print $1}') || true
+
+        if [[ -n "$containers_using_port" ]]; then
+            while IFS= read -r container; do
+                if [[ -n "$container" ]]; then
+                    conflicts+=("$container (port $port)")
+                    # Track unique container names
+                    already_tracked=0
+                    for existing in "${conflicting_containers[@]}"; do
+                        if [[ "$existing" == "$container" ]]; then
+                            already_tracked=1
+                            break
+                        fi
+                    done
+                    if [[ $already_tracked -eq 0 ]]; then
+                        conflicting_containers+=("$container")
+                    fi
+                fi
+            done <<< "$containers_using_port"
+        fi
+    done
+
+    # Remove duplicates from display list
+    unique_conflicts=()
+    for item in "${conflicts[@]}"; do
+        duplicate=0
+        for existing in "${unique_conflicts[@]}"; do
+            if [[ "$item" == "$existing" ]]; then
+                duplicate=1
+                break
+            fi
+        done
+        if [[ $duplicate -eq 0 ]]; then
+            unique_conflicts+=("$item")
+        fi
+    done
+
+    if [[ ${#unique_conflicts[@]} -gt 0 ]]; then
+        print_message "warning" "Port conflicts detected!"
+        echo ""
+        echo "The following containers are using ports required by this installation:"
+        for conflict in "${unique_conflicts[@]}"; do
+            echo "  - $conflict"
+        done
+        echo ""
+        echo "Required ports: 443 (HTTPS), 80 (HTTP), 8080 (Traefik Dashboard)"
+        echo ""
+
+        if [[ "$(prompt_yes_no "Stop and remove conflicting containers automatically?" "y")" == "yes" ]]; then
+            print_message "info" "Stopping conflicting containers..."
+            for container in "${conflicting_containers[@]}"; do
+                docker stop "$container" 2>/dev/null && echo "  Stopped: $container" || echo "  Failed to stop: $container"
+            done
+
+            print_message "info" "Removing conflicting containers..."
+            for container in "${conflicting_containers[@]}"; do
+                docker rm "$container" 2>/dev/null && echo "  Removed: $container" || echo "  Failed to remove: $container"
+            done
+
+            print_message "success" "Conflicting containers removed"
+            echo ""
+            return 0
+        else
+            print_message "info" "Installation cancelled by user"
+            echo "Please stop the conflicting containers manually:"
+            echo "  docker stop <container-name>"
+            echo "  docker rm <container-name>"
+            echo ""
+            echo "[DEBUG] Returning to menu..." >&2
+            return 2  # Return 2 to indicate user cancelled (return to menu)
+        fi
+    fi
+
+    print_message "success" "No port conflicts detected"
+    return 0
+}
+
 check_prerequisites() {
     print_message "info" "Checking prerequisites..."
 
@@ -302,6 +397,19 @@ install_matrix() {
 
     # Check prerequisites
     check_prerequisites || exit 1
+
+    # Check for port conflicts
+    check_port_conflicts
+    local port_check_result=$?
+    echo "[DEBUG] check_port_conflicts returned: $port_check_result" >&2
+    if [[ $port_check_result -eq 2 ]]; then
+        # User cancelled, return 2 to stay in menu
+        echo "[DEBUG] User cancelled, returning 2 to menu" >&2
+        return 2
+    elif [[ $port_check_result -ne 0 ]]; then
+        echo "[DEBUG] Port check failed with code: $port_check_result" >&2
+        exit 1
+    fi
 
     # Check environment variables from main.sh
     check_environment_variables || exit 1
@@ -771,7 +879,14 @@ EOF
         case "$choice" in
             1)
                 install_matrix "$@"
-                break
+                install_result=$?
+                echo "[DEBUG] install_matrix returned: $install_result" >&2
+                # Only break on success (0) or error (1), not on user cancel (2)
+                if [[ $install_result -ne 2 ]]; then
+                    echo "[DEBUG] Breaking from menu" >&2
+                    break
+                fi
+                echo "[DEBUG] Continuing menu loop" >&2
                 ;;
             2)
                 uninstall_matrix
