@@ -937,8 +937,18 @@ addon_loader_get_list() {
         fi
     done
 
-    # Return list
-    printf '%s\n' "${found_addons[@]}"
+    # Sort addons by ADDON_ORDER (default to 999 if not set)
+    local sorted_addons=()
+    while IFS= read -r addon; do
+        sorted_addons+=("$addon")
+    done < <(for addon in "${found_addons[@]}"; do
+        local order
+        order=$(grep "^ADDON_ORDER=" "$addon/install.sh" 2>/dev/null | cut -d'=' -f2 | tr -d '" ')
+        echo "${order:-999} $addon"
+    done | sort -n | cut -d' ' -f2-)
+
+    # Return sorted list
+    printf '%s\n' "${sorted_addons[@]}"
     return 0
 }
 

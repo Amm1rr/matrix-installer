@@ -6,6 +6,7 @@
 ADDON_NAME="docker-compose-synapse"
 ADDON_NAME_MENU="Install Docker Synapse (Let's Encrypt)"
 ADDON_VERSION="0.1.0"
+ADDON_ORDER="20"
 ADDON_DESCRIPTION="Quick Docker Compose installer with Let's Encrypt SSL and DuckDNS"
 ADDON_AUTHOR="Matrix Installer"
 

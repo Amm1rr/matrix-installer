@@ -6,6 +6,7 @@
 ADDON_NAME="zanjir-synapse"
 ADDON_NAME_MENU="Zanjir Synapse"
 ADDON_VERSION="0.1.0"
+ADDON_ORDER="40"
 ADDON_DESCRIPTION="Placeholder for future Zanjir-based Synapse deployment module (NOT YET IMPLEMENTED)"
 ADDON_AUTHOR="Matrix Installer"
 
