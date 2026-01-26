@@ -37,6 +37,7 @@ SSL_CA_DAYS=3650
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
+ORANGE='\033[0;33m'
 BLUE='\033[0;34m'
 NC='\033[0m'
 
@@ -1074,7 +1075,7 @@ menu_with_root_key() {
         echo ""
         echo "  ---------------------------"
         if [[ $num_root_cas -gt 1 ]]; then
-            echo "  $switch_ca_option) Switch active Root Key"
+            echo -e "  ${BLUE}$switch_ca_option) Switch active Root Key ($(basename "$ACTIVE_ROOT_CA_DIR"))${NC}"
         fi
         echo "  $new_ca_option) Create new Root Key"
         echo "  $exit_option) Exit"
@@ -1189,7 +1190,7 @@ menu_without_root_key() {
         echo "║             ${MATRIX_PLUS_NAME} - Main Menu              ║"
         echo "╚══════════════════════════════════════════════════════════╝"
         echo ""
-        echo -e "Root Key: ${YELLOW}Not Available${NC}"
+        echo -e "Root Key: ${ORANGE}Not Available${NC}"
         echo ""
         echo "  1) Generate new Root Key"
         echo "  2) Exit"
