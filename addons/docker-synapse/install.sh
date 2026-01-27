@@ -550,13 +550,14 @@ EOF
 Select an option:
 
   1) Install Matrix
-  2) Uninstall Matrix
-  3) Check Status
-  4) Exit
+  2) Check Status
+  3) Uninstall Matrix
+  -----------------
+  0) Exit
 
 EOF
 
-        read -rp "Enter your choice (1-4): " choice
+        read -rp "Enter your choice (1-3, 0=Exit): " choice
 
         case "$choice" in
             1)
@@ -564,17 +565,17 @@ EOF
                 break
                 ;;
             2)
-                uninstall_matrix
-                ;;
-            3)
                 check_status
                 ;;
-            4)
+            3)
+                uninstall_matrix
+                ;;
+            0)
                 print_message "info" "Exiting..."
                 exit 0
                 ;;
             *)
-                echo "Invalid choice. Please enter 1-4."
+                echo "Invalid choice. Please enter 1-3 or 0."
                 ;;
         esac
     done
