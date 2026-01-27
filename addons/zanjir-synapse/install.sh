@@ -828,9 +828,18 @@ update_element_config() {
 
     mkdir -p "${MATRIX_BASE}/config"
 
-    # Replace domain placeholder and language settings
+    # Determine registration feature value
+    local registration_feature
+    if [[ "$ENABLE_REGISTRATION" == "true" ]]; then
+        registration_feature="true"
+    else
+        registration_feature="false"
+    fi
+
+    # Replace domain placeholder, language settings, and registration feature
     sed "s|__DOMAIN_PLACEHOLDER__|${SERVER_NAME}|g" "$template_file" | \
-    sed "s|\"language\": \"fa\"|\"language\": \"$( [[ "$ENABLE_FARSI_UI" == "true" ]] && echo "fa" || echo "en" )\"|g" \
+    sed "s|\"language\": \"fa\"|\"language\": \"$( [[ "$ENABLE_FARSI_UI" == "true" ]] && echo "fa" || echo "en" )\"|g" | \
+    sed "s|\"UIFeature.registration\": false|\"UIFeature.registration\": ${registration_feature}|g" \
     > "$output_file"
 
     print_message "success" "Element configured."
