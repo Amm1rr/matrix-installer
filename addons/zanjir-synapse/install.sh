@@ -994,7 +994,7 @@ services:
       - zanjir-dendrite-search:/var/dendrite/searchindex
     networks:
       - zanjir-network
-    command: --config /etc/dendrite/dendrite.yaml
+$( [[ "$ENABLE_REGISTRATION" == "true" ]] && echo "    command: --config /etc/dendrite/dendrite.yaml --really-enable-open-registration" || echo "    command: --config /etc/dendrite/dendrite.yaml" )
 
   # Element Web Client
   element:
