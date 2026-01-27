@@ -7,7 +7,7 @@
 # Application Metadata
 MATRIX_PLUS_NAME="Matrix Installer"
 MATRIX_PLUS_VERSION="0.1.0"
-MATRIX_PLUS_DESCRIPTION="Federation Manager"
+MATRIX_PLUS_DESCRIPTION="Federation Key Manager"
 MATRIX_PLUS_BUILD_DATE="$(date +%Y-%m-%d)"
 
 set -e
