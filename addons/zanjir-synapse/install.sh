@@ -1068,6 +1068,26 @@ check_services() {
 install_matrix() {
     print_message "info" "Starting installation..."
 
+    # Check if Matrix is already installed
+    if [[ -d "$MATRIX_BASE" && -f "$MATRIX_BASE/docker-compose.yml" ]]; then
+        # Check if containers are running
+        local running_count
+        running_count=$(docker ps --format "{{.Names}}" 2>/dev/null | grep -c "^zanjir-" || echo "0")
+        running_count=$(echo "$running_count" | tr -d '[:space:]')
+
+        if [[ "$running_count" -gt 0 ]]; then
+            echo ""
+            print_message "warning" "Matrix is already installed and running!"
+            echo ""
+            echo "  Installation directory: ${MATRIX_BASE}"
+            echo "  Running containers: ${running_count}"
+            echo ""
+            print_message "info" "Please use option 2 (Uninstall Matrix) from the main menu first."
+            echo ""
+            return 2
+        fi
+    fi
+
     # Prompt for optional features BEFORE sudo re-exec (so user can choose)
     if [[ "${REEXECED:-}" != "1" ]]; then
         prompt_optional_features
@@ -1374,6 +1394,7 @@ ZANJIR-SYNAPSE INSTALLATION COMPLETE
     echo "docker exec -it zanjir-dendrite /usr/bin/create-account \\"
     echo "    --config /etc/dendrite/dendrite.yaml \\"
     echo "    --username YOUR_USERNAME \\"
+    echo "    --password YOUR_PASSWORD \\"
     echo "    --admin"
     echo ""
 
