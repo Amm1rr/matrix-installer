@@ -9,7 +9,7 @@ ADDON_VERSION="0.1.0"
 ADDON_ORDER="30"
 ADDON_DESCRIPTION="Self-contained Ansible module for Synapse homeserver installation"
 ADDON_AUTHOR="Matrix Installer"
-ADDON_HIDDEN="true" # Hide this addon from the menu
+ADDON_HIDDEN="false" # Hide this addon from the menu
 
 # ===========================================
 # ENVIRONMENT VARIABLES FROM matrix-installer.sh
