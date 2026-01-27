@@ -72,7 +72,47 @@ The entry point and coordinator. It doesn't install anything itself—it coordin
 
 **Important design decision:** `matrix-installer.sh` exits when an addon takes over. The addon becomes the primary process from that point.
 
-### 2. SSL Manager
+### 2. OS Module System
+
+Handles OS-specific dependency management and package installation.
+
+**Priority:**
+1. OS modules in `os/` directory (if available)
+2. Built-in fallback (Ubuntu/Debian, Arch Linux)
+
+**Each OS module provides:**
+
+| Element | Purpose |
+|---------|---------|
+| `REQUIRED_COMMANDS` | Array of required commands for this OS |
+| `get_package_for_command()` | Map command name to package name |
+| `os_detect()` | Detect if this module matches current OS |
+| `os_install_packages()` | Install packages using OS package manager |
+
+**Adding a new OS:**
+```bash
+# Create os/fedora.sh
+OS_NAME="fedora"
+REQUIRED_COMMANDS=("openssl" "ip")
+
+get_package_for_command() {
+    case "$1" in
+        openssl) echo "openssl" ;;
+        ip) echo "iproute" ;;
+    esac
+}
+
+os_detect() {
+    [[ -f /etc/os-release ]] && source /etc/os-release
+    [[ "$ID" == "fedora" ]]
+}
+
+os_install_packages() {
+    sudo dnf install -y "$@"
+}
+```
+
+### 3. SSL Manager
 
 Handles all certificate operations. This is the heart of the system—without proper certificates, federation doesn't work.
 
@@ -110,6 +150,23 @@ certs/
     ├── rootCA.key
     ├── rootCA.crt
     └── servers/
+```
+
+**Project Directory Structure:**
+
+```
+script/
+├── matrix-installer.sh       # Main orchestrator
+├── os/                        # OS-specific modules (optional)
+│   ├── ubuntu.sh              # Ubuntu/Debian support
+│   ├── arch.sh                # Arch/Manjaro support
+│   └── <os-name>.sh           # Add new OS support here
+├── addons/                    # Installation modules
+│   └── <addon-name>/
+│       └── install.sh
+├── certs/                     # Generated certificates
+├── docs/                      # Documentation
+└── matrix-installer.log       # Main log file
 ```
 
 **Certificate creation process:**
@@ -168,7 +225,7 @@ certs/
 4. Return to menu with Root Key available
 ```
 
-### 3. Addon Loader
+### 4. Addon Loader
 
 Finds and executes installation addons.
 
@@ -194,7 +251,7 @@ Finds and executes installation addons.
 2. Return list of valid addons
 ```
 
-### 4. Environment Provider
+### 5. Environment Provider
 
 Bridges the gap between `matrix-installer.sh` and addons by exporting environment variables.
 
@@ -216,7 +273,7 @@ CERTS_DIR="$CERTS_DIR"
 WORKING_DIR="$WORKING_DIR"
 ```
 
-### 5. Menu System
+### 6. Menu System
 
 Provides the interactive user interface.
 
@@ -456,6 +513,39 @@ my_new_function() {
     return 0
 }
 ```
+
+### Adding a New OS
+
+Create file in `os/` directory:
+
+```bash
+#!/bin/bash
+# os/fedora.sh - Fedora/RHEL specific package management
+
+OS_NAME="fedora"
+REQUIRED_COMMANDS=("openssl" "ip")
+
+get_package_for_command() {
+    case "$1" in
+        openssl) echo "openssl" ;;
+        ip) echo "iproute" ;;
+        git) echo "git" ;;
+        *) echo "$1" ;;
+    esac
+}
+
+os_detect() {
+    unset ID ID_LIKE
+    [[ -f /etc/os-release ]] && source /etc/os-release
+    [[ "${ID:-}" == "fedora" ]] || [[ "${ID_LIKE:-}" == *"rhel"* ]]
+}
+
+os_install_packages() {
+    sudo dnf install -y "$@"
+}
+```
+
+No changes to `matrix-installer.sh` required—OS modules are auto-detected and loaded.
 
 ## Security Architecture
 
