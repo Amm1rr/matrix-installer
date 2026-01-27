@@ -11,9 +11,9 @@ ADDON_DESCRIPTION="Docker Compose installer with Private Key SSL (Root Key)"
 ADDON_AUTHOR="Matrix Installer"
 
 # ===========================================
-# ENVIRONMENT VARIABLES FROM MAIN.SH
+# ENVIRONMENT VARIABLES FROM matrix-installer.sh
 # ===========================================
-# These variables are exported by main.sh before running this addon:
+# These variables are exported by matrix-installer.sh before running this addon:
 #
 # SERVER_NAME="172.19.39.69"                    # Server IP or domain name
 # SSL_CERT="/path/to/certs/172.19.39.69/cert-full-chain.pem"  # Full chain certificate
@@ -324,7 +324,7 @@ check_environment_variables() {
     fi
 
     # Standalone mode: prompt for missing variables
-    print_message "warning" "Running in standalone mode (not from main.sh)"
+    print_message "warning" "Running in standalone mode (not from matrix-installer.sh)"
     echo ""
     echo "This addon requires SSL certificates."
     echo ""
@@ -526,7 +526,7 @@ configure_registration() {
     MACAROON_SECRET_KEY="$(rand_secret)"
     FORM_SECRET="$(rand_secret)"
 
-    # Domain is SERVER_NAME from main.sh
+    # Domain is SERVER_NAME from matrix-installer.sh
     DOMAIN="$SERVER_NAME"
 
     echo ""
@@ -581,7 +581,7 @@ EOF
         :
     fi
 
-    # Check environment variables (prompts in standalone mode, uses main.sh vars otherwise)
+    # Check environment variables (prompts in standalone mode, uses matrix-installer.sh vars otherwise)
     # This happens AFTER sudo re-exec, so all prompts are in the sudo context
     check_environment_variables || exit 1
 
@@ -995,13 +995,13 @@ main() {
 ║                       Version 1.0.0                      ║
 ║                                                          ║
 ║       Docker Compose installer with Private Key SSL      ║
-║              (Root Key from main.sh)                     ║
+║              (Root Key from matrix-installer.sh)                     ║
 ║                                                          ║
 ╚══════════════════════════════════════════════════════════╝
 EOF
 
     # Note: Environment variable check moved to check_environment_variables()
-    # to support both main.sh and standalone modes
+    # to support both matrix-installer.sh and standalone modes
 
     # Main menu loop
     while true; do

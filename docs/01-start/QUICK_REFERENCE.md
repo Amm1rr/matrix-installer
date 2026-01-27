@@ -26,20 +26,23 @@ Root Key: Not Available
 Root Key: Available
   | Subject: Matrix Root Key
   | Expires: 2034-01-25 (in 3650 days)
-  | Country: IR
+  | Country: UK
 
   1) Generate server certificate
-  2) Install ansible-synapse
-  3) Install docker-compose-synapse
-  4) Install private-key-docker-compose-synapse
-  5) Install zanjir-synapse
+
+  2) Install Docker Synapse (Let's Encrypt)
+  3) Install Docker Synapse (Private Key)
+  4) Install Zanjir Synapse (Private Key+Dendrite)
+  5) Install Synapse by Ansible (Private Key)
+
 
   ---------------------------
-  8) Generate new Root Key (overwrite existing)
+  S) Switch active Root Key (MatrixUK)
+  N) Create new Root Key
   0) Exit
 ```
 
-The addon list (options 2-5) is dynamic—all addons in `addons/` appear here.
+The addon list is dynamic—all addons in `addons/` appear here.
 
 ## Directory Structure
 
@@ -76,7 +79,7 @@ script/
 
 ### Reusing an Existing Root Key
 
-1. Copy `rootCA.key` and `rootCA.crt` next to `matrix-installer.sh`
+1. Copy `*.key` and `*.crt` next to `matrix-installer.sh` (e.g., `server.key` and `server.crt`)
 2. Run `./matrix-installer.sh`
 3. Accept the prompt to use existing Root Key
 
@@ -95,12 +98,15 @@ script/
 
 - `matrix-installer.log` - Main script log
 - `ansible-synapse.log` - Ansible addon log (if used)
+- `docker-compose-synapse.log` - Docker addon log (if used)
+- `private-key-docker-compose-synapse.log` - Docker (Private Key) addon log (if used)
+- `zanjir-synapse.log` - Zanjir addon log (if used)
 
 ## Troubleshooting
 
 | Problem | Solution |
 |---------|----------|
-| Root Key not detected | Check that both `rootCA.key` and `rootCA.crt` exist next to `matrix-installer.sh` |
+| Root Key not detected | Ensure `*.key` and `*.crt` files have identical names (e.g., `server.key` and `server.crt`) as expected by `matrix-installer.sh` |
 | Certificate errors | Regenerate server certificate from menu |
 | Addon not showing | Check `install.sh` has `ADDON_NAME` in first 15 lines |
 | Installation failed | Check relevant log file in working directory |

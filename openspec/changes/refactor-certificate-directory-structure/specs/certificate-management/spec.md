@@ -90,10 +90,10 @@ On first run after upgrade, the system SHALL automatically detect and migrate th
 - **THEN** the system SHALL skip migration
 - **AND** continue normal operation
 
-### Requirement: Multiple Root Key Files Next to main.sh
-When multiple Root Key key/certificate pairs exist next to main.sh, the system SHALL display a list and prompt user to select which one to use.
+### Requirement: Multiple Root Key Files Next to matrix-installer.sh
+When multiple Root Key key/certificate pairs exist next to matrix-installer.sh, the system SHALL display a list and prompt user to select which one to use.
 
-#### Scenario: Multiple Root Key pairs found next to main.sh
+#### Scenario: Multiple Root Key pairs found next to matrix-installer.sh
 - **WHEN** scanning SCRIPT_DIR and multiple .key/.crt pairs are found
 - **THEN** the system SHALL display a selection menu showing:
   - List of found Root Key file pairs (e.g., rootCA.key/crt, rootCA-backup.key/crt)
@@ -102,12 +102,12 @@ When multiple Root Key key/certificate pairs exist next to main.sh, the system S
 - **AND** prompt user to select which Root Key to copy to certs/
 - **AND** copy only the selected Root Key files
 
-#### Scenario: Single Root Key pair found next to main.sh
+#### Scenario: Single Root Key pair found next to matrix-installer.sh
 - **WHEN** scanning SCRIPT_DIR and only rootCA.key/rootCA.crt exists
 - **THEN** the system SHALL prompt if user wants to use this Root Key
 - **AND** if confirmed, copy files to certs/<name>/ directory
 
-#### Scenario: No Root Key files found next to main.sh
+#### Scenario: No Root Key files found next to matrix-installer.sh
 - **WHEN** scanning SCRIPT_DIR and no Root Key files exist
 - **THEN** the system SHALL continue to normal menu flow
 - **AND** offer to create new Root Key if needed in certs/

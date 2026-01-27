@@ -1,6 +1,6 @@
 # Tasks
 
-## 1. Add new helper functions (main.sh:55-153)
+## 1. Add new helper functions (matrix-installer.sh:55-153)
 
 - [x] Add `get_detected_ip()` function after `is_ip_address()`
   - Implements IP detection using `ip route get 1` with fallback to `ip -4 addr show`
@@ -101,7 +101,7 @@
   - Verify returns to main menu
 
 - [x] Test Root Key selection from files with "Back" option
-  - Run script with Root Key files next to main.sh
+  - Run script with Root Key files next to matrix-installer.sh
   - Select option 0 to go back
   - Verify continues to certs/ menu
 

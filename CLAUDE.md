@@ -43,7 +43,7 @@ ls -R certs/
 
 ### Core Components
 
-**`main.sh`** - The orchestrator (1400+ lines)
+**`matrix-installer.sh`** - The orchestrator (1400+ lines)
 - Certificate management (Root Key creation, server certificate generation)
 - Addon discovery and loading
 - Interactive menu system
@@ -59,13 +59,13 @@ ls -R certs/
 - Auto-discovered from `addons/*/install.sh`
 - Validated by `ADDON_NAME` in first 15 lines
 - Receives certificates via environment variables
-- Takes full control (main.sh exits after invoking)
+- Takes full control (matrix-installer.sh exits after invoking)
 
 ### Directory Structure
 
 ```
 script/
-├── main.sh              # Main orchestrator
+├── matrix-installer.sh              # Main orchestrator
 ├── CLAUDE.md            # This file
 ├── AGENTS.md            # OpenSpec agent instructions
 ├── certs/               # Generated at runtime (gitignored)
@@ -117,10 +117,10 @@ Every addon must:
 The system uses a hierarchical structure where each Root Key has its own directory with a `servers/` subdirectory. This allows multiple Root Keys to coexist, each managing their own set of server certificates.
 
 ### Handoff Pattern
-When an addon is invoked, `main.sh` **exits immediately** (see `menu_run_addon()` at line 1348). The addon becomes PID 1 and takes full control. This is intentional—addons are expected to handle everything from that point, including showing their own menus.
+When an addon is invoked, `matrix-installer.sh` **exits immediately** (see `menu_run_addon()` at line 1348). The addon becomes PID 1 and takes full control. This is intentional—addons are expected to handle everything from that point, including showing their own menus.
 
 ### Root Key Detection
-The system first detects Root Key files next to `main.sh` (`<name>.key`/`<name>.crt` pairs) and offers to import them. Only then does it check `certs/` for existing Root Keys.
+The system first detects Root Key files next to `matrix-installer.sh` (`<name>.key`/`<name>.crt` pairs) and offers to import them. Only then does it check `certs/` for existing Root Keys.
 
 ## Common Tasks
 

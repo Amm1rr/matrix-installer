@@ -12,9 +12,9 @@ ADDON_AUTHOR="Yours"
 ADDON_HIDDEN="true" # Hide this addon from the menu
 
 # ===========================================
-# ENVIRONMENT VARIABLES FROM MAIN.SH
+# ENVIRONMENT VARIABLES FROM matrix-installer.sh
 # ===========================================
-# These variables are exported by main.sh before running this addon:
+# These variables are exported by matrix-installer.sh before running this addon:
 #
 # SERVER_NAME="172.19.39.69"                    # Server IP or domain name
 # SSL_CERT="/path/to/certs/172.19.39.69/cert-full-chain.pem"  # Full chain certificate

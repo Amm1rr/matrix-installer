@@ -62,16 +62,19 @@ Now that you have a Root Key, the menu expands. You'll see:
 Root Key: Available
   | Subject: Matrix Root Key
   | Expires: 2034-01-25 (in 3650 days)
-  | Country: IR
+  | Country: UK
 
   1) Generate server certificate
-  2) Install ansible-synapse
-  3) Install docker-compose-synapse
-  4) Install private-key-docker-compose-synapse
-  5) Install zanjir-synapse
+
+  2) Install Docker Synapse (Let's Encrypt)
+  3) Install Docker Synapse (Private Key)
+  4) Install Zanjir Synapse (Private Key+Dendrite)
+  5) Install Synapse by Ansible (Private Key)
+
 
   ---------------------------
-  8) Generate new Root Key (overwrite existing)
+  S) Switch active Root Key (MatrixUK)
+  N) Create new Root Key
   0) Exit
 ```
 
@@ -92,7 +95,7 @@ These files are stored in `certs/<your-server-ip-or-domain>/` so you can have ce
 
 ### Step 4: Install Matrix with an Addon
 
-Now go back to the main menu (it returns automatically after creating a certificate). Choose the addon you want to use. Let's say you pick `ansible-synapse` (option 2):
+Now go back to the main menu (it returns automatically after creating a certificate). Choose the addon you want to use. Let's say you pick `Install Zanjir Synapse` (option 4):
 
 The addon will take over from here. It already knows where your certificates are because Matrix Installer passes that information to it automatically. The addon will:
 
@@ -146,13 +149,13 @@ When you run an addon, it will ask which server you want to install to (if you h
 
 Addons are the actual installation methods. Here's what you'll typically find:
 
-- **ansible-synapse**: Uses the official Matrix Docker Ansible Deploy playbook. This is the most full-featured option and works with the official upstream project.
+- **Ansible synapse**: Uses the official Matrix Docker Ansible Deploy playbook. This is the most full-featured option and works with the official upstream project.
 
-- **docker-compose-synapse**: A simpler Docker Compose setup. Good if you prefer straightforward Docker Compose files over Ansible.
+- **Docker synapse**: A simpler Docker Compose setup. Good if you prefer straightforward Docker Compose files over Ansible.
 
-- **private-key-docker-compose-synapse**: Similar to docker-compose-synapse but specifically designed for private Root Key setups.
+- **Private Key Docker Synapse**: Similar to Docker Compose-synapse but specifically designed for private Root Key setups.
 
-- **zanjir-synapse**: A placeholder for the Zanjir project (currently under development).
+- **Zanjir Synapse**: Uses the Zanjir project with Federation support.
 
 The great thing about this system is that anyone can write an addon. If you have a specific way you want to install Matrix, you can create your own addon and drop it in the `addons/` folder—Matrix Installer will automatically find it and add it to the menu.
 
@@ -183,7 +186,7 @@ When Element Web loads, you can create your account or log in with the admin acc
 
 ### Which addon should I use?
 
-For most people, **ansible-synapse** is the best choice. It's based on the official upstream project, has the most features, and is well-maintained. The other options exist for specific use cases or preferences.
+For most people, **Docker Synapse** is the best choice. It's based on the official upstream project, has the most features, and is well-maintained. The other options exist for specific use cases or preferences.
 
 ### Do I need a domain name?
 
@@ -207,7 +210,7 @@ Yes. If you need to regenerate a server certificate, just run `matrix-installer.
 
 Check the log files:
 - `matrix-installer.log` - The main script log
-- `ansible-synapse.log` - The ansible-synapse addon log (if using that addon)
+- `docker-synapse.log` - The Docker Synapse addon log (if using that addon)
 
 These files contain detailed information about what happened and can help identify issues.
 

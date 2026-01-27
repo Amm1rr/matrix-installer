@@ -12,9 +12,9 @@ ADDON_AUTHOR="Matrix Installer"
 ADDON_HIDDEN="true" # Hide this addon from the menu
 
 # ===========================================
-# ENVIRONMENT VARIABLES FROM MAIN.SH
+# ENVIRONMENT VARIABLES FROM matrix-installer.sh
 # ===========================================
-# These variables are exported by main.sh before running this addon:
+# These variables are exported by matrix-installer.sh before running this addon:
 #
 # SERVER_NAME="172.19.39.69"                    # Server IP or domain name
 # SSL_CERT="/path/to/certs/172.19.39.69/cert-full-chain.pem"  # Full chain certificate
@@ -56,10 +56,10 @@ BLUE='\033[0;34m'
 NC='\033[0m'
 
 # ===========================================
-# ENVIRONMENT VARIABLES FROM MAIN.SH
+# ENVIRONMENT VARIABLES FROM matrix-installer.sh
 # ===========================================
 
-# Expected from main.sh:
+# Expected from matrix-installer.sh:
 # - SERVER_NAME: Matrix server identity (IP or domain)
 # - SSL_CERT: Full chain certificate path
 # - SSL_KEY: Private key path
@@ -267,7 +267,7 @@ check_environment_variables() {
     # STANDALONE MODE: Prompt for certificates
     # ============================================
 
-    print_message "warning" "Running in standalone mode (not from main.sh)"
+    print_message "warning" "Running in standalone mode (not from matrix-installer.sh)"
     echo ""
     echo "Provide certificates directory, and I'll search for:"
     echo "  - cert-full-chain.pem (server certificate chain)"
@@ -792,7 +792,7 @@ traefik_provider_configuration_extension_yaml: |
           certFile: /ssl/cert.pem
           keyFile: /ssl/privkey.pem
 
-# SSL Files (from environment variables set by main.sh)
+# SSL Files (from environment variables set by matrix-installer.sh)
 aux_file_definitions:
   - dest: "{{ traefik_ssl_dir_path }}/privkey.pem"
     src: ${SSL_KEY}

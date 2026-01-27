@@ -13,7 +13,7 @@ Matrix Installer is a modular installation system for Matrix homeservers. It han
                               │
                               ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│                        main.sh (Orchestrator)                   │
+│                        matrix-installer.sh (Orchestrator)                   │
 │                                                                 │
 │  ┌──────────────┐  ┌──────────────┐  ┌──────────────────────┐   │
 │  │ SSL Manager  │  │ Addon Loader │  │ Environment Provider │   │
@@ -60,7 +60,7 @@ Matrix Installer is a modular installation system for Matrix homeservers. It han
 
 ## Core Components
 
-### 1. main.sh (The Orchestrator)
+### 1. matrix-installer.sh (The Orchestrator)
 
 The entry point and coordinator. It doesn't install anything itself—it coordinates the pieces.
 
@@ -70,7 +70,7 @@ The entry point and coordinator. It doesn't install anything itself—it coordin
 - Discover and validate addons
 - Pass control to addons with proper environment
 
-**Important design decision:** `main.sh` exits when an addon takes over. The addon becomes the primary process from that point.
+**Important design decision:** `matrix-installer.sh` exits when an addon takes over. The addon becomes the primary process from that point.
 
 ### 2. SSL Manager
 
@@ -81,7 +81,7 @@ Handles all certificate operations. This is the heart of the system—without pr
 | Function | Purpose |
 |----------|---------|
 | `ssl_manager_init()` | Create certs directory, detect old structure, migrate if needed |
-| `detect_root_ca_files()` | Check for Root Key files next to main.sh |
+| `detect_root_ca_files()` | Check for Root Key files next to matrix-installer.sh |
 | `ssl_manager_create_root_ca()` | Generate new Root Key in named directory |
 | `ssl_manager_generate_server_cert()` | Generate server certificate under active Root Key |
 | `get_server_cert_dir()` | Get certificate directory for a server (under active Root Key) |
@@ -120,7 +120,7 @@ certs/
    ├─ Check for old flat structure (rootCA files in certs/)
    │   └─ If found → Offer to migrate to new structure
    │
-   ├─ Check for Root Key files next to main.sh
+   ├─ Check for Root Key files next to matrix-installer.sh
    │   └─ If found → Offer to import to new structure
    │
    └─ Scan for Root Key directories in certs/
@@ -196,7 +196,7 @@ Finds and executes installation addons.
 
 ### 4. Environment Provider
 
-Bridges the gap between `main.sh` and addons by exporting environment variables.
+Bridges the gap between `matrix-installer.sh` and addons by exporting environment variables.
 
 **Function:**
 
@@ -320,7 +320,7 @@ User runs ./matrix-installer.sh
      │        ▼
      │  ┌──────────────────┐
      │  │ Addon takes over │
-     │  │ main.sh exits    │
+     │  │ matrix-installer.sh exits    │
      │  └──────────────────┘
      │
      └──────────┐
@@ -396,10 +396,10 @@ Note: Multiple Root Keys can exist simultaneously, each with their own
 
 | Variable | Source | Default | Used By |
 |----------|--------|---------|---------|
-| `WORKING_DIR` | `$(pwd)` | - | main.sh |
-| `CERTS_DIR` | `${WORKING_DIR}/certs` | - | main.sh |
-| `ADDONS_DIR` | `${WORKING_DIR}/addons` | - | main.sh |
-| `ACTIVE_ROOT_CA_DIR` | User selected | - | main.sh, certificate operations |
+| `WORKING_DIR` | `$(pwd)` | - | matrix-installer.sh |
+| `CERTS_DIR` | `${WORKING_DIR}/certs` | - | matrix-installer.sh |
+| `ADDONS_DIR` | `${WORKING_DIR}/addons` | - | matrix-installer.sh |
+| `ACTIVE_ROOT_CA_DIR` | User selected | - | matrix-installer.sh, certificate operations |
 | `SERVER_NAME` | User/Detected | - | Addons |
 | `SSL_CERT` | Calculated | - | Addons |
 | `SSL_KEY` | Calculated | - | Addons |
@@ -418,7 +418,7 @@ set -u   # Exit on undefined variable
 set -o pipefail  # Exit on pipe failure
 ```
 
-This applies to both `main.sh` and all addons.
+This applies to both `matrix-installer.sh` and all addons.
 
 ### Error Recovery
 
@@ -439,12 +439,12 @@ This applies to both `main.sh` and all addons.
 2. Create install.sh with metadata
 3. Add installation logic
 4. Make executable: chmod +x install.sh
-5. Run main.sh → addon appears automatically
+5. Run matrix-installer.sh → addon appears automatically
 ```
 
 ### Adding New Helper Functions
 
-Add to `main.sh` in appropriate section:
+Add to `matrix-installer.sh` in appropriate section:
 
 ```bash
 # ===========================================
@@ -525,7 +525,7 @@ my_new_function() {
 ```
 Component          Log File          Purpose
 ─────────────────────────────────────────────────────────
-main.sh           main.log          General operations, errors
+matrix-installer.sh           main.log          General operations, errors
 ansible-synapse   ansible-synapse.log  Ansible operations
 Browser           DevTools Console   Client-side issues
 Synapse           docker logs        Homeserver issues
@@ -563,4 +563,4 @@ fi
 
 Matrix Installer is designed to be simple, modular, and understandable. The architecture follows the Unix philosophy: do one thing well (certificate management) and delegate the rest (installation) to specialized tools (addons).
 
-For implementation details, see the source code in `main.sh`. For extension details, see the [Addon Development Guide](ADDON_DEVELOPMENT_GUIDE.md).
+For implementation details, see the source code in `matrix-installer.sh`. For extension details, see the [Addon Development Guide](ADDON_DEVELOPMENT_GUIDE.md).

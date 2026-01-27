@@ -4,9 +4,9 @@ This guide shows you how to create addons for Matrix Installer. Addons are how y
 
 ## What is an Addon?
 
-An addon is a self-contained installation module. It's a directory with an `install.sh` script that does the actual work. The `main.sh` script handles the boring stuff (certificates, menus, etc.) and then hands off to your addon when the user selects it.
+An addon is a self-contained installation module. It's a directory with an `install.sh` script that does the actual work. The `matrix-installer.sh` script handles the boring stuff (certificates, menus, etc.) and then hands off to your addon when the user selects it.
 
-Think of it this way: `main.sh` is the conductor, and addons are the musicians. The conductor doesn't play any instruments—it just makes sure everyone's ready and cues them at the right time.
+Think of it this way: `matrix-installer.sh` is the conductor, and addons are the musicians. The conductor doesn't play any instruments—it just makes sure everyone's ready and cues them at the right time.
 
 ## Basic Structure
 
@@ -44,7 +44,7 @@ set -o pipefail
 # Your installation code goes here
 ```
 
-The metadata at the top is important. `main.sh` reads this to display your addon in the menu. Without it, your addon won't be recognized.
+The metadata at the top is important. `matrix-installer.sh` reads this to display your addon in the menu. Without it, your addon won't be recognized.
 
 ### Metadata Fields
 
@@ -60,7 +60,7 @@ The metadata at the top is important. `main.sh` reads this to display your addon
 
 ## Environment Variables
 
-When `main.sh` runs your addon, it exports several environment variables that you'll need:
+When `matrix-installer.sh` runs your addon, it exports several environment variables that you'll need:
 
 ### Required Variables (Always Available)
 
@@ -81,13 +81,13 @@ Always verify the required variables are set before doing anything:
 # Check for required variables
 if [[ -z "${SERVER_NAME:-}" ]]; then
     echo "[ERROR] SERVER_NAME environment variable not set"
-    echo "[ERROR] This addon must be run from main.sh"
+    echo "[ERROR] This addon must be run from matrix-installer.sh"
     exit 1
 fi
 
 if [[ -z "${SSL_CERT:-}" ]] || [[ -z "${SSL_KEY:-}" ]] || [[ -z "${ROOT_CA:-}" ]]; then
     echo "[ERROR] SSL certificate environment variables not set"
-    echo "[ERROR] Please generate a server certificate from main.sh first"
+    echo "[ERROR] Please generate a server certificate from matrix-installer.sh first"
     exit 1
 fi
 
@@ -237,7 +237,7 @@ EOF
     # Check environment variables
     if [[ -z "${SERVER_NAME:-}" ]]; then
         print_message "error" "SERVER_NAME environment variable not set"
-        print_message "info" "This addon must be run from main.sh"
+        print_message "info" "This addon must be run from matrix-installer.sh"
         exit 1
     fi
 
@@ -478,7 +478,7 @@ exit 4   # Installation failure
 
 Before considering your addon complete, test it:
 
-1. **Manual testing**: Run it from `main.sh` and verify it works
+1. **Manual testing**: Run it from `matrix-installer.sh` and verify it works
 2. **Missing variables**: Try running it without the environment variables set
 3. **Idempotency**: Run it twice and make sure it doesn't break
 4. **Error handling**: Intentionally break things (wrong paths, missing files) and see how it handles errors
@@ -490,7 +490,7 @@ Once your addon is working:
 1. Create a directory in `addons/` with your addon name
 2. Put your `install.sh` inside
 3. Make it executable: `chmod +x install.sh`
-4. Run `main.sh`—your addon will automatically appear in the menu
+4. Run `matrix-installer.sh`—your addon will automatically appear in the menu
 
 That's it—no registration or configuration needed. The addon loader finds anything with an `install.sh` that has the proper metadata.
 

@@ -11,9 +11,9 @@ ADDON_DESCRIPTION="Matrix server using Dendrite with Element Web and nginx"
 ADDON_AUTHOR="Matrix Installer"
 
 # ===========================================
-# ENVIRONMENT VARIABLES FROM MAIN.SH
+# ENVIRONMENT VARIABLES FROM matrix-installer.sh
 # ===========================================
-# These variables are exported by main.sh before running this addon:
+# These variables are exported by matrix-installer.sh before running this addon:
 #
 # SERVER_NAME="172.19.39.69"                    # Server IP or domain name
 # SSL_CERT="/path/to/certs/172.19.39.69/cert-full-chain.pem"  # Full chain certificate
@@ -197,7 +197,7 @@ check_environment_variables() {
         fi
 
         STANDALONE_MODE=false
-        print_message "success" "Running in addon mode (using main.sh certificates)"
+        print_message "success" "Running in addon mode (using matrix-installer.sh certificates)"
         print_message "info" "  SERVER_NAME: ${SERVER_NAME}"
         print_message "info" "  SSL_CERT: ${SSL_CERT}"
         print_message "info" "  SSL_KEY: ${SSL_KEY}"
@@ -207,7 +207,7 @@ check_environment_variables() {
 
     # Standalone mode: prompt for missing variables
     STANDALONE_MODE=true
-    print_message "warning" "Running in standalone mode (not from main.sh)"
+    print_message "warning" "Running in standalone mode (not from matrix-installer.sh)"
     echo ""
     echo "This addon can run standalone, but requires SSL certificates."
     echo ""
@@ -642,16 +642,16 @@ setup_nginx_conf() {
     print_message "info" "Setting up nginx configuration..."
 
     if [[ "$ENABLE_FEDERATION" == "true" ]]; then
-        print_message "info" "Using main.sh Root Key SSL certificates (federation enabled)"
+        print_message "info" "Using matrix-installer.sh Root Key SSL certificates (federation enabled)"
     else
-        print_message "info" "Using main.sh certificates (isolated mode)"
+        print_message "info" "Using matrix-installer.sh certificates (isolated mode)"
     fi
 
     mkdir -p "${MATRIX_BASE}/nginx"
 
     cat > "${MATRIX_BASE}/nginx/nginx.conf" <<EOF
 # Zanjir - nginx Configuration
-# Using main.sh Root Key SSL certificates for federation support
+# Using matrix-installer.sh Root Key SSL certificates for federation support
 
 worker_processes auto;
 error_log /var/log/nginx/error.log warn;
@@ -704,7 +704,7 @@ http {
         listen 443 ssl http2;
         server_name ${SERVER_NAME};
 
-        # SSL certificates from main.sh
+        # SSL certificates from matrix-installer.sh
         ssl_certificate /etc/nginx/ssl/cert-full-chain.pem;
         ssl_certificate_key /etc/nginx/ssl/server.key;
 
@@ -1028,7 +1028,7 @@ $( [[ "$ENABLE_REGISTRATION" == "true" ]] && echo "    command: --config /etc/de
     networks:
       - zanjir-network
 
-  # nginx Reverse Proxy with main.sh SSL
+  # nginx Reverse Proxy with matrix-installer.sh SSL
   nginx:
     image: nginx:alpine
     container_name: zanjir-nginx
@@ -1441,11 +1441,11 @@ ZANJIR-SYNAPSE INSTALLATION COMPLETE
     echo "  - Server: ${SERVER_NAME}"
     echo "  - Web Server: nginx"
     if [[ "$ENABLE_FEDERATION" == "true" ]]; then
-        echo "  - Installation: Docker Compose with nginx + main.sh Root Key SSL"
+        echo "  - Installation: Docker Compose with nginx + matrix-installer.sh Root Key SSL"
     else
-        echo "  - Installation: Docker Compose with nginx + main.sh certificates (isolated)"
+        echo "  - Installation: Docker Compose with nginx + matrix-installer.sh certificates (isolated)"
     fi
-    echo "  - Mode: $( [[ "$STANDALONE_MODE" == "true" ]] && echo "Standalone" || echo "Addon (main.sh)" )"
+    echo "  - Mode: $( [[ "$STANDALONE_MODE" == "true" ]] && echo "Standalone" || echo "Addon (matrix-installer.sh)" )"
     echo ""
 
     echo -e "${BLUE}Access URLs:${NC}"
@@ -1472,12 +1472,12 @@ ZANJIR-SYNAPSE INSTALLATION COMPLETE
     echo -e "${BLUE}SSL Configuration:${NC}"
     echo "  - Server: nginx"
     if [[ "$ENABLE_FEDERATION" == "true" ]]; then
-        echo "  - Mode: main.sh Root Key (for federation)"
+        echo "  - Mode: matrix-installer.sh Root Key (for federation)"
         echo "  - Certificate: ${SSL_DIR}/cert-full-chain.pem"
         echo "  - Private Key: ${SSL_DIR}/server.key"
         echo "  - Root CA: ${SSL_DIR}/rootCA.crt"
     else
-        echo "  - Mode: main.sh certificates (isolated)"
+        echo "  - Mode: matrix-installer.sh certificates (isolated)"
         echo "  - Certificate: ${SSL_DIR}/cert-full-chain.pem"
     fi
     echo ""
@@ -1505,7 +1505,7 @@ print_banner() {
 ║                       Version 1.0.0                      ║
 ║                                                          ║
 ║     Matrix server using Dendrite with Element Web       ║
-║           and nginx with main.sh Root Key SSL           ║
+║           and nginx with matrix-installer.sh Root Key SSL           ║
 ║                                                          ║
 ╚══════════════════════════════════════════════════════════╝
 EOF

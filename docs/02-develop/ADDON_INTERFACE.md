@@ -1,10 +1,10 @@
 # Addon Interface Protocol
 
-This document describes the technical interface between `main.sh` and addons. For a complete guide on creating addons, see the [Addon Development Guide](ADDON_DEVELOPMENT_GUIDE.md).
+This document describes the technical interface between `matrix-installer.sh` and addons. For a complete guide on creating addons, see the [Addon Development Guide](ADDON_DEVELOPMENT_GUIDE.md).
 
 ## Overview
 
-Matrix Installer uses a modular addon system where each addon is a self-contained module invoked by `main.sh`. Communication happens through environment variables—no complex APIs or protocols needed.
+Matrix Installer uses a modular addon system where each addon is a self-contained module invoked by `matrix-installer.sh`. Communication happens through environment variables—no complex APIs or protocols needed.
 
 ## Addon Structure
 
@@ -52,7 +52,7 @@ set -o pipefail
 
 ### Addon Discovery
 
-`main.sh` automatically discovers addons by:
+`matrix-installer.sh` automatically discovers addons by:
 
 1. Scanning the `addons/` directory for subdirectories
 2. Checking each subdirectory for an `install.sh` file
@@ -63,7 +63,7 @@ No registration or configuration required.
 
 ## Environment Variables
 
-When `main.sh` invokes an addon, the following environment variables are exported:
+When `matrix-installer.sh` invokes an addon, the following environment variables are exported:
 
 ### Standard Variables
 
@@ -96,7 +96,7 @@ certs/
 ### Variable Guarantees
 
 - All variables are **always set** when an addon is invoked (never empty/unset)
-- All file paths **always exist** (main.sh verifies before invoking)
+- All file paths **always exist** (matrix-installer.sh verifies before invoking)
 - All file permissions are **appropriate** (keys are 0600, certs are 0644)
 
 ## Expected Addon Behavior
@@ -108,7 +108,7 @@ Addons should verify required variables before proceeding:
 ```bash
 if [[ -z "${SERVER_NAME:-}" ]]; then
     echo "[ERROR] SERVER_NAME environment variable not set"
-    echo "[ERROR] This addon must be run from main.sh"
+    echo "[ERROR] This addon must be run from matrix-installer.sh"
     exit 1
 fi
 
@@ -186,7 +186,7 @@ Here's what happens when a user selects an addon from the menu:
 ```
 User selects addon
         ↓
-main.sh checks for existing certificates
+matrix-installer.sh checks for existing certificates
         ↓
 If none: prompts to create certificate
         ↓
@@ -196,10 +196,10 @@ Exports environment variables
         ↓
 Executes addon/install.sh
         ↓
-Addon takes control (main.sh exits)
+Addon takes control (matrix-installer.sh exits)
 ```
 
-Important: **The addon takes full control once invoked**. `main.sh` exits immediately after calling the addon, so the addon is responsible for everything from that point on.
+Important: **The addon takes full control once invoked**. `matrix-installer.sh` exits immediately after calling the addon, so the addon is responsible for everything from that point on.
 
 ## Example: Minimal Addon
 
@@ -238,9 +238,9 @@ exit 0
 
 ## Integration Points
 
-### How main.sh Finds Addons
+### How matrix-installer.sh Finds Addons
 
-From `main.sh`, lines 508-521:
+From `matrix-installer.sh`, lines 508-521:
 
 ```bash
 addon_loader_get_list() {
@@ -259,9 +259,9 @@ addon_loader_get_list() {
 }
 ```
 
-### How main.sh Validates Addons
+### How matrix-installer.sh Validates Addons
 
-From `main.sh`, lines 561-576:
+From `matrix-installer.sh`, lines 561-576:
 
 ```bash
 addon_loader_validate() {
@@ -282,9 +282,9 @@ addon_loader_validate() {
 }
 ```
 
-### How main.sh Exports Variables
+### How matrix-installer.sh Exports Variables
 
-From `main.sh` (updated for new structure):
+From `matrix-installer.sh` (updated for new structure):
 
 ```bash
 env_provider_export_for_addon() {

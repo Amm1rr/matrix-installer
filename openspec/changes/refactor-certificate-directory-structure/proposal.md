@@ -66,8 +66,8 @@ certs/
 - `certificate-management` - All certificate path references and operations
 
 ### Affected code
-- `main.sh:266-474` - SSL Manager module functions
-- `main.sh:480-502` - Environment Provider module
+- `matrix-installer.sh:266-474` - SSL Manager module functions
+- `matrix-installer.sh:480-502` - Environment Provider module
 - All addons that read certificate environment variables
 
 ### Migration requirements

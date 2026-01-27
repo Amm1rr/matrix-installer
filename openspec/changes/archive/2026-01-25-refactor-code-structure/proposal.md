@@ -2,7 +2,7 @@
 
 ## Why
 
-The current `main.sh` has several maintainability issues:
+The current `matrix-installer.sh` has several maintainability issues:
 
 1. **Code duplication**: Root Key configuration prompts are repeated 4 times (lines 1021-1082, 1092-1157, 1196-1268, 1457-1517)
 2. **Inconsistent prompting**: Some prompts use `prompt_user()`, others use `read -rp` directly
@@ -54,11 +54,11 @@ All user-facing behavior is preserved:
 - `helper-functions` - New helper functions added
 
 ### Affected code
-- `main.sh:55-153` - Helper functions section (add ~80 lines)
-- `main.sh:361-544` - Selection menu functions (modify for "back" option)
-- `main.sh:546-622` - SSL Manager functions (use helpers)
-- `main.sh:861-1412` - Menu system functions (use helpers, add styling)
-- `main.sh:1457-1517` - Remove duplicate function
+- `matrix-installer.sh:55-153` - Helper functions section (add ~80 lines)
+- `matrix-installer.sh:361-544` - Selection menu functions (modify for "back" option)
+- `matrix-installer.sh:546-622` - SSL Manager functions (use helpers)
+- `matrix-installer.sh:861-1412` - Menu system functions (use helpers, add styling)
+- `matrix-installer.sh:1457-1517` - Remove duplicate function
 
 ### Code reduction
 - ~150 lines of duplicate code removed

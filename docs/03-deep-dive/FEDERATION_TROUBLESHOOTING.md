@@ -160,7 +160,7 @@ Servers cannot verify each other's certificates
 
 1. Generate Root Key on first server
 2. Copy `rootCA.key` and `rootCA.crt` to other servers
-3. Place next to `main.sh` and accept prompt
+3. Place next to `matrix-installer.sh` and accept prompt
 4. Generate server certificates signed by same CA
 
 #### Option B: Cross-Trust Root Keys

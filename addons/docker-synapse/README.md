@@ -42,7 +42,7 @@ This addon provides a fast, opinionated installation of Matrix Synapse using Doc
 
 ## Installation
 
-Run from main.sh menu or execute directly:
+Run from matrix-installer.sh menu or execute directly:
 
 ```bash
 ./docker-compose-synapse/install.sh
@@ -100,7 +100,7 @@ This addon uses **Let's Encrypt** for SSL certificate management. Certificates a
 - Stored in `/opt/matrix/data/traefik/acme.json`
 - Auto-renewed by Traefik
 
-**Note**: This does NOT use the custom Root Key certificates from main.sh. Let's Encrypt certificates are trusted by all clients automatically.
+**Note**: This does NOT use the custom Root Key certificates from matrix-installer.sh. Let's Encrypt certificates are trusted by all clients automatically.
 
 ## Registration Configuration
 

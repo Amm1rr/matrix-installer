@@ -1,6 +1,6 @@
 # Manual SSL Certificate Management
 
-This guide walks you through exactly what `main.sh` does behind the scenes when it creates and manages SSL certificates. Understanding this helps you troubleshoot issues, customize your setup, or do everything manually if you prefer.
+This guide walks you through exactly what `matrix-installer.sh` does behind the scenes when it creates and manages SSL certificates. Understanding this helps you troubleshoot issues, customize your setup, or do everything manually if you prefer.
 
 ## Why This Matters
 
@@ -335,7 +335,7 @@ If they don't match, you'll need to generate a new certificate-key pair.
 
 ## From Theory to Practice
 
-Everything `main.sh` does in the SSL Manager is what you've just learned manually. The script automates these exact steps:
+Everything `matrix-installer.sh` does in the SSL Manager is what you've just learned manually. The script automates these exact steps:
 
 1. Creates the Root Key with the settings you provide
 2. Generates server certificates with proper SAN entries

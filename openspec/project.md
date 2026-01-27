@@ -27,7 +27,7 @@ Matrix Installer is a modular installation system for Matrix homeservers. Its pr
 ### File Structure
 ```
 script/
-├── main.sh              # Main orchestrator script
+├── matrix-installer.sh              # Main orchestrator script
 ├── certs/               # SSL certificates (generated at runtime)
 │   └── <root-ca>/       # Root Key directory (named by IP/domain)
 │       ├── rootCA.key
@@ -50,7 +50,7 @@ script/
 - **Multi-Root Key Support**: Multiple Root Keys can coexist; user selects active one
 - **Environment Provider**: Certificates and configuration passed via exported environment variables
 - **Dynamic Discovery**: Addons auto-discovered by scanning `addons/*/install.sh`
-- **Handoff Pattern**: `main.sh` exits when addon takes control (addon becomes PID 1)
+- **Handoff Pattern**: `matrix-installer.sh` exits when addon takes control (addon becomes PID 1)
 - **Migration Support**: Automatic migration from old flat structure to new hierarchical structure
 
 ### Addon Interface Protocol

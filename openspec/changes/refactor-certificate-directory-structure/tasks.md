@@ -27,8 +27,8 @@
 - [ ] 2.6 Test addon environment variables with new paths
 - [ ] 2.7 Test multiple Root Key scenario
 - [ ] 2.8 Test certificate validation with new paths
-- [ ] 2.9 Test multiple Root Key files next to main.sh scenario
-- [ ] 2.10 Test single Root Key file next to main.sh scenario
+- [ ] 2.9 Test multiple Root Key files next to matrix-installer.sh scenario
+- [ ] 2.10 Test single Root Key file next to matrix-installer.sh scenario
 
 ## 3. Documentation
 
