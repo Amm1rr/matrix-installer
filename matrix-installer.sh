@@ -668,7 +668,9 @@ prompt_select_root_ca_from_certs() {
     fi
 
     echo ""
-    print_message "info" "Multiple Root Keys found in certs/:"
+    echo "  === Root Key Selection ==="
+    echo "  Root Key signs all server certificates for federation."
+    echo "  Choose one below or create a new one."
     echo ""
 
     # Display each Root Key with info
@@ -706,17 +708,22 @@ prompt_select_root_ca_from_certs() {
             fi
         fi
 
-        echo "  $index) ${root_ca_name} - ${subject} (expires in ${days} days)"
+        # Format: align columns nicely
+        local num_display="$index)"
+        local name_display="${root_ca_name}"
+        local subject_display="Subject: ${subject}"
+        local days_display="Exp: ${days} days"
+
+        printf "  %-2s  %-12s  %-20s  %-12s\n" "$num_display" "$name_display" "$subject_display" "$days_display"
         ((index++))
     done
 
-    echo "  -----------------------"
-    echo "  N) Create new Root Key"
-    echo "  0) Back to previous menu"
+    echo "  ──────────────────────────────────────────────────────────────"
+    echo "  N) Create new Root Key    0) Back"
     echo ""
 
     while true; do
-        read -rp "Select active Root Key (0-$((index-1)), N=New): " choice || true
+        read -rp "Select [1-$((index-1)), N=New, 0=Back]: " choice || true
 
         # Check choice type
         check_menu_choice_type "$choice"
