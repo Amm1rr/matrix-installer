@@ -18,6 +18,18 @@ Here's how it works:
 
 The beauty of this approach is that when you use the same Root Key for multiple servers, they can automatically trust each other and communicate securely—this is called "federation."
 
+## How It Works
+
+Matrix Installer adapts based on what's available:
+
+| What You Have | What It Does |
+|---------------|--------------|
+| **Just the script** (`matrix-installer.sh` alone) | Creates Root Keys and server certificates—you manage installation manually |
+| **With `addons/` folder** | Same as above, plus displays addons in menu for one-click installation |
+| **With Root Key files next to script** (`*.key` + `*.crt`) | Prompts to import your existing Root Key, then creates certificates under it |
+
+**Key point**: The script works perfectly with just itself—you only need what's relevant for your use case.
+
 ## Getting Started
 
 ### Step 1: Run the Script
