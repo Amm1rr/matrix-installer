@@ -1182,7 +1182,7 @@ menu_with_root_key() {
                 # Show summary and confirm
                 echo ""
                 echo "=== Certificate Summary ==="
-                echo "  Root Key:     $(basename "$ACTIVE_ROOT_CA_DIR")"
+                echo -e "  Root Key:    ${BLUE}$(basename "$ACTIVE_ROOT_CA_DIR")${NC}"
                 echo "  Server:      $server_input"
                 local server_type="Domain"
                 if is_ip_address "$server_input"; then
