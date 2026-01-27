@@ -1416,6 +1416,10 @@ uninstall_matrix() {
 # ===========================================
 
 install_matrix() {
+    # Check prerequisites before installation
+    print_message "info" "Checking prerequisites..."
+    check_prerequisites
+
     # ============================================
     # COLLECT SERVER INFO
     # ============================================
@@ -1547,7 +1551,6 @@ EOF
     print_message "info" "=== Environment Detection ==="
 
     detect_os || exit 1
-    check_prerequisites
 
     # ============================================
     # INSTALLATION MODE SELECTION
