@@ -1143,100 +1143,276 @@ ANSIBLE-SYNAPSE INSTALLATION COMPLETE
 }
 
 # ===========================================
-# MAIN INSTALLATION FUNCTION
+# HELPER: Run command on target
 # ===========================================
 
-main() {
-    # Initialize log
-    mkdir -p "$(dirname "$LOG_FILE")"
-    echo "ansible-synapse addon log - $(date)" > "$LOG_FILE"
+run_remote_command() {
+    local cmd="$1"
+    local silent="${2:-false}"
 
-    cat <<'EOF'
-╔══════════════════════════════════════════════════════════╗
-║                                                          ║
-║             ansible-synapse Addon Installer             ║
-║                      Version 1.0.0                       ║
-║                                                          ║
-╚══════════════════════════════════════════════════════════╝
-EOF
+    if [[ "$INSTALLATION_MODE" == "local" ]]; then
+        # Local mode: run directly with sudo (let sudo prompt for password)
+        if [[ "$silent" == "true" ]]; then
+            sudo sh -c "$cmd" 2>/dev/null
+        else
+            sudo sh -c "$cmd" 2>&1
+        fi
+    else
+        # Remote mode: use SSH with -t flag for interactive sudo prompt
+        local ssh_opts="-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=10 -t"
+        local ssh_auth=""
 
-    # Check environment variables (supports standalone mode)
-    check_environment_variables || exit 1
+        if [[ "$USE_SSH_KEY" == "yes" ]] && [[ -n "$SSH_KEY_PATH" ]]; then
+            ssh_opts="$ssh_opts -i $SSH_KEY_PATH"
+        fi
 
-    SERVER_IP="$SERVER_NAME"
-    SERVER_IS_IP="false"
-    if is_ip_address "$SERVER_IP"; then
-        SERVER_IS_IP="true"
+        if [[ -n "$SSH_PASSWORD" ]]; then
+            ssh_auth="sshpass -p '$SSH_PASSWORD'"
+        fi
+
+        local ssh_cmd="$ssh_auth ssh $ssh_opts -p $SERVER_PORT ${SERVER_USER}@${SSH_HOST}"
+
+        if [[ "$silent" == "true" ]]; then
+            eval "$ssh_cmd \"sudo sh -c '$cmd'\" 2>/dev/null"
+        else
+            eval "$ssh_cmd \"sudo sh -c '$cmd'\" 2>&1"
+        fi
+    fi
+}
+
+# ===========================================
+# STATUS CHECK
+# ===========================================
+
+check_status() {
+    print_message "info" "Checking Matrix status..."
+
+    # For remote mode, collect SSH info
+    if [[ "$INSTALLATION_MODE" == "remote" ]]; then
+        if [[ -z "${SSH_HOST:-}" ]] || [[ -z "${SERVER_USER:-}" ]] || [[ -z "${SERVER_PORT:-}" ]]; then
+            echo ""
+            SERVER_IP="$(prompt_user "Enter server IP address or domain")"
+            SERVER_USER="$(prompt_user "SSH username" "$DEFAULT_SSH_USER")"
+            SSH_HOST="$(prompt_user "SSH host" "$SERVER_IP")"
+            SERVER_PORT="$(prompt_user "SSH port" "22")"
+
+            if [[ "$(prompt_yes_no "Use custom SSH key?" "n")" == "yes" ]]; then
+                SSH_KEY_PATH="$(prompt_user "SSH key path" "$HOME/.ssh/id_rsa")"
+                USE_SSH_KEY="yes"
+            elif [[ "$(prompt_yes_no "Use password authentication?" "n")" == "yes" ]]; then
+                SSH_PASSWORD="$(prompt_user "SSH password")"
+                USE_SSH_KEY="no"
+            else
+                USE_SSH_KEY="no"
+            fi
+        fi
+
+        if [[ -n "$SSH_PASSWORD" ]] && ! command -v sshpass &> /dev/null; then
+            print_message "error" "sshpass is required for password authentication. Install it first:"
+            echo "  Ubuntu/Debian: sudo apt-get install -y sshpass"
+            echo "  Arch/Manjaro:  sudo pacman -S sshpass"
+            return 1
+        fi
     fi
 
-    print_message "info" "=== Environment Detection ==="
+    echo ""
+    echo -e "${BLUE}=== Docker Containers ===${NC}"
 
-    detect_os || exit 1
-    check_prerequisites
+    local containers
+    containers=$(run_remote_command "docker ps --format 'table {{.Names}}\t{{.Status}}\t{{.Ports}}' | grep -E 'matrix|NAMES' || echo 'No Matrix containers found'")
 
-    # ============================================
-    # INSTALLATION MODE SELECTION
-    # ============================================
+    if echo "$containers" | grep -q "No Matrix"; then
+        print_message "warning" "No Matrix containers running"
+    else
+        echo "$containers"
+    fi
 
-    cat <<'EOF'
+    echo ""
+    echo -e "${BLUE}=== Systemd Services ===${NC}"
 
-Select installation mode:
+    local services
+    services=$(run_remote_command "systemctl list-units --type=service --state=running --all | grep matrix || echo 'No Matrix services found'")
 
-  1) This Is Server
-     - Install Matrix on THIS machine
-     - Ansible will run locally (ansible_connection=local)
+    if echo "$services" | grep -q "No Matrix"; then
+        print_message "warning" "No Matrix systemd services found"
+    else
+        run_remote_command "systemctl is-active matrix-* 2>/dev/null || true" | while read -r line; do
+            if [[ -n "$line" ]]; then
+                echo "  $line"
+            fi
+        done
+    fi
 
-  2) Remote VPS (Beta)
-     - Install Matrix on a remote server via SSH
+    echo ""
+    echo -e "${BLUE}=== Directory & Files ===${NC}"
 
-EOF
+    local matrix_dir
+    matrix_dir=$(run_remote_command "test -d /matrix && echo 'EXISTS' || echo 'NOT_FOUND'" true)
 
-    while true; do
-        read -rp "Enter your choice (1 or 2): " choice
+    if [[ "$matrix_dir" == *"EXISTS"* ]]; then
+        print_message "success" "/matrix directory exists"
+        echo ""
+        echo "  Directory structure:"
+        run_remote_command "ls -lh /matrix/ 2>/dev/null | head -20" || true
+    else
+        print_message "warning" "/matrix directory not found"
+    fi
 
-        case "$choice" in
-            1)
-                INSTALLATION_MODE="local"
-                print_message "info" "Local installation mode selected"
+    echo ""
+    echo -e "${BLUE}=== Docker Volumes ===${NC}"
 
-                # Detect server IP
-                SERVER_IP="$(ip route get 1 2>/dev/null | awk '{for(i=1;i<=NF;i++)if($i=="src"){print $(i+1);exit}}')"
-                if [[ -z "$SERVER_IP" ]]; then
-                    SERVER_IP="$(ip -4 addr show 2>/dev/null | grep -oP '(?<=inet\s)\d+(\.\d+){3}' | grep -v '127.0.0.1' | head -n1)"
-                fi
-                # Prompt with detected IP as default
-                SERVER_IP="$(prompt_user "Enter server IP address or domain" "$SERVER_IP")"
+    local volumes
+    volumes=$(run_remote_command "docker volume ls | grep matrix || echo 'No Matrix volumes found'" true)
 
-                SUDO_PASSWORD="$(prompt_user "Sudo password")"
-                break
+    if [[ "$volumes" == *"No Matrix"* ]]; then
+        print_message "warning" "No Matrix volumes found"
+    else
+        echo "$volumes"
+    fi
+
+    echo ""
+    print_message "success" "Status check completed"
+}
+
+# ===========================================
+# UNINSTALLATION
+# ===========================================
+
+uninstall_matrix() {
+    # For remote mode, collect SSH info
+    if [[ "$INSTALLATION_MODE" == "remote" ]]; then
+        if [[ -z "${SSH_HOST:-}" ]] || [[ -z "${SERVER_USER:-}" ]] || [[ -z "${SERVER_PORT:-}" ]]; then
+            echo ""
+            SERVER_IP="$(prompt_user "Enter server IP address or domain")"
+            SERVER_USER="$(prompt_user "SSH username" "$DEFAULT_SSH_USER")"
+            SSH_HOST="$(prompt_user "SSH host" "$SERVER_IP")"
+            SERVER_PORT="$(prompt_user "SSH port" "22")"
+
+            if [[ "$(prompt_yes_no "Use custom SSH key?" "n")" == "yes" ]]; then
+                SSH_KEY_PATH="$(prompt_user "SSH key path" "$HOME/.ssh/id_rsa")"
+                USE_SSH_KEY="yes"
+            elif [[ "$(prompt_yes_no "Use password authentication?" "n")" == "yes" ]]; then
+                SSH_PASSWORD="$(prompt_user "SSH password")"
+                USE_SSH_KEY="no"
+            else
+                USE_SSH_KEY="no"
+            fi
+        fi
+
+        if [[ -n "$SSH_PASSWORD" ]] && ! command -v sshpass &> /dev/null; then
+            print_message "error" "sshpass is required for password authentication. Install it first:"
+            echo "  Ubuntu/Debian: sudo apt-get install -y sshpass"
+            echo "  Arch/Manjaro:  sudo pacman -S sshpass"
+            return 1
+        fi
+    fi
+
+    print_message "warning" "This will:"
+    echo "  - Stop all Matrix containers"
+    echo "  - Remove Matrix Docker containers and volumes"
+    echo "  - Remove systemd services"
+    echo "  - Delete /matrix directory"
+    echo "  - Remove firewall rules (optional)"
+    echo ""
+
+    if [[ "$(prompt_yes_no "Continue with uninstall?" "n")" != "yes" ]]; then
+        print_message "info" "Uninstall cancelled"
+        return 0
+    fi
+
+    # Stop Matrix services
+    print_message "info" "Stopping Matrix services..."
+    run_remote_command "systemctl stop matrix-*.service 2>/dev/null || true" >> "$LOG_FILE" 2>&1
+
+    # Remove containers
+    print_message "info" "Removing Matrix containers..."
+    run_remote_command "docker ps -a --format '{{.Names}}' | grep '^matrix-' | xargs -r docker rm -f 2>/dev/null || true" >> "$LOG_FILE" 2>&1
+
+    # Remove volumes
+    print_message "info" "Removing Matrix volumes..."
+    run_remote_command "docker volume ls -q | grep '^matrix' | xargs -r docker volume rm -f 2>/dev/null || true" >> "$LOG_FILE" 2>&1
+
+    # Remove systemd services
+    print_message "info" "Removing systemd services..."
+    run_remote_command "rm -f /etc/systemd/system/matrix-*.service && systemctl daemon-reload" >> "$LOG_FILE" 2>&1
+
+    # Remove /matrix directory
+    print_message "info" "Removing /matrix directory..."
+    run_remote_command "rm -rf /matrix" >> "$LOG_FILE" 2>&1
+
+    # Ask about firewall rules
+    echo ""
+    if [[ "$(prompt_yes_no "Remove firewall rules for Matrix ports?" "y")" == "yes" ]]; then
+        print_message "info" "Detecting firewall..."
+
+        local firewall_output
+        firewall_output=$(run_remote_command "command -v ufw && echo 'ufw' || (command -v firewall-cmd && echo 'firewalld') || (iptables -nL >/dev/null 2>&1 && echo 'iptables') || echo 'none'" true)
+
+        local firewall_type
+        firewall_type=$(echo "$firewall_output" | tr -d ' \n\r')
+
+        case "$firewall_type" in
+            ufw)
+                print_message "info" "Removing UFW rules..."
+                run_remote_command "ufw delete allow 443/tcp && ufw delete allow 8448/tcp" >> "$LOG_FILE" 2>&1
+                print_message "success" "UFW rules removed"
                 ;;
-            2)
-                INSTALLATION_MODE="remote"
-                print_message "info" "Remote installation mode selected"
-
-                SERVER_IP="$(prompt_user "Enter server IP address or domain")"
-                SERVER_USER="$(prompt_user "SSH username" "$DEFAULT_SSH_USER")"
-                SSH_HOST="$(prompt_user "SSH host" "$SERVER_IP")"
-                SERVER_PORT="$(prompt_user "SSH port" "22")"
-
-                if [[ "$(prompt_yes_no "Use custom SSH key?" "n")" == "yes" ]]; then
-                    SSH_KEY_PATH="$(prompt_user "SSH key path" "$HOME/.ssh/id_rsa")"
-                    USE_SSH_KEY="yes"
-                elif [[ "$(prompt_yes_no "Use password authentication?" "n")" == "yes" ]]; then
-                    SSH_PASSWORD="$(prompt_user "SSH password")"
-                    USE_SSH_KEY="no"
-                else
-                    USE_SSH_KEY="no"
-                fi
-
-                SUDO_PASSWORD="$(prompt_user "Sudo password")"
-                break
+            firewalld)
+                print_message "info" "Removing firewalld rules..."
+                run_remote_command "firewall-cmd --permanent --remove-service=https && firewall-cmd --permanent --remove-port=8448/tcp && firewall-cmd --reload" >> "$LOG_FILE" 2>&1
+                print_message "success" "firewalld rules removed"
+                ;;
+            iptables)
+                print_message "warning" "iptables rules not removed (manual cleanup required)"
                 ;;
             *)
-                echo "Invalid choice. Please enter 1 or 2."
+                print_message "info" "No firewall detected"
                 ;;
         esac
-    done
+    fi
+
+    print_message "success" "Uninstall completed"
+}
+
+# ===========================================
+# INSTALLATION FUNCTION
+# ===========================================
+
+install_matrix() {
+    # ============================================
+    # COLLECT SERVER INFO
+    # ============================================
+
+    if [[ "$INSTALLATION_MODE" == "local" ]]; then
+        # Detect server IP
+        print_message "info" "Detecting server IP..."
+        SERVER_IP="$(ip route get 1 2>/dev/null | awk '{for(i=1;i<=NF;i++)if($i=="src"){print $(i+1);exit}}')"
+        if [[ -z "$SERVER_IP" ]]; then
+            SERVER_IP="$(ip -4 addr show 2>/dev/null | grep -oP '(?<=inet\s)\d+(\.\d+){3}' | grep -v '127.0.0.1' | head -n1)"
+        fi
+        # Prompt with detected IP as default
+        SERVER_IP="$(prompt_user "Enter server IP address or domain" "$SERVER_IP")"
+        SUDO_PASSWORD="$(prompt_user "Sudo password")"
+    else
+        # Remote mode
+        echo ""
+        SERVER_IP="$(prompt_user "Enter server IP address or domain")"
+        SERVER_USER="$(prompt_user "SSH username" "$DEFAULT_SSH_USER")"
+        SSH_HOST="$(prompt_user "SSH host" "$SERVER_IP")"
+        SERVER_PORT="$(prompt_user "SSH port" "22")"
+
+        if [[ "$(prompt_yes_no "Use custom SSH key?" "n")" == "yes" ]]; then
+            SSH_KEY_PATH="$(prompt_user "SSH key path" "$HOME/.ssh/id_rsa")"
+            USE_SSH_KEY="yes"
+        elif [[ "$(prompt_yes_no "Use password authentication?" "n")" == "yes" ]]; then
+            SSH_PASSWORD="$(prompt_user "SSH password")"
+            USE_SSH_KEY="no"
+        else
+            USE_SSH_KEY="no"
+        fi
+
+        SUDO_PASSWORD="$(prompt_user "Sudo password")"
+    fi
 
     # Update SERVER_IS_IP based on final SERVER_IP
     if is_ip_address "$SERVER_IP"; then
@@ -1299,6 +1475,119 @@ EOF
 
     print_summary
     print_message "success" "ansible-synapse installation completed!"
+}
+
+# ===========================================
+# MAIN MENU
+# ===========================================
+
+main() {
+    # Initialize log
+    mkdir -p "$(dirname "$LOG_FILE")"
+    echo "ansible-synapse addon log - $(date)" > "$LOG_FILE"
+
+    cat <<'EOF'
+╔══════════════════════════════════════════════════════════╗
+║                                                          ║
+║     Private-Key Ansible-Synapse Addon Installer         ║
+║                       Version 1.0.0                      ║
+║                                                          ║
+║       Ansible installer with Private Key SSL             ║
+║              (Root Key from matrix-installer.sh)         ║
+║                                                          ║
+╚══════════════════════════════════════════════════════════╝
+EOF
+
+    # Check environment variables (supports standalone mode)
+    check_environment_variables || exit 1
+
+    SERVER_IP="$SERVER_NAME"
+    SERVER_IS_IP="false"
+    if is_ip_address "$SERVER_IP"; then
+        SERVER_IS_IP="true"
+    fi
+
+    print_message "info" "=== Environment Detection ==="
+
+    detect_os || exit 1
+    check_prerequisites
+
+    # ============================================
+    # INSTALLATION MODE SELECTION
+    # ============================================
+
+    cat <<'EOF'
+
+Select installation mode:
+
+  1) This Is Server
+     - Install Matrix on THIS machine
+     - Ansible will run locally (ansible_connection=local)
+
+  2) Remote VPS (Beta)
+     - Install Matrix on a remote server via SSH
+
+EOF
+
+    while true; do
+        read -rp "Enter your choice (1 or 2): " choice
+
+        case "$choice" in
+            1)
+                INSTALLATION_MODE="local"
+                print_message "info" "Local installation mode selected"
+                break
+                ;;
+            2)
+                INSTALLATION_MODE="remote"
+                print_message "info" "Remote installation mode selected"
+                break
+                ;;
+            *)
+                echo "Invalid choice. Please enter 1 or 2."
+                ;;
+        esac
+    done
+
+    # ============================================
+    # MAIN MENU LOOP
+    # ============================================
+
+    while true; do
+        cat <<'EOF'
+
+Select an option:
+
+  1) Install Matrix
+  2) Check Status
+  3) Uninstall Matrix
+  -----------------
+  0) Exit
+
+EOF
+
+        read -rp "Enter your choice (1-3, 0=Exit): " menu_choice
+
+        case "$menu_choice" in
+            1)
+                install_matrix
+                break
+                ;;
+            2)
+                check_status
+                ;;
+            3)
+                uninstall_matrix
+                ;;
+            0)
+                print_message "info" "Exiting..."
+                exit 0
+                ;;
+            *)
+                echo "Invalid choice. Please enter 1-3 or 0."
+                ;;
+        esac
+    done
 }
 
 # ===========================================
