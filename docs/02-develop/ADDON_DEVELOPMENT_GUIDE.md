@@ -165,12 +165,73 @@ chmod +x addons/my-addon/install.sh
 ./matrix-installer.sh  # your addon appears automatically
 ```
 
+## Standalone Execution
+
+Your addon can also run **standalone**—without `matrix-installer.sh`. This is useful when:
+- Distributing just your addon to users
+- Running on a system without the full Matrix Installer project
+- Testing or debugging in isolation
+
+### Requirements for Standalone Mode
+
+To support standalone execution, your addon should:
+
+1. **Keep the metadata** (`ADDON_*` variables at the top)—these don't hurt standalone execution and ensure compatibility if the addon is later used with matrix-installer.sh
+
+2. **Detect the environment**—check if required variables are already set (running from matrix-installer.sh) or need to be prompted:
+
+```bash
+# Check if running from matrix-installer.sh
+if [[ -z "${SERVER_NAME:-}" ]]; then
+    # Standalone mode - prompt user for required values
+    echo "Running in standalone mode"
+    read -rp "Enter server IP or domain: " SERVER_NAME
+    read -rp "Enter path to SSL certificate: " SSL_CERT
+    read -rp "Enter path to SSL private key: " SSL_KEY
+    read -rp "Enter path to Root CA certificate: " ROOT_CA
+fi
+```
+
+3. **Validate all paths** before proceeding:
+
+```bash
+if [[ ! -f "$SSL_CERT" ]]; then
+    echo "[ERROR] Certificate not found: $SSL_CERT"
+    exit 2
+fi
+```
+
+### Distributing Standalone Addons
+
+Users can copy just your addon directory and run it directly:
+
+```bash
+# User copies only your addon
+cp -r addons/my-addon /tmp/
+cd /tmp/my-addon
+./install.sh  # prompts for required values
+```
+
+No need to bundle the entire `matrix-installer.sh` project—your addon is self-contained.
+
+### Recommendation
+
+Make your addon work in **both modes**:
+- With matrix-installer.sh: receives env vars automatically
+- Standalone: prompts user for missing values
+
+This gives maximum flexibility without extra complexity.
+
 ## Limitations
+
+These limitations apply **only when running via matrix-installer.sh**:
 
 - **Active Root Key only**: User must switch Root Key in main menu if needed
 - **No global state**: Each run is fresh
 - **Current directory**: Runs from `WORKING_DIR`, not addon dir
 - **Self-contained**: Don't depend on other addons
+
+When running **standalone**, your addon has full control and can define its own behavior.
 
 ## Resources
 
