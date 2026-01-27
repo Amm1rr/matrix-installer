@@ -29,9 +29,10 @@ Metadata is defined at the top of `install.sh` as bash variables:
 ADDON_NAME="my-addon"
 ADDON_NAME_MENU="My Addon Display Name"
 ADDON_VERSION="1.0.0"
-ADDON_ORDER="50"
+ADDON_ORDER="70"
 ADDON_DESCRIPTION="Brief description of what this addon does"
 ADDON_AUTHOR="Author name (optional)"
+ADDON_HIDDEN="false" # Set true to hide this addon from the menu
 
 set -e
 set -u
