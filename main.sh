@@ -670,15 +670,17 @@ prompt_select_root_ca_from_certs() {
             choice=0
         fi
 
-        if [[ "$choice" -ge 1 ]] && [[ "$choice" -le ${#root_cas[@]} ]]; then
+        # Check for N/n first (before numeric comparison)
+        if [[ "$choice" == "N" ]] || [[ "$choice" == "n" ]]; then
+            return 1  # User wants to create new
+        elif [[ "$choice" == "0" ]]; then
+            return 3  # Back to previous menu
+        # Now safe to do numeric comparison
+        elif [[ "$choice" =~ ^[0-9]+$ ]] && [[ "$choice" -ge 1 ]] && [[ "$choice" -le ${#root_cas[@]} ]]; then
             local selected_root_ca="${root_cas[$((choice-1))]}"
             ACTIVE_ROOT_CA_DIR="${CERTS_DIR}/${selected_root_ca}"
             print_message "success" "Selected Root Key: ${selected_root_ca}"
             return 0
-        elif [[ "$choice" == "N" ]] || [[ "$choice" == "n" ]]; then
-            return 1  # User wants to create new
-        elif [[ "$choice" -eq 0 ]]; then
-            return 3  # Back to previous menu
         else
             print_message "error" "Invalid choice"
         fi
