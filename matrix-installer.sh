@@ -1103,6 +1103,12 @@ menu_with_root_key() {
         # Build menu dynamically with addons
         local addon_index_start=2
         local last_addon_index=$((addon_index_start + ${#addons[@]} - 1))
+
+        # If no addons, only option 1 is available
+        if [[ ${#addons[@]} -eq 0 ]]; then
+            last_addon_index=1
+        fi
+
         local switch_ca_option="S"
         local new_ca_option="N"
         local exit_option=0
@@ -1138,15 +1144,18 @@ menu_with_root_key() {
 
         echo ""
         echo "  1) Generate server certificate"
-        echo ""
 
         # Add addon options to menu
         if [[ ${#addons[@]} -gt 0 ]]; then
+            echo ""
             for i in "${!addons[@]}"; do
                 local addon_num=$((i + addon_index_start))
                 local addon_name
                 addon_name="$(addon_loader_get_name "${addons[$i]}")"
-                echo "  $addon_num) $addon_name"
+                # Skip if addon name is empty
+                if [[ -n "$addon_name" ]]; then
+                    echo "  $addon_num) $addon_name"
+                fi
             done
         fi
 
