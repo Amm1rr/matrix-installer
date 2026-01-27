@@ -40,6 +40,20 @@ That's it. Follow the prompts.
 3. Pick an Addon → Matrix installed
 ```
 
+## Screenshots
+
+### Root Key Selection
+
+<p align="center">
+  <img src="docs/screenshot/menu-1.png" alt="Root Key Selection Menu" width="600">
+</p>
+
+### Main Menu
+
+<p align="center">
+  <img src="docs/screenshot/menu-2.png" alt="Main Menu" width="600">
+</p>
+
 ## Project Structure
 
 ```
