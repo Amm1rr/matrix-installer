@@ -1109,7 +1109,6 @@ menu_with_root_key() {
 
         echo ""
         echo "  === Main Menu ==="
-        echo -e "  Root Key: ${BLUE}$(basename "$ACTIVE_ROOT_CA_DIR")${NC}"
         echo ""
 
         # Get and display Root Key info
@@ -1134,9 +1133,7 @@ menu_with_root_key() {
                 esac
             done <<< "$ca_info"
 
-            echo "   | Subject: $ca_subject"
-            echo "   | Expires: $ca_expiry (in $ca_days days)"
-            echo "   | Country: $ca_country"
+            echo -e "  Root Key: ${BLUE}$(basename "$ACTIVE_ROOT_CA_DIR")${NC} | Exp: $ca_days days | $ca_country"
         fi
 
         echo ""
@@ -1155,21 +1152,21 @@ menu_with_root_key() {
 
         echo ""
         echo "  $MENU_SEPARATOR"
+
+        # Build footer options
         if [[ $num_root_cas -gt 1 ]]; then
-            echo -e "  ${BLUE}$switch_ca_option) Switch active Root Key ($(basename "$ACTIVE_ROOT_CA_DIR"))${NC}"
+            echo -e "  ${BLUE}S) Switch${NC}    N) New Root Key    0) Exit"
+        else
+            echo "  N) New Root Key    0) Exit"
         fi
-        echo "  $new_ca_option) Create new Root Key"
-        echo "  $exit_option) Exit"
         echo ""
 
         # Build prompt text based on available options
-        local prompt_text="Enter your choice (1-${last_addon_index}"
         if [[ $num_root_cas -gt 1 ]]; then
-            prompt_text="${prompt_text}, S=Switch, N=New, 0=Exit): "
+            read -rp "Enter your choice (1-${last_addon_index}, S=Switch, N=New, 0=Exit): " choice || true
         else
-            prompt_text="${prompt_text}, N=New, 0=Exit): "
+            read -rp "Enter your choice (1-${last_addon_index}, N=New, 0=Exit): " choice || true
         fi
-        read -rp "$prompt_text" choice || true
 
         case "$choice" in
             1)
