@@ -57,6 +57,8 @@ ACTIVE_ROOT_CA_DIR=""  # Currently active Root CA directory
 SELECTED_ROOT_CA_BASE=""  # Selected Root CA base name from files next to script
 DETECTED_OS=""  # Detected OS: arch|ubuntu|debian|unknown
 MISSING_DEPS=()  # Array of missing dependencies
+OS_DIR="${SCRIPT_DIR}/os"  # Directory containing OS-specific modules
+ACTIVE_OS_MODULE=""  # Currently active OS module
 
 # Menu choice constants (for user input handling)
 MENU_CHOICE_BACK="0"
@@ -128,12 +130,18 @@ command_exists() {
     return 0
 }
 
-# Check required dependencies
+# Check required dependencies (uses OS module's REQUIRED_COMMANDS)
 check_dependencies() {
     MISSING_DEPS=()
 
-    # Required commands
-    local required_commands=("openssl" "ip")
+    # Get required commands from OS module if available
+    local required_commands=()
+    if [[ -n "$ACTIVE_OS_MODULE" ]] && declare -p REQUIRED_COMMANDS >/dev/null 2>&1; then
+        required_commands=("${REQUIRED_COMMANDS[@]}")
+    else
+        # Fallback to basic commands if no OS module loaded
+        required_commands=("openssl" "ip")
+    fi
 
     print_message "info" "Checking dependencies..."
 
@@ -183,16 +191,45 @@ prompt_install_dependencies() {
     install_dependencies
 }
 
-# Install missing dependencies based on OS
+# Install missing dependencies using OS module (with built-in fallback)
 install_dependencies() {
     print_message "info" "Installing dependencies..."
 
+    # Try OS module first if available and complete
+    if [[ -n "$ACTIVE_OS_MODULE" ]] && \
+       declare -f get_package_for_command >/dev/null 2>&1 && \
+       declare -f os_install_packages >/dev/null 2>&1; then
+
+        # Map missing commands to package names using OS module
+        local packages=()
+        for cmd in "${MISSING_DEPS[@]}"; do
+            local pkg
+            pkg="$(get_package_for_command "$cmd")"
+            packages+=("$pkg")
+        done
+
+        # Install packages using OS module's function
+        if [[ ${#packages[@]} -gt 0 ]]; then
+            print_message "info" "Installing: ${packages[*]}"
+            if os_install_packages "${packages[@]}"; then
+                print_message "success" "Dependencies installed successfully"
+                return 0
+            else
+                print_message "error" "Failed to install dependencies"
+                exit 1
+            fi
+        fi
+        return 0
+    fi
+
+    # Fallback to built-in support
+    print_message "info" "Using built-in package installation..."
     case "$DETECTED_OS" in
-        arch)
-            install_arch_deps
-            ;;
         ubuntu|debian)
-            install_ubuntu_deps
+            install_ubuntu_deps_fallback
+            ;;
+        arch)
+            install_arch_deps_fallback
             ;;
         *)
             print_message "error" "Unsupported OS: $DETECTED_OS"
@@ -202,24 +239,44 @@ install_dependencies() {
     esac
 }
 
-# Install dependencies on Arch Linux
-install_arch_deps() {
+# ===========================================
+# BUILT-IN FALLBACK FUNCTIONS
+# ===========================================
+
+# Built-in fallback for Ubuntu/Debian
+install_ubuntu_deps_fallback() {
     local packages=()
 
     for dep in "${MISSING_DEPS[@]}"; do
         case "$dep" in
-            git)
-                packages+=("git")
-                ;;
-            openssl)
-                packages+=("openssl")
-                ;;
-            ip)
-                packages+=("iproute2")
-                ;;
-            *)
-                packages+=("$dep")
-                ;;
+            git) packages+=("git-all") ;;
+            openssl) packages+=("openssl") ;;
+            ip) packages+=("iproute2") ;;
+            *) packages+=("$dep") ;;
+        esac
+    done
+
+    if [[ ${#packages[@]} -gt 0 ]]; then
+        print_message "info" "Installing with apt-get: ${packages[*]}"
+        if sudo apt-get update -qq && sudo apt-get install -y "${packages[@]}"; then
+            print_message "success" "Dependencies installed successfully"
+        else
+            print_message "error" "Failed to install dependencies"
+            exit 1
+        fi
+    fi
+}
+
+# Built-in fallback for Arch Linux
+install_arch_deps_fallback() {
+    local packages=()
+
+    for dep in "${MISSING_DEPS[@]}"; do
+        case "$dep" in
+            git) packages+=("git") ;;
+            openssl) packages+=("openssl") ;;
+            ip) packages+=("iproute2") ;;
+            *) packages+=("$dep") ;;
         esac
     done
 
@@ -234,36 +291,40 @@ install_arch_deps() {
     fi
 }
 
-# Install dependencies on Ubuntu/Debian
-install_ubuntu_deps() {
-    local packages=()
+# ===========================================
+# OS MODULE SYSTEM
+# ===========================================
 
-    for dep in "${MISSING_DEPS[@]}"; do
-        case "$dep" in
-            git)
-                packages+=("git-all")
-                ;;
-            openssl)
-                packages+=("openssl")
-                ;;
-            ip)
-                packages+=("iproute2")
-                ;;
-            *)
-                packages+=("$dep")
-                ;;
-        esac
+# Detect and load the appropriate OS module
+detect_os_module() {
+    ACTIVE_OS_MODULE=""
+
+    if [[ ! -d "$OS_DIR" ]]; then
+        return 1
+    fi
+
+    # Find all .sh files in os/ directory
+    for module_file in "${OS_DIR}"/*.sh; do
+        if [[ -f "$module_file" ]]; then
+            local module_name
+            module_name="$(basename "$module_file" .sh)"
+
+            # Test if this module matches the current OS (in subshell)
+            if (
+                source "$module_file" 2>/dev/null
+                os_detect
+            ) then
+                # This module matches - load it for real
+                source "$module_file"
+                ACTIVE_OS_MODULE="$module_name"
+                DETECTED_OS="$module_name"
+                print_message "success" "Detected OS: $module_name"
+                return 0
+            fi
+        fi
     done
 
-    if [[ ${#packages[@]} -gt 0 ]]; then
-        print_message "info" "Installing with apt-get: ${packages[*]}"
-        if sudo apt-get update && sudo apt-get install -y "${packages[@]}"; then
-            print_message "success" "Dependencies installed successfully"
-        else
-            print_message "error" "Failed to install dependencies"
-            exit 1
-        fi
-    fi
+    return 1
 }
 
 # ===========================================
@@ -1690,11 +1751,22 @@ initialize() {
     mkdir -p "$(dirname "$LOG_FILE")"
     echo "${MATRIX_PLUS_NAME} Log - $(date)" > "$LOG_FILE"
 
-    # Detect OS
-    detect_os || true
+    # Detect and load OS module if directory exists
+    if [[ -d "$OS_DIR" ]]; then
+        detect_os_module || true
+    fi
+
+    # If no OS module detected, fall back to built-in detection
+    if [[ -z "$ACTIVE_OS_MODULE" ]]; then
+        detect_os || true
+    fi
 
     # Check for required dependencies
-    check_dependencies; local deps_status=$?
+    if check_dependencies; then
+        local deps_status=0
+    else
+        local deps_status=$?
+    fi
 
     # Print banner (dynamic)
     local title="${MATRIX_PLUS_NAME} - ${MATRIX_PLUS_DESCRIPTION}"
