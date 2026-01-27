@@ -42,6 +42,9 @@ ORANGE='\033[0;33m'
 BLUE='\033[0;34m'
 NC='\033[0m'
 
+# Menu separator (U+2500 BOX DRAWINGS LIGHT HORIZONTAL) - aligned with header box width (54)
+MENU_SEPARATOR="──────────────────────────────────────────────────────────"
+
 # ===========================================
 # GLOBAL VARIABLES
 # ===========================================
@@ -532,7 +535,7 @@ prompt_select_root_ca_from_files() {
         ((index++))
     done
 
-    echo "  -------------"
+    echo "  $MENU_SEPARATOR"
     echo "  $index) Skip and use Root Keys from certs/"
     echo "  0) Back to previous menu"
     echo ""
@@ -718,7 +721,7 @@ prompt_select_root_ca_from_certs() {
         ((index++))
     done
 
-    echo "  ──────────────────────────────────────────────────────────────"
+    echo "  $MENU_SEPARATOR"
     echo "  N) Create new Root Key    0) Back"
     echo ""
 
@@ -1105,7 +1108,9 @@ menu_with_root_key() {
         local exit_option=0
 
         echo ""
-        echo -e "Root Key: ${BLUE}$(basename "$ACTIVE_ROOT_CA_DIR")${NC}"
+        echo "  === Main Menu ==="
+        echo -e "  Root Key: ${BLUE}$(basename "$ACTIVE_ROOT_CA_DIR")${NC}"
+        echo ""
 
         # Get and display Root Key info
         local ca_info
@@ -1129,9 +1134,9 @@ menu_with_root_key() {
                 esac
             done <<< "$ca_info"
 
-            echo "  | Subject: $ca_subject"
-            echo "  | Expires: $ca_expiry (in $ca_days days)"
-            echo "  | Country: $ca_country"
+            echo "   | Subject: $ca_subject"
+            echo "   | Expires: $ca_expiry (in $ca_days days)"
+            echo "   | Country: $ca_country"
         fi
 
         echo ""
@@ -1149,7 +1154,7 @@ menu_with_root_key() {
         fi
 
         echo ""
-        echo "  ---------------------------"
+        echo "  $MENU_SEPARATOR"
         if [[ $num_root_cas -gt 1 ]]; then
             echo -e "  ${BLUE}$switch_ca_option) Switch active Root Key ($(basename "$ACTIVE_ROOT_CA_DIR"))${NC}"
         fi
