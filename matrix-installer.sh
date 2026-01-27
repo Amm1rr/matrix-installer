@@ -1180,30 +1180,37 @@ menu_with_root_key() {
                 detected_ip="$(get_detected_ip)"
                 local server_input
 
-                if [[ -n "$detected_ip" ]]; then
-                    server_input="$(prompt_user "Enter server IP address or domain" "$detected_ip")"
-                else
-                    while true; do
+                while true; do
+                    if [[ -n "$detected_ip" ]]; then
+                        server_input="$(prompt_user "Enter server IP address or domain" "$detected_ip")"
+                    else
                         server_input="$(prompt_user "Enter server IP address or domain" "")"
-                        if [[ -n "$server_input" ]]; then
-                            break
-                        fi
-                        echo "Server name cannot be empty. Please try again."
-                    done
-                fi
+                    fi
+
+                    # Clean input (remove control characters)
+                    server_input="$(echo "$server_input" | tr -d '[:cntrl:]')"
+
+                    if [[ -n "$server_input" ]]; then
+                        break
+                    fi
+                    echo "Server name cannot be empty. Please try again."
+                done
 
                 # Show summary and confirm
                 echo ""
-                echo "=== Certificate Summary ==="
-                echo -e "  Root Key:    ${BLUE}$(basename "$ACTIVE_ROOT_CA_DIR")${NC}"
-                echo "  Server:      $server_input"
+                echo "  === Certificate Summary ==="
+                echo ""
+                echo -e "  Root Key:      ${BLUE}$(basename "$ACTIVE_ROOT_CA_DIR")${NC}"
+
                 local server_type="Domain"
                 if is_ip_address "$server_input"; then
                     server_type="IP Address"
                 fi
-                echo "  Type:        $server_type"
-                echo "  Certificate: ${ACTIVE_ROOT_CA_DIR}/servers/${server_input}/"
-                echo "  Validity:    $SSL_CERT_DAYS days"
+
+                echo "  Server:        $server_input"
+                echo "  Type:          $server_type"
+                echo "  Certificate:   ${ACTIVE_ROOT_CA_DIR}/servers/${server_input}/"
+                echo "  Validity:      $SSL_CERT_DAYS days"
                 echo ""
 
                 if [[ "$(prompt_yes_no "Generate certificate now?" "y")" == "yes" ]]; then
