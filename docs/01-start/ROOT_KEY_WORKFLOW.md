@@ -11,7 +11,7 @@ Matrix Installer supports importing existing Root Keys for multi-server deployme
 
 ```
 certs/
-├── my-root/                 # First Root Key
+├── my-root/                # First Root Key
 │   ├── rootCA.key          # Private key (0600)
 │   ├── rootCA.crt          # Certificate (0644)
 │   └── servers/            # Server certificates

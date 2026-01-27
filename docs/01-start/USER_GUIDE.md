@@ -167,7 +167,7 @@ Addons are the actual installation methods. Here's what you'll typically find:
 
 - **Private Key Docker Synapse**: Similar to Docker Compose-synapse but specifically designed for private Root Key setups.
 
-- **Zanjir Synapse**: Uses the Zanjir project with Federation support.
+- **Zanjir Synapse**: Uses the [Zanjir project](https://github.com/MatinSenPai/Zanjir/) with Federation support.
 
 The great thing about this system is that anyone can write an addon. If you have a specific way you want to install Matrix, you can create your own addon and drop it in the `addons/` folder—Matrix Installer will automatically find it and add it to the menu.
 
@@ -216,7 +216,7 @@ The certificates Matrix Installer generates are just as secure as ones from a co
 
 ### Can I change my certificates later?
 
-Yes. If you need to regenerate a server certificate, just run `matrix-installer.sh` again and choose to generate a new certificate for that server. The old one will be replaced. If you need to create a new Root Key entirely, choose option 8 from the main menu (but be aware this will require updating all your servers).
+Yes. If you need to regenerate a server certificate, just run `matrix-installer.sh` again and choose to generate a new certificate for that server. The old one will be replaced. If you need to create a new Root Key entirely, choose option NEW ROOT KEY from the main menu (but be aware this will require updating all your servers).
 
 ### What happens if something goes wrong?
 

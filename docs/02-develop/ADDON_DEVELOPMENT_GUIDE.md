@@ -30,7 +30,7 @@ ADDON_VERSION="1.0.0"              # Required: semantic versioning
 ADDON_ORDER="50"                   # Optional: menu order (10, 20, 30... lower first)
 ADDON_DESCRIPTION="Brief description"  # Required
 ADDON_AUTHOR="Your Name"           # Optional
-ADDON_HIDDEN="true"                # Optional: hide from menu (for WIP addons)
+ADDON_HIDDEN="false"                # Optional: hide from menu (for WIP addons)
 ```
 
 ### Menu Ordering
