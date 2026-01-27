@@ -45,6 +45,7 @@ NC='\033[0m'
 : "${ENABLE_FARSI_UI:=true}"
 : "${ENABLE_REGISTRATION:=false}"
 : "${ENABLE_DOCKER_MIRRORS:=false}"
+: "${WEB_SERVER:=nginx}"
 : "${REEXECED:=0}"
 : "${STANDALONE_MODE:=false}"
 : "${UNINSTALL_MODE:=0}"
@@ -547,6 +548,32 @@ prompt_optional_features() {
         DOCKER_MIRRORS=""
     fi
 
+    # Web Server Selection
+    echo ""
+    echo "Select Web Server:"
+    echo "  1) nginx - Supports federation with main.sh certificates"
+    echo "  2) Caddy - Self-signed only, simpler setup (no federation)"
+    echo ""
+    read -rp "Enter your choice (1-2) [1]: " web_server_choice
+    web_server_choice="${web_server_choice:-1}"
+
+    case "$web_server_choice" in
+        1)
+            WEB_SERVER="nginx"
+            print_message "info" "nginx selected - federation available with main.sh certificates"
+            ;;
+        2)
+            WEB_SERVER="caddy"
+            ENABLE_FEDERATION="false"
+            print_message "info" "Caddy selected - self-signed mode only (federation disabled)"
+            print_message "warning" "Caddy uses its own certificates, NOT main.sh Root Key"
+            ;;
+        *)
+            print_message "warning" "Invalid choice, defaulting to nginx"
+            WEB_SERVER="nginx"
+            ;;
+    esac
+
     # Farsi UI
     if [[ "$(prompt_yes_no "Enable Farsi (Persian) language UI?" "y")" == "yes" ]]; then
         ENABLE_FARSI_UI=true
@@ -556,12 +583,19 @@ prompt_optional_features() {
     fi
 
     # Federation
-    if [[ "$(prompt_yes_no "Enable Matrix federation?" "n")" == "yes" ]]; then
-        ENABLE_FEDERATION=true
-        print_message "info" "Federation will be enabled"
-    else
+    if [[ "$WEB_SERVER" == "caddy" ]]; then
+        # Force federation off for Caddy
         ENABLE_FEDERATION=false
-        print_message "info" "Federation disabled (isolated server)"
+        print_message "info" "Federation disabled (Caddy mode - isolated server)"
+    else
+        # nginx allows federation
+        if [[ "$(prompt_yes_no "Enable Matrix federation?" "n")" == "yes" ]]; then
+            ENABLE_FEDERATION=true
+            print_message "info" "Federation will be enabled"
+        else
+            ENABLE_FEDERATION=false
+            print_message "info" "Federation disabled (isolated server)"
+        fi
     fi
 
     # Registration
@@ -609,28 +643,177 @@ EOF
     print_message "success" ".env file created."
 }
 
+setup_nginx_conf() {
+    print_message "info" "Setting up nginx configuration..."
+
+    if [[ "$ENABLE_FEDERATION" == "true" ]]; then
+        print_message "info" "Using main.sh Root Key SSL certificates (federation enabled)"
+    else
+        print_message "info" "Using main.sh certificates (isolated mode)"
+    fi
+
+    mkdir -p "${MATRIX_BASE}/nginx"
+
+    cat > "${MATRIX_BASE}/nginx/nginx.conf" <<EOF
+# Zanjir - nginx Configuration
+# Using main.sh Root Key SSL certificates for federation support
+
+worker_processes auto;
+error_log /var/log/nginx/error.log warn;
+pid /var/run/nginx.pid;
+
+events {
+    worker_connections 1024;
+}
+
+http {
+    include /etc/nginx/mime.types;
+    default_type application/octet-stream;
+
+    log_format main '\$remote_addr - \$remote_user [\$time_local] "\$request" '
+                    '\$status \$body_bytes_sent "\$http_referer" '
+                    '"\$http_user_agent" "\$http_x_forwarded_for"';
+
+    access_log /var/log/nginx/access.log main;
+
+    sendfile on;
+    tcp_nopush on;
+    tcp_nodelay on;
+    keepalive_timeout 65;
+    types_hash_max_size 2048;
+
+    # Gzip compression
+    gzip on;
+    gzip_vary on;
+    gzip_proxied any;
+    gzip_comp_level 6;
+    gzip_types text/plain text/css text/xml text/javascript
+               application/json application/javascript application/xml+rss
+               application/rss+xml font/truetype font/opentype
+               application/vnd.ms-fontobject image/svg+xml;
+
+    # Upstream Matrix server
+    upstream dendrite {
+        server dendrite:8008;
+    }
+
+    # HTTP redirect to HTTPS
+    server {
+        listen 80;
+        server_name ${SERVER_NAME};
+        return 301 https://\$host\$request_uri;
+    }
+
+    # HTTPS server
+    server {
+        listen 443 ssl http2;
+        server_name ${SERVER_NAME};
+
+        # SSL certificates from main.sh
+        ssl_certificate /etc/nginx/ssl/cert-full-chain.pem;
+        ssl_certificate_key /etc/nginx/ssl/server.key;
+
+        # SSL settings
+        ssl_protocols TLSv1.2 TLSv1.3;
+        ssl_ciphers HIGH:!aNULL:!MD5;
+        ssl_prefer_server_ciphers on;
+
+        # Security headers
+        add_header X-Frame-Options SAMEORIGIN always;
+        add_header X-Content-Type-Options nosniff always;
+        add_header X-XSS-Protection "1; mode=block" always;
+        add_header Referrer-Policy strict-origin-when-cross-origin always;
+
+        # Matrix .well-known endpoints
+        location /.well-known/matrix/server {
+            default_type application/json;
+            return 200 '{"m.server": "${SERVER_NAME}:443"}';
+        }
+
+        location /.well-known/matrix/client {
+            default_type application/json;
+            add_header Access-Control-Allow-Origin * always;
+            return 200 '{"m.homeserver": {"base_url": "https://${SERVER_NAME}"}, "m.identity_server": {"base_url": "https://vector.im"}}';
+        }
+
+        # Matrix Client-Server API
+        location /_matrix/ {
+            proxy_pass http://dendrite;
+            proxy_set_header Host \$host;
+            proxy_set_header X-Real-IP \$remote_addr;
+            proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto \$scheme;
+        }
+
+        # Matrix Federation API
+        location /_dendrite/ {
+            proxy_pass http://dendrite;
+            proxy_set_header Host \$host;
+            proxy_set_header X-Real-IP \$remote_addr;
+            proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto \$scheme;
+        }
+
+        # Mobile guide
+        location /mobile_guide {
+            alias /srv/element/mobile_guide;
+            try_files \$uri /mobile_guide/index.html =404;
+        }
+
+        # Welcome page
+        location = /welcome {
+            alias /srv/element/welcome.html;
+        }
+
+        location = /welcome.html {
+            alias /srv/element/welcome.html;
+        }
+
+        # Element App
+        location /app/ {
+            alias /srv/element/;
+            try_files \$uri \$uri/ /app/index.html =404;
+        }
+
+        # Element Web (default)
+        location / {
+            alias /srv/element/;
+            try_files \$uri \$uri/ /index.html =404;
+        }
+    }
+}
+EOF
+
+    chmod 644 "${MATRIX_BASE}/nginx/nginx.conf"
+    print_message "success" "nginx configuration created."
+}
+
 setup_caddyfile() {
     print_message "info" "Setting up Caddyfile..."
 
-    # Choose Caddyfile based on federation mode
+    # Both modes use Caddy internal TLS for reliability
+    # Caddy has known issues with external self-signed certificates that include Root CA
+    # For federation: Matrix homeservers use their own verification mechanisms
     if [[ "$ENABLE_FEDERATION" == "true" ]]; then
-        # Federation mode: use main.sh certificates
-        print_message "info" "Using main.sh Root Key SSL certificates (federation enabled)"
-        cat > "${MATRIX_BASE}/Caddyfile" <<EOF
-# Zanjir - Caddy Reverse Proxy Configuration
-# Federation mode: using external SSL certificates from main.sh
+        print_message "info" "Using Caddy internal TLS (federation mode - Matrix handles trust)"
+    else
+        print_message "info" "Using Caddy internal TLS (isolated mode - self-signed)"
+    fi
 
-# Disable automatic HTTPS since we use manual certificates
+    cat > "${MATRIX_BASE}/Caddyfile" <<EOF
+# Zanjir - Caddy Configuration
+# Using Caddy internal TLS for reliable SSL with self-signed certificates
+# Matrix federation uses its own trust verification via well-known endpoints
+
 {
     auto_https off
 }
 
-${SERVER_NAME}:443 {
-    # Use external SSL certificates (mounted at /ssl inside container)
-    # For self-signed certs, use the full chain
-    tls /ssl/cert-full-chain.pem /ssl/server.key
+:443 {
+    tls internal {
+        on_demand
+    }
 
-    # Encode responses
     encode gzip zstd
 
     # Matrix .well-known endpoints
@@ -645,12 +828,11 @@ ${SERVER_NAME}:443 {
         respond \`{"m.homeserver": {"base_url": "https://${SERVER_NAME}"}, "m.identity_server": {"base_url": "https://vector.im"}}\`
     }
 
-    # Matrix Client-Server API
+    # Matrix API
     handle /_matrix/* {
         reverse_proxy dendrite:8008
     }
 
-    # Matrix Federation API
     handle /_dendrite/* {
         reverse_proxy dendrite:8008
     }
@@ -695,7 +877,6 @@ ${SERVER_NAME}:443 {
         Referrer-Policy strict-origin-when-cross-origin
     }
 
-    # Logging
     log {
         output stdout
         format console
@@ -707,98 +888,6 @@ ${SERVER_NAME}:443 {
     redir https://{host}{uri} permanent
 }
 EOF
-    else
-        # Isolated mode: use Caddy's internal TLS (self-signed)
-        print_message "info" "Using Caddy internal TLS self-signed certificates (isolated mode)"
-        cat > "${MATRIX_BASE}/Caddyfile" <<EOF
-# Zanjir - Caddy Configuration for isolated mode
-# Self-signed HTTPS - Caddy generates its own certificates
-# WARNING: Browser will show security warning - click "Advanced" > "Proceed"
-
-{
-    auto_https off
-}
-
-:443 {
-    tls internal {
-        on_demand
-    }
-
-    encode gzip zstd
-
-    # Matrix .well-known endpoints
-    handle /.well-known/matrix/server {
-        header Content-Type application/json
-        respond \`{"m.server": "${SERVER_NAME}:443"}\`
-    }
-
-    handle /.well-known/matrix/client {
-        header Content-Type application/json
-        header Access-Control-Allow-Origin *
-        respond \`{"m.homeserver": {"base_url": "https://${SERVER_NAME}"}, "m.identity_server": {"base_url": "https://vector.im"}}\`
-    }
-
-    # Matrix API
-    handle /_matrix/* {
-        reverse_proxy dendrite:8008
-    }
-
-    handle /_dendrite/* {
-        reverse_proxy dendrite:8008
-    }
-
-    # Mobile guide - serve our custom page directly
-    handle /mobile_guide* {
-        root * /srv/element/mobile_guide
-        rewrite * /index.html
-        file_server
-    }
-
-    # Welcome page - serve our custom page directly (bypasses Element's wrapper)
-    @welcome {
-        path / /welcome /welcome.html
-    }
-    handle @welcome {
-        root * /srv/element
-        rewrite * /welcome.html
-        file_server
-    }
-
-    # Element App - serve at /app/ path
-    handle /app/* {
-        uri strip_prefix /app
-        root * /srv/element
-        file_server
-        try_files {path} /index.html
-    }
-
-    # Element Web (default for other paths)
-    handle {
-        root * /srv/element
-        file_server
-        try_files {path} /index.html
-    }
-
-    # Security headers
-    header {
-        X-Frame-Options SAMEORIGIN
-        X-Content-Type-Options nosniff
-        X-XSS-Protection "1; mode=block"
-        Referrer-Policy strict-origin-when-cross-origin
-    }
-
-    log {
-        output stdout
-        format console
-    }
-}
-
-# Redirect HTTP to HTTPS
-:80 {
-    redir https://{host}{uri} permanent
-}
-EOF
-    fi
 
     print_message "success" "Caddyfile configured."
 }
@@ -857,25 +946,20 @@ update_element_config() {
 }
 
 copy_certificates() {
-    # Only copy certificates in federation mode
-    if [[ "$ENABLE_FEDERATION" == "false" ]]; then
-        print_message "info" "Skipping SSL certificate copy (using Caddy internal TLS)"
+    # Only copy certificates for nginx (Caddy uses internal TLS)
+    if [[ "$WEB_SERVER" == "caddy" ]]; then
+        print_message "info" "Skipping SSL certificate copy (Caddy uses internal TLS)"
         return 0
     fi
 
-    print_message "info" "Copying SSL certificates..."
+    print_message "info" "Copying SSL certificates for nginx..."
     mkdir -p "${SSL_DIR}"
 
     cp "$SSL_CERT" "${SSL_DIR}/cert-full-chain.pem"
     cp "$SSL_KEY" "${SSL_DIR}/server.key"
     cp "$ROOT_CA" "${SSL_DIR}/rootCA.crt"
 
-    # Extract just the server certificate (first certificate in chain) for Caddy
-    # Caddy has issues with full chain that includes self-signed Root CA
-    openssl x509 -in "$SSL_CERT" -out "${SSL_DIR}/server.crt" 2>/dev/null
-
     chmod 644 "${SSL_DIR}/cert-full-chain.pem"
-    chmod 644 "${SSL_DIR}/server.crt"
     chmod 644 "${SSL_DIR}/rootCA.crt"
     chmod 600 "${SSL_DIR}/server.key"
 
@@ -978,7 +1062,7 @@ start_services() {
     print_message "info" "Waiting for PostgreSQL to be ready..."
     sleep 10
 
-    docker compose up -d dendrite element caddy
+    docker compose up -d dendrite element ${WEB_SERVER}
 
     print_message "info" "Waiting for services to start..."
     sleep 5
@@ -989,21 +1073,31 @@ start_services() {
 update_docker_compose() {
     print_message "info" "Updating docker-compose.yml..."
 
-    # Determine SSL mount based on federation mode
-    local ssl_mount=""
-    local caddy_comment="# Caddy Reverse Proxy"
-    if [[ "$ENABLE_FEDERATION" == "true" ]]; then
-        ssl_mount="      - ./ssl:/ssl:ro"
-        caddy_comment="# Caddy Reverse Proxy with External SSL (main.sh certificates)"
+    local web_server_image
+    local web_server_container
+    local web_server_config
+    local web_server_volumes
+    local web_server_name
+
+    if [[ "$WEB_SERVER" == "nginx" ]]; then
+        web_server_image="nginx:alpine"
+        web_server_container="zanjir-nginx"
+        web_server_config="nginx/nginx.conf:/etc/nginx/nginx.conf:ro"
+        web_server_volumes="./ssl:/etc/nginx/ssl:ro"
+        web_server_name="# nginx Reverse Proxy with main.sh SSL"
     else
-        ssl_mount="# SSL mount not needed - using tls internal"
-        caddy_comment="# Caddy Reverse Proxy with Internal TLS (self-signed)"
+        web_server_image="\${CADDY_IMAGE:-caddy:2-alpine}"
+        web_server_container="zanjir-caddy"
+        web_server_config="Caddyfile:/etc/caddy/Caddyfile:ro"
+        web_server_volumes=""
+        web_server_name="# Caddy Reverse Proxy with Internal TLS"
     fi
 
     cat > "${MATRIX_BASE}/docker-compose.yml" <<EOF
 # Zanjir - Docker Compose Configuration
-# Self-hosted Matrix server with Dendrite, Element Web, and Caddy
-# Federation mode: $ENABLE_FEDERATION
+# Self-hosted Matrix server with Dendrite, Element Web, and \${WEB_SERVER}
+# Web Server: \${WEB_SERVER}
+# Federation: \${ENABLE_FEDERATION}
 
 services:
   # PostgreSQL Database
@@ -1060,10 +1154,10 @@ services:
     networks:
       - zanjir-network
 
-  $caddy_comment
-  caddy:
-    image: \${CADDY_IMAGE:-caddy:2-alpine}
-    container_name: zanjir-caddy
+  ${web_server_name}
+  ${WEB_SERVER}:
+    image: ${web_server_image}
+    container_name: ${web_server_container}
     restart: unless-stopped
     ports:
       - "80:80"
@@ -1072,10 +1166,9 @@ services:
       DOMAIN: \${DOMAIN}
       SERVER_ADDRESS: \${SERVER_ADDRESS:-\${DOMAIN}}
     volumes:
-      - ./Caddyfile:/etc/caddy/Caddyfile:ro
-$ssl_mount
-      - zanjir-caddy-data:/data
-      - zanjir-caddy-config:/config
+      - ./${web_server_config}
+$( [[ "$WEB_SERVER" == "nginx" ]] && echo "      - ./ssl:/etc/nginx/ssl:ro" )
+      - zanjir-web-data:/data
       # Mount Element Web files for serving
       - zanjir-element-web:/srv/element:ro
     networks:
@@ -1123,10 +1216,8 @@ volumes:
     name: zanjir-dendrite-jetstream
   zanjir-dendrite-search:
     name: zanjir-dendrite-search
-  zanjir-caddy-data:
-    name: zanjir-caddy-data
-  zanjir-caddy-config:
-    name: zanjir-caddy-config
+  zanjir-web-data:
+    name: zanjir-web-data
   zanjir-element-web:
     name: zanjir-element-web
 EOF
@@ -1172,6 +1263,7 @@ export ENABLE_FEDERATION="${ENABLE_FEDERATION:-false}"
 export ENABLE_FARSI_UI="${ENABLE_FARSI_UI:-true}"
 export ENABLE_REGISTRATION="${ENABLE_REGISTRATION:-false}"
 export ENABLE_DOCKER_MIRRORS="${ENABLE_DOCKER_MIRRORS:-false}"
+export WEB_SERVER="${WEB_SERVER:-nginx}"
 EOF
 
         print_message "info" "Restarting with sudo..."
@@ -1225,8 +1317,12 @@ EOF
     # Create .env file
     create_env_file
 
-    # Setup Caddyfile
-    setup_caddyfile
+    # Setup web server configuration
+    if [[ "$WEB_SERVER" == "nginx" ]]; then
+        setup_nginx_conf
+    else
+        setup_caddyfile
+    fi
 
     # Update Dendrite config
     update_dendrite_config
@@ -1366,8 +1462,13 @@ ZANJIR-SYNAPSE INSTALLATION COMPLETE
 
     echo -e "${BLUE}Server Information:${NC}"
     echo "  - Server: ${SERVER_NAME}"
-    if [[ "$ENABLE_FEDERATION" == "true" ]]; then
-        echo "  - Installation: Docker Compose with main.sh Root Key SSL"
+    echo "  - Web Server: ${WEB_SERVER}"
+    if [[ "$WEB_SERVER" == "nginx" ]]; then
+        if [[ "$ENABLE_FEDERATION" == "true" ]]; then
+            echo "  - Installation: Docker Compose with nginx + main.sh Root Key SSL"
+        else
+            echo "  - Installation: Docker Compose with nginx + main.sh certificates (isolated)"
+        fi
     else
         echo "  - Installation: Docker Compose with Caddy Internal TLS (self-signed)"
     fi
@@ -1377,10 +1478,14 @@ ZANJIR-SYNAPSE INSTALLATION COMPLETE
     echo -e "${BLUE}Access URLs:${NC}"
     echo "  - Element Web: https://${SERVER_NAME}"
     echo "  - Mobile Guide: https://${SERVER_NAME}/mobile_guide"
-    if [[ "$ENABLE_FEDERATION" == "false" ]]; then
+
+    if [[ "$WEB_SERVER" == "caddy" ]]; then
         echo ""
-        echo -e "${YELLOW}  WARNING: Self-signed SSL certificate.${NC}"
+        echo -e "${YELLOW}  WARNING: Caddy uses self-signed certificates.${NC}"
         echo -e "${YELLOW}  Browser will show security warning - click Advanced > Proceed.${NC}"
+    elif [[ "$ENABLE_FEDERATION" == "false" ]]; then
+        echo ""
+        echo -e "${YELLOW}  NOTE: Self-signed certificate (import Root CA to browser).${NC}"
     fi
     echo ""
 
@@ -1388,6 +1493,9 @@ ZANJIR-SYNAPSE INSTALLATION COMPLETE
     echo "  - Shared Secret: ${REGISTRATION_SECRET}"
     echo "  - Enabled: ${ENABLE_REGISTRATION:-false}"
     echo "  - Federation: ${ENABLE_FEDERATION:-false}"
+    if [[ "$WEB_SERVER" == "caddy" ]] && [[ "$ENABLE_FEDERATION" == "true" ]]; then
+        echo -e "${YELLOW}    (Federation disabled - Caddy mode only)${NC}"
+    fi
     echo ""
 
     echo -e "${BLUE}Features:${NC}"
@@ -1396,14 +1504,22 @@ ZANJIR-SYNAPSE INSTALLATION COMPLETE
     echo ""
 
     echo -e "${BLUE}SSL Configuration:${NC}"
-    if [[ "$ENABLE_FEDERATION" == "true" ]]; then
-        echo "  - Mode: main.sh Root Key (for federation)"
-        echo "  - Certificate: ${SSL_DIR}/cert-full-chain.pem"
-        echo "  - Private Key: ${SSL_DIR}/server.key"
-        echo "  - Root CA: ${SSL_DIR}/rootCA.crt"
+    if [[ "$WEB_SERVER" == "nginx" ]]; then
+        echo "  - Server: nginx"
+        if [[ "$ENABLE_FEDERATION" == "true" ]]; then
+            echo "  - Mode: main.sh Root Key (for federation)"
+            echo "  - Certificate: ${SSL_DIR}/cert-full-chain.pem"
+            echo "  - Private Key: ${SSL_DIR}/server.key"
+            echo "  - Root CA: ${SSL_DIR}/rootCA.crt"
+        else
+            echo "  - Mode: main.sh certificates (isolated)"
+            echo "  - Certificate: ${SSL_DIR}/cert-full-chain.pem"
+        fi
     else
-        echo "  - Mode: Caddy Internal TLS (self-signed, isolated)"
+        echo "  - Server: Caddy"
+        echo "  - Mode: Internal TLS (self-signed, isolated)"
         echo "  - Certificate: Generated by Caddy"
+        echo "  - CA: Caddy Local Authority"
     fi
     echo ""
 
