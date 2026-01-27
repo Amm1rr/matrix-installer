@@ -55,6 +55,8 @@ SERVER_NAME=""
 ACTIVE_SERVER=""  # Currently selected server for addon installation
 ACTIVE_ROOT_CA_DIR=""  # Currently active Root CA directory
 SELECTED_ROOT_CA_BASE=""  # Selected Root CA base name from files next to script
+DETECTED_OS=""  # Detected OS: arch|ubuntu|debian|unknown
+MISSING_DEPS=()  # Array of missing dependencies
 
 # Menu choice constants (for user input handling)
 MENU_CHOICE_BACK="0"
@@ -64,6 +66,205 @@ MENU_CHOICE_NEW="N"
 MENU_RETURN_SUCCESS=0
 MENU_RETURN_NEW=1
 MENU_RETURN_BACK=3
+
+# ===========================================
+# PREREQUISITE CHECK FUNCTIONS
+# ===========================================
+
+# Detect the operating system
+detect_os() {
+    if [[ -f /etc/os-release ]]; then
+        # Source os-release safely, capturing any errors
+        source /etc/os-release 2>/dev/null || true
+        local id="${ID:-}"
+        local id_like="${ID_LIKE:-}"
+
+        case "$id" in
+            arch|artix|garuda|manjaro)
+                DETECTED_OS="arch"
+                return 0
+                ;;
+            ubuntu)
+                DETECTED_OS="ubuntu"
+                return 0
+                ;;
+            debian)
+                DETECTED_OS="debian"
+                return 0
+                ;;
+        esac
+
+        # Check ID_LIKE for Ubuntu/Debian variants
+        if [[ "$id_like" == *"ubuntu"* ]] || [[ "$id_like" == *"debian"* ]]; then
+            DETECTED_OS="ubuntu"
+            return 0
+        fi
+    fi
+
+    DETECTED_OS="unknown"
+    return 0  # Always return 0 to avoid script exit with set -e
+}
+
+# Check if a command exists (returns 0 if exists, 1 if not)
+command_exists() {
+    local cmd_path
+    cmd_path="$(command -v "$1" 2>/dev/null)" || return 1
+
+    # Additional check: verify the command is actually executable
+    if [[ ! -x "$cmd_path" ]]; then
+        return 1
+    fi
+
+    # For git, check if it's a stub (common on Debian/Ubuntu after apt remove)
+    if [[ "$1" == "git" ]]; then
+        # Check if git actually works by running it
+        if git --version &>/dev/null 2>&1; then
+            return 0
+        else
+            return 1
+        fi
+    fi
+
+    return 0
+}
+
+# Check required dependencies
+check_dependencies() {
+    MISSING_DEPS=()
+
+    # Required commands
+    local required_commands=("openssl" "ip")
+
+    print_message "info" "Checking dependencies..."
+
+    for cmd in "${required_commands[@]}"; do
+        if command_exists "$cmd"; then
+            echo "  ✓ $cmd found"
+        else
+            echo "  ✗ $cmd NOT found"
+            MISSING_DEPS+=("$cmd")
+        fi
+    done
+
+    # Return 0 if all dependencies are met, 1 otherwise
+    if [[ ${#MISSING_DEPS[@]} -eq 0 ]]; then
+        print_message "success" "All dependencies satisfied"
+        return 0
+    else
+        return 1
+    fi
+}
+
+# Display missing dependencies and prompt for installation
+prompt_install_dependencies() {
+    if [[ ${#MISSING_DEPS[@]} -eq 0 ]]; then
+        return 0
+    fi
+
+    echo ""
+    echo "╔══════════════════════════════════════════════════════════╗"
+    echo "║              Missing Dependencies                        ║"
+    echo "╚══════════════════════════════════════════════════════════╝"
+    echo ""
+    print_message "warning" "The following required packages are missing:"
+    echo ""
+    for dep in "${MISSING_DEPS[@]}"; do
+        echo "  - $dep"
+    done
+    echo ""
+    print_message "info" "Detected OS: $DETECTED_OS"
+    echo ""
+
+    if [[ "$(prompt_yes_no "Install missing dependencies now?" "y")" != "yes" ]]; then
+        print_message "error" "Cannot continue without required dependencies."
+        exit 1
+    fi
+
+    install_dependencies
+}
+
+# Install missing dependencies based on OS
+install_dependencies() {
+    print_message "info" "Installing dependencies..."
+
+    case "$DETECTED_OS" in
+        arch)
+            install_arch_deps
+            ;;
+        ubuntu|debian)
+            install_ubuntu_deps
+            ;;
+        *)
+            print_message "error" "Unsupported OS: $DETECTED_OS"
+            print_message "info" "Please install manually: ${MISSING_DEPS[*]}"
+            exit 1
+            ;;
+    esac
+}
+
+# Install dependencies on Arch Linux
+install_arch_deps() {
+    local packages=()
+
+    for dep in "${MISSING_DEPS[@]}"; do
+        case "$dep" in
+            git)
+                packages+=("git")
+                ;;
+            openssl)
+                packages+=("openssl")
+                ;;
+            ip)
+                packages+=("iproute2")
+                ;;
+            *)
+                packages+=("$dep")
+                ;;
+        esac
+    done
+
+    if [[ ${#packages[@]} -gt 0 ]]; then
+        print_message "info" "Installing with pacman: ${packages[*]}"
+        if sudo pacman -S --noconfirm "${packages[@]}"; then
+            print_message "success" "Dependencies installed successfully"
+        else
+            print_message "error" "Failed to install dependencies"
+            exit 1
+        fi
+    fi
+}
+
+# Install dependencies on Ubuntu/Debian
+install_ubuntu_deps() {
+    local packages=()
+
+    for dep in "${MISSING_DEPS[@]}"; do
+        case "$dep" in
+            git)
+                packages+=("git-all")
+                ;;
+            openssl)
+                packages+=("openssl")
+                ;;
+            ip)
+                packages+=("iproute2")
+                ;;
+            *)
+                packages+=("$dep")
+                ;;
+        esac
+    done
+
+    if [[ ${#packages[@]} -gt 0 ]]; then
+        print_message "info" "Installing with apt-get: ${packages[*]}"
+        if sudo apt-get update && sudo apt-get install -y "${packages[@]}"; then
+            print_message "success" "Dependencies installed successfully"
+        else
+            print_message "error" "Failed to install dependencies"
+            exit 1
+        fi
+    fi
+}
 
 # ===========================================
 # HELPER FUNCTIONS
@@ -1485,9 +1686,15 @@ menu_run_addon() {
 # ===========================================
 
 initialize() {
-    # Initialize log
+    # Initialize log FIRST (before any print_message calls)
     mkdir -p "$(dirname "$LOG_FILE")"
     echo "${MATRIX_PLUS_NAME} Log - $(date)" > "$LOG_FILE"
+
+    # Detect OS
+    detect_os || true
+
+    # Check for required dependencies
+    check_dependencies; local deps_status=$?
 
     # Print banner (dynamic)
     local title="${MATRIX_PLUS_NAME} - ${MATRIX_PLUS_DESCRIPTION}"
@@ -1514,6 +1721,11 @@ initialize() {
     echo "║                                                          ║"
     echo "╚══════════════════════════════════════════════════════════╝"
     echo ""
+
+    # Check dependencies and prompt to install if missing
+    if [[ $deps_status -ne 0 ]]; then
+        prompt_install_dependencies
+    fi
 
     # Initialize SSL Manager
     ssl_manager_init
