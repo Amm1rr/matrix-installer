@@ -587,7 +587,19 @@ prompt_optional_features() {
     # Generate a random password as default
     local default_password
     default_password=$(openssl rand -base64 16 | tr -d '/+=' | cut -c1-16)
-    ADMIN_PASSWORD="$(prompt_user "Admin password" "$default_password")"
+
+    # Password validation - Dendrite only checks minimum length (8 characters)
+    while true; do
+        ADMIN_PASSWORD="$(prompt_user "Admin password (min 8 characters)" "$default_password")"
+
+        if [[ ${#ADMIN_PASSWORD} -ge 8 ]]; then
+            break
+        fi
+
+        echo ""
+        print_message "warning" "Password must be at least 8 characters"
+        echo ""
+    done
 
     print_message "info" "Admin user will be created after installation"
     print_message "info" "  - Username: $ADMIN_USERNAME"
@@ -1094,35 +1106,38 @@ create_admin_user() {
         ((waited++))
     done
 
-    # Create admin user
-    if docker exec zanjir-dendrite /usr/bin/create-account \
+    # Create admin user (password was pre-validated)
+    local output
+    output=$(docker exec zanjir-dendrite /usr/bin/create-account \
         --config /etc/dendrite/dendrite.yaml \
         --username "$ADMIN_USERNAME" \
         --password "$ADMIN_PASSWORD" \
-        --admin >/dev/null 2>&1; then
+        --admin 2>&1)
+    local exit_code=$?
+
+    if [[ $exit_code -eq 0 ]]; then
         print_message "success" "Admin user created successfully"
         print_message "info" "  - Username: $ADMIN_USERNAME"
         return 0
-    else
-        # Check if user already exists
-        if docker exec zanjir-dendrite /usr/bin/create-account \
-            --config /etc/dendrite/dendrite.yaml \
-            --username "$ADMIN_USERNAME" \
-            --password "$ADMIN_PASSWORD" \
-            --admin 2>&1 | grep -q "already exists"; then
-            print_message "warning" "Admin user already exists"
-            print_message "info" "  - Username: $ADMIN_USERNAME"
-            return 0
-        fi
-        print_message "error" "Failed to create admin user"
-        print_message "info" "You can create it manually:"
-        echo "  docker exec -it zanjir-dendrite /usr/bin/create-account \\"
-        echo "    --config /etc/dendrite/dendrite.yaml \\"
-        echo "    --username $ADMIN_USERNAME \\"
-        echo "    --password PASSWORD \\"
-        echo "    --admin"
-        return 1
     fi
+
+    # Check if user already exists (not a fatal error)
+    if echo "$output" | grep -qi "already exists"; then
+        print_message "warning" "Admin user already exists"
+        print_message "info" "  - Username: $ADMIN_USERNAME"
+        return 0
+    fi
+
+    # Other error
+    print_message "error" "Failed to create admin user"
+    print_message "info" "Error: $output"
+    print_message "info" "You can create it manually:"
+    echo "  docker exec -it zanjir-dendrite /usr/bin/create-account \\"
+    echo "    --config /etc/dendrite/dendrite.yaml \\"
+    echo "    --username $ADMIN_USERNAME \\"
+    echo "    --password PASSWORD \\"
+    echo "    --admin"
+    return 1
 }
 
 # ===========================================
