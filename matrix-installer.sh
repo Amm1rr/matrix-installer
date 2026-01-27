@@ -256,11 +256,11 @@ prompt_root_ca_config() {
 
     # Display summary
     echo "" >&2
-    echo "  Organization: $org_input" >&2
-    echo "  Country: $country_input" >&2
-    echo "  State: $state_input" >&2
-    echo "  City: $city_input" >&2
-    echo "  Validity: $days_input days" >&2
+    echo "  Organization:  $org_input" >&2
+    echo "  Country:       $country_input" >&2
+    echo "  State:         $state_input" >&2
+    echo "  City:          $city_input" >&2
+    echo "  Validity:      $days_input days" >&2
     echo "" >&2
 
     # Output as pipe-delimited for parsing (to stdout only)
