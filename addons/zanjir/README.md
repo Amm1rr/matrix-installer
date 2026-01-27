@@ -1,6 +1,6 @@
 # Zanjir Synapse (Private Key + Dendrite)
 
-Zanjir is a lightweight Matrix homeserver powered by Dendrite with Private Key SSL certificates from matrix-installer.sh. It includes an admin panel, voice/video calls support, and a fully translated Persian interface.
+[Zanjir](https://github.com/MatinSenPai/Zanjir/) is a lightweight Matrix homeserver powered by Dendrite with Private Key SSL certificates from matrix-installer.sh. It includes an admin panel, voice/video calls support, and a fully translated Persian interface.
 
 ## Version
 
@@ -425,7 +425,12 @@ Part of Matrix Installer project.
 
 ## Author
 
-Based on [Zanjir](https://github.com/MatinSenPai/zanjir) by MatinSenPai
+Based on [Zanjir](https://github.com/MatinSenPai/Zanjir/) by MatinSenPai
+
+## Project Links
+
+- **Zanjir Repository**: [https://github.com/MatinSenPai/Zanjir/](https://github.com/MatinSenPai/Zanjir/)
+- **Matrix Installer**: [https://github.com/Amm1rr/matrix-installer](https://github.com/Amm1rr/matrix-installer)
 
 ## Acknowledgments
 
