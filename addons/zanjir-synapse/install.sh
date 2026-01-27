@@ -1251,30 +1251,62 @@ check_status() {
         return 0
     fi
 
-    # Save current directory
-    local current_dir="$(pwd)"
+    print_message "success" "Matrix is installed at: ${MATRIX_BASE}"
+    echo ""
 
-    # Try to change to MATRIX_BASE
-    if ! cd "$MATRIX_BASE" 2>/dev/null; then
-        print_message "warning" "Cannot access installation directory (permission denied?)"
-        print_message "info" "Directory: ${MATRIX_BASE}"
-        return 0
+    # Show all running Docker containers
+    print_message "info" "All running Docker containers:"
+    echo ""
+
+    local running_containers
+    running_containers=$(docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}" 2>/dev/null)
+
+    if [[ -n "$running_containers" ]]; then
+        echo "$running_containers"
+        echo ""
+        local total_running
+        total_running=$(docker ps --format "{{.Names}}" 2>/dev/null | wc -l)
+        print_message "success" "Total running containers: ${total_running}"
+    else
+        print_message "warning" "No containers are currently running"
+        print_message "info" "Docker might not be running - check with: systemctl status docker"
     fi
-
-    echo ""
-    docker compose ps 2>/dev/null || echo "Unable to get container status (docker might not be running)"
     echo ""
 
-    # Check if any containers are running
-    local running_count=$(docker compose ps --format "{{.State}}" 2>/dev/null | grep -c "running" || echo "0")
-    if [[ "$running_count" -gt 0 ]]; then
-        print_message "success" "Matrix services are running (${running_count} containers)"
+    # Check Matrix-specific containers
+    print_message "info" "Matrix containers status:"
+    echo ""
+
+    # Count running Matrix containers by name
+    local matrix_running_count
+    matrix_running_count=$(docker ps --format "{{.Names}}" 2>/dev/null | grep -c "^zanjir-" || echo "0")
+    matrix_running_count=$(echo "$matrix_running_count" | tr -d '[:space:]')
+
+    if [[ "$matrix_running_count" -gt 0 ]]; then
+        # Show Matrix container details
+        docker ps --filter "name=zanjir-" --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}" 2>/dev/null
+        echo ""
+        print_message "success" "Matrix services are running (${matrix_running_count} containers active)"
     else
         print_message "warning" "Matrix services are not running"
+        print_message "info" "Start them with: cd ${MATRIX_BASE} && docker compose up -d"
     fi
+    echo ""
 
-    # Return to original directory
-    cd "$current_dir" 2>/dev/null || true
+    # Try docker compose ps for detailed status
+    local current_dir="$(pwd)"
+    if cd "$MATRIX_BASE" 2>/dev/null; then
+        local compose_output
+        compose_output=$(docker compose ps 2>&1)
+        local compose_exit=$?
+
+        if [[ $compose_exit -eq 0 && -n "$compose_output" ]]; then
+            print_message "info" "Docker Compose detailed status:"
+            echo "$compose_output"
+        fi
+
+        cd "$current_dir" 2>/dev/null || true
+    fi
 }
 
 # ===========================================
