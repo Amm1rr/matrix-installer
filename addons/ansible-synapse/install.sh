@@ -1308,9 +1308,9 @@ uninstall_matrix() {
     fi
 
     print_message "warning" "This will:"
-    echo "  - Stop all Matrix containers"
-    echo "  - Remove Matrix Docker containers and volumes"
-    echo "  - Remove systemd services"
+    echo "  - Stop all Matrix services"
+    echo "  - Remove Matrix Docker containers, volumes, and networks"
+    echo "  - Remove systemd services (all types)"
     echo "  - Delete /matrix directory"
     echo "  - Remove firewall rules (optional)"
     echo ""
@@ -1320,9 +1320,9 @@ uninstall_matrix() {
         return 0
     fi
 
-    # Stop Matrix services
+    # Stop Matrix services (including timers and sockets)
     print_message "info" "Stopping Matrix services..."
-    run_remote_command "systemctl stop matrix-*.service 2>/dev/null || true" >> "$LOG_FILE" 2>&1
+    run_remote_command "systemctl stop 'matrix-*' 2>/dev/null || true" >> "$LOG_FILE" 2>&1
 
     # Remove containers
     print_message "info" "Removing Matrix containers..."
@@ -1332,9 +1332,13 @@ uninstall_matrix() {
     print_message "info" "Removing Matrix volumes..."
     run_remote_command "docker volume ls -q | grep '^matrix' | xargs -r docker volume rm -f 2>/dev/null || true" >> "$LOG_FILE" 2>&1
 
-    # Remove systemd services
+    # Remove networks
+    print_message "info" "Removing Matrix Docker networks..."
+    run_remote_command "docker network ls --format '{{.Name}}' | grep '^matrix' | xargs -r docker network rm 2>/dev/null || true" >> "$LOG_FILE" 2>&1
+
+    # Remove systemd services (all types: service, timer, socket, etc.)
     print_message "info" "Removing systemd services..."
-    run_remote_command "rm -f /etc/systemd/system/matrix-*.service && systemctl daemon-reload" >> "$LOG_FILE" 2>&1
+    run_remote_command "rm -f /etc/systemd/system/matrix-*.* && systemctl daemon-reload && systemctl reset-failed 2>/dev/null || true" >> "$LOG_FILE" 2>&1
 
     # Remove /matrix directory
     print_message "info" "Removing /matrix directory..."
