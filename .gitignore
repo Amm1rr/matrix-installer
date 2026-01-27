@@ -1,6 +1,7 @@
 certs/
 openspec/
 matrix-docker-ansible-deploy/
+.claude/
 *.crt
 *.key
 *.srl
