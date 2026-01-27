@@ -1,6 +1,7 @@
 certs/
+openspec/
+matrix-docker-ansible-deploy/
 *.crt
 *.key
 *.srl
 *.log
-matrix-docker-ansible-deploy/
