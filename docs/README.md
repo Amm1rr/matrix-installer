@@ -1,5 +1,37 @@
 # Matrix Installer Documentation
 
+## Overview
+
+Matrix Installer is a modular tool for setting up Matrix homeservers with private SSL certificate management. It handles the complex certificate infrastructure so your servers can federate securely.
+
+### What It Does
+
+1. **Creates Root Keys** — Become your own Certificate Authority
+2. **Generates Server Certificates** — Signed by your Root Key for automatic trust
+3. **Runs Addons** — Choose how to install Matrix (Docker, Ansible, etc.)
+
+### How It Works
+
+```
+Root Key → Server Certificates → Addon Installation
+```
+
+Same Root Key = automatic federation between servers.
+
+### What You Need
+
+| What You Have | What It Does |
+|---------------|--------------|
+| **Just the script** | Create Root Keys & certificates (manual install) |
+| **With `addons/` folder** | Same + one-click installation options |
+| **With Root Key files** | Import existing Root Key |
+
+**Key point**: Works standalone—only use what you need.
+
+---
+
+## Documentation
+
 This documentation is organized by how you plan to use Matrix Installer.
 
 ## Start Here
