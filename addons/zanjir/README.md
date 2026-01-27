@@ -250,10 +250,32 @@ sudo security add-trusted-cert -d -r trustRoot \
 |---------|-------|-------------|------|
 | **Dendrite** | ghcr.io/matrix-org/dendrite-monolith:latest | Matrix homeserver | 8008 |
 | **PostgreSQL** | postgres:15-alpine | Database backend | 5432 |
-| **Caddy** | caddy:latest | Reverse proxy & SSL termination | 443 |
+| **Nginx** | nginx:alpine | Reverse proxy & SSL termination | 443 |
 | **Element** | vectorim/element-web:latest | Web client | 80 |
 | **Admin Panel** | zanjir-admin:latest | Admin interface | 80 |
 | **Coturn** | coturn/coturn:latest | TURN server for calls | 3478, 5349 |
+
+## Differences from Original Zanjir
+
+This addon is adapted from the original [Zanjir project](https://github.com/MatinSenPai/Zanjir/) for integration with matrix-installer.sh. Here are the key differences:
+
+| Component | Original Zanjir | This Addon |
+|-----------|----------------|------------|
+| **Reverse Proxy** | Caddy (with auto HTTPS) | Nginx (with Private Key SSL) |
+| **SSL Certificates** | Let's Encrypt or self-signed | Private Key from matrix-installer.sh |
+| **Installation** | Standalone script | Integrated with matrix-installer.sh |
+| **Certificate Management** | Built-in (Caddy) | Manual via matrix-installer.sh |
+
+### Why Nginx instead of Caddy?
+
+- **Caddy** uses automatic HTTPS (Let's Encrypt) which requires a public domain
+- **Nginx** with Private Key SSL allows:
+  - IP-based deployments (no domain required)
+  - Private network setups
+  - Custom Root Key control
+  - Federation between servers with same Root Key
+
+The addon uses Nginx to leverage matrix-installer.sh's Private Key SSL infrastructure, enabling deployments without public DNS or domains.
 
 ## Technical Details
 
@@ -434,8 +456,8 @@ Based on [Zanjir](https://github.com/MatinSenPai/Zanjir/) by MatinSenPai
 
 ## Acknowledgments
 
-- [Zanjir Project](https://github.com/MatinSenPai/zanjir) - Original Zanjir server
+- [Zanjir Project](https://github.com/MatinSenPai/Zanjir/) - Original Zanjir server
 - [Dendrite](https://github.com/matrix-org/dendrite) - Lightweight Matrix homeserver
 - [Element](https://element.io/) - Web client
 - [Coturn](https://github.com/coturn/coturn) - TURN server
-- [Caddy](https://caddyserver.com/) - Reverse proxy
+- [Nginx](https://nginx.org/) - Reverse proxy
