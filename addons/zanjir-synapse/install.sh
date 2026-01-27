@@ -48,6 +48,8 @@ NC='\033[0m'
 : "${REEXECED:=0}"
 : "${STANDALONE_MODE:=false}"
 : "${UNINSTALL_MODE:=0}"
+: "${ADMIN_USERNAME:=admin}"
+: "${ADMIN_PASSWORD:=}"
 
 set -e
 set -u
@@ -573,6 +575,22 @@ prompt_optional_features() {
         print_message "info" "Registration disabled (admin only)"
     fi
 
+    # Admin User
+    echo ""
+    echo "========================================"
+    echo "       Admin User Configuration"
+    echo "========================================"
+    echo ""
+
+    ADMIN_USERNAME="$(prompt_user "Admin username" "admin")"
+
+    # Generate a random password as default
+    local default_password
+    default_password=$(openssl rand -base64 16 | tr -d '/+=' | cut -c1-16)
+    ADMIN_PASSWORD="$(prompt_user "Admin password" "$default_password")"
+
+    print_message "info" "Admin user will be created after installation"
+    print_message "info" "  - Username: $ADMIN_USERNAME"
     echo ""
 }
 
@@ -1061,6 +1079,52 @@ check_services() {
     docker compose ps
 }
 
+create_admin_user() {
+    print_message "info" "Creating admin user..."
+
+    # Wait for Dendrite to be fully ready
+    print_message "info" "Waiting for Dendrite to be ready..."
+    local max_wait=30
+    local waited=0
+    while [[ $waited -lt $max_wait ]]; do
+        if docker exec zanjir-dendrite /usr/bin/create-account --help >/dev/null 2>&1; then
+            break
+        fi
+        sleep 1
+        ((waited++))
+    done
+
+    # Create admin user
+    if docker exec zanjir-dendrite /usr/bin/create-account \
+        --config /etc/dendrite/dendrite.yaml \
+        --username "$ADMIN_USERNAME" \
+        --password "$ADMIN_PASSWORD" \
+        --admin >/dev/null 2>&1; then
+        print_message "success" "Admin user created successfully"
+        print_message "info" "  - Username: $ADMIN_USERNAME"
+        return 0
+    else
+        # Check if user already exists
+        if docker exec zanjir-dendrite /usr/bin/create-account \
+            --config /etc/dendrite/dendrite.yaml \
+            --username "$ADMIN_USERNAME" \
+            --password "$ADMIN_PASSWORD" \
+            --admin 2>&1 | grep -q "already exists"; then
+            print_message "warning" "Admin user already exists"
+            print_message "info" "  - Username: $ADMIN_USERNAME"
+            return 0
+        fi
+        print_message "error" "Failed to create admin user"
+        print_message "info" "You can create it manually:"
+        echo "  docker exec -it zanjir-dendrite /usr/bin/create-account \\"
+        echo "    --config /etc/dendrite/dendrite.yaml \\"
+        echo "    --username $ADMIN_USERNAME \\"
+        echo "    --password PASSWORD \\"
+        echo "    --admin"
+        return 1
+    fi
+}
+
 # ===========================================
 # INSTALLATION
 # ===========================================
@@ -1115,6 +1179,8 @@ export ENABLE_FEDERATION="${ENABLE_FEDERATION:-false}"
 export ENABLE_FARSI_UI="${ENABLE_FARSI_UI:-true}"
 export ENABLE_REGISTRATION="${ENABLE_REGISTRATION:-false}"
 export ENABLE_DOCKER_MIRRORS="${ENABLE_DOCKER_MIRRORS:-false}"
+export ADMIN_USERNAME="${ADMIN_USERNAME:-admin}"
+export ADMIN_PASSWORD="${ADMIN_PASSWORD:-}"
 EOF
 
         print_message "info" "Restarting with sudo..."
@@ -1185,6 +1251,9 @@ EOF
 
     # Check services
     check_services
+
+    # Create admin user
+    create_admin_user
 
     # Print summary
     print_summary
@@ -1339,6 +1408,11 @@ print_summary() {
 ZANJIR-SYNAPSE INSTALLATION COMPLETE
 ========================================${NC}"
 
+    echo -e "${CYAN}Admin Credentials:${NC}"
+    echo "  Username: ${ADMIN_USERNAME:-admin}"
+    echo "  Password: ${ADMIN_PASSWORD:-<not set>}"
+    echo ""
+
     echo -e "${BLUE}Server Information:${NC}"
     echo "  - Server: ${SERVER_NAME}"
     echo "  - Web Server: nginx"
@@ -1389,13 +1463,7 @@ ZANJIR-SYNAPSE INSTALLATION COMPLETE
     echo "  - Control: cd ${MATRIX_BASE} && docker compose [up|down|logs]"
     echo ""
 
-    echo -e "${YELLOW}To create an admin user:${NC}"
-    echo ""
-    echo "docker exec -it zanjir-dendrite /usr/bin/create-account \\"
-    echo "    --config /etc/dendrite/dendrite.yaml \\"
-    echo "    --username YOUR_USERNAME \\"
-    echo "    --password YOUR_PASSWORD \\"
-    echo "    --admin"
+    echo -e "${YELLOW}IMPORTANT:${NC} Save your admin credentials securely!"
     echo ""
 
     echo -e "${GREEN}========================================${NC}"
