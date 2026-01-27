@@ -230,7 +230,7 @@ If you run into issues:
 
 1. Check the log files mentioned above
 2. Review the [Federation Troubleshooting Guide](FEDERATION_TROUBLESHOOTING.md) for federation-specific issues
-3. Look at the [Root Key Workflow](ROOT_CA_WORKFLOW.md) for more details on certificate management
+3. Look at the [Root Key Workflow](ROOT_KEY_WORKFLOW.md) for more details on certificate management
 4. Check the addon-specific documentation if available
 
 ---

@@ -124,5 +124,5 @@ script/
 - [Addon Development Guide](ADDON_DEVELOPMENT_GUIDE.md) - Creating addons
 - [Addon Interface Protocol](ADDON_INTERFACE.md) - Technical interface specs
 - [Manual SSL Certificates](MANUAL_SSL_CERTIFICATES.md) - SSL certificate details
-- [Root Key Workflow](ROOT_CA_WORKFLOW.md) - Certificate authority management
+- [Root Key Workflow](ROOT_KEY_WORKFLOW.md) - Certificate authority management
 - [Federation Troubleshooting](FEDERATION_TROUBLESHOOTING.md) - Federation issues
