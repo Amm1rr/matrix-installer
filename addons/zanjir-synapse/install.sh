@@ -4,7 +4,7 @@
 # ADDON METADATA
 # ===========================================
 ADDON_NAME="zanjir-synapse"
-ADDON_NAME_MENU="Install Zanjir Synapse (Private Key+Dendrite+nginx)"
+ADDON_NAME_MENU="Install Zanjir Synapse (Private Key+Dendrite)"
 ADDON_VERSION="1.0.0"
 ADDON_ORDER="40"
 ADDON_DESCRIPTION="Matrix server using Dendrite with Element Web and nginx"
