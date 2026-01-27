@@ -2,6 +2,19 @@
 
 A modular installer for Matrix homeservers with private SSL certificate management.
 
+## What is Matrix Installer?
+
+Matrix Installer simplifies setting up your own Matrix homeserver by handling the complicated part—SSL certificates. Matrix servers need certificates to communicate securely (this is called "federation"), but getting certificates from commercial authorities is complex and expensive.
+
+Matrix Installer lets you become your own certificate authority. You create a Root Key once, then generate certificates for as many servers as you want. Servers with certificates from the same Root Key automatically trust each other—no configuration needed.
+
+## Why Use It?
+
+- **Works with IP addresses** — No domain name required (perfect for private networks)
+- **Federation out of the box** — Multiple servers connect automatically with same Root Key
+- **Modular addons** — Choose how to install: Docker, Ansible, or write your own
+- **Standalone capable** — Script manages certificates alone; addons are optional
+
 ## Quick Start
 
 ```bash
