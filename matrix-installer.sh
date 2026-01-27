@@ -130,7 +130,7 @@ command_exists() {
     return 0
 }
 
-# Check required dependencies (uses OS module's REQUIRED_COMMANDS)
+# Check required dependencies (uses OS module's REQUIRED_COMMANDS) - Silent mode
 check_dependencies() {
     MISSING_DEPS=()
 
@@ -143,24 +143,15 @@ check_dependencies() {
         required_commands=("openssl" "ip")
     fi
 
-    print_message "info" "Checking dependencies..."
-
+    # Silent check - no output
     for cmd in "${required_commands[@]}"; do
-        if command_exists "$cmd"; then
-            echo "  ✓ $cmd found"
-        else
-            echo "  ✗ $cmd NOT found"
+        if ! command_exists "$cmd"; then
             MISSING_DEPS+=("$cmd")
         fi
     done
 
-    # Return 0 if all dependencies are met, 1 otherwise
-    if [[ ${#MISSING_DEPS[@]} -eq 0 ]]; then
-        print_message "success" "All dependencies satisfied"
-        return 0
-    else
-        return 1
-    fi
+    # Return silently
+    [[ ${#MISSING_DEPS[@]} -eq 0 ]]
 }
 
 # Display missing dependencies and prompt for installation
@@ -169,18 +160,34 @@ prompt_install_dependencies() {
         return 0
     fi
 
+    # Get required commands for display
+    local required_commands=()
+    if [[ -n "$ACTIVE_OS_MODULE" ]] && declare -p REQUIRED_COMMANDS >/dev/null 2>&1; then
+        required_commands=("${REQUIRED_COMMANDS[@]}")
+    else
+        required_commands=("openssl" "ip")
+    fi
+
     echo ""
     echo "╔══════════════════════════════════════════════════════════╗"
     echo "║              Missing Dependencies                        ║"
     echo "╚══════════════════════════════════════════════════════════╝"
     echo ""
-    print_message "warning" "The following required packages are missing:"
+    echo "The following required packages are missing:"
     echo ""
     for dep in "${MISSING_DEPS[@]}"; do
         echo "  - $dep"
     done
     echo ""
-    print_message "info" "Detected OS: $DETECTED_OS"
+    echo "Found:"
+    echo ""
+    for cmd in "${required_commands[@]}"; do
+        if command_exists "$cmd"; then
+            echo "  - $cmd"
+        fi
+    done
+    echo ""
+    echo "Detected OS: $DETECTED_OS"
     echo ""
 
     if [[ "$(prompt_yes_no "Install missing dependencies now?" "y")" != "yes" ]]; then
