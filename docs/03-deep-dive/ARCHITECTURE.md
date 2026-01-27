@@ -41,7 +41,7 @@ Matrix Installer is a modular installation system for Matrix homeservers. It han
                     │    servers/     │
                     │      <server>/  │
                     │        server.* │
-                    │    <server2>/  │
+                    │    <server2>/   │
                     └─────────────────┘
                               │
                               ▼
@@ -254,7 +254,7 @@ Provides the interactive user interface.
 ### Complete Installation Flow
 
 ```
-User runs ./main.sh
+User runs ./matrix-installer.sh
         │
         ▼
 ┌─────────────────────────────────────┐

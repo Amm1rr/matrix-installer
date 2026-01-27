@@ -47,7 +47,7 @@ From main.sh:
 2. Generate server certificate for your IP or domain
 
 ```bash
-./main.sh
+./matrix-installer.sh
 # Option 1: Generate server certificate
 # Enter your server IP or domain
 ```

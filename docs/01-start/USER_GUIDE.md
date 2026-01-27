@@ -26,7 +26,7 @@ Open your terminal and navigate to where you have Matrix Installer:
 
 ```bash
 cd /path/to/matrix-second/script
-./main.sh
+./matrix-installer.sh
 ```
 
 You'll see a welcome banner and the main menu.
@@ -104,7 +104,7 @@ Each addon is different, but they all follow this same pattern of getting the ce
 
 ## Using an Existing Root Key
 
-If you already have a Root Key from another Matrix Installer installation (or you created one separately), you can reuse it. Just place `rootCA.key` and `rootCA.crt` in the same directory as `main.sh` before running it.
+If you already have a Root Key from another Matrix Installer installation (or you created one separately), you can reuse it. Just place `rootCA.key` and `rootCA.crt` in the same directory as `matrix-installer.sh` before running it.
 
 When you start the script, you'll see:
 
@@ -201,12 +201,12 @@ The certificates Matrix Installer generates are just as secure as ones from a co
 
 ### Can I change my certificates later?
 
-Yes. If you need to regenerate a server certificate, just run `main.sh` again and choose to generate a new certificate for that server. The old one will be replaced. If you need to create a new Root Key entirely, choose option 8 from the main menu (but be aware this will require updating all your servers).
+Yes. If you need to regenerate a server certificate, just run `matrix-installer.sh` again and choose to generate a new certificate for that server. The old one will be replaced. If you need to create a new Root Key entirely, choose option 8 from the main menu (but be aware this will require updating all your servers).
 
 ### What happens if something goes wrong?
 
 Check the log files:
-- `main.log` - The main script log
+- `matrix-installer.log` - The main script log
 - `ansible-synapse.log` - The ansible-synapse addon log (if using that addon)
 
 These files contain detailed information about what happened and can help identify issues.

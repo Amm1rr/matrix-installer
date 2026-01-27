@@ -19,10 +19,11 @@ set -o pipefail
 # ===========================================
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SCRIPT_NAME="$(basename "${BASH_SOURCE[0]}")"
 WORKING_DIR="$(pwd)"
 CERTS_DIR="${WORKING_DIR}/certs"
 ADDONS_DIR="${WORKING_DIR}/addons"
-LOG_FILE="${WORKING_DIR}/main.log"
+LOG_FILE="${WORKING_DIR}/matrix-installer.log"
 
 # SSL Certificate settings
 SSL_COUNTRY="IR"
@@ -495,7 +496,7 @@ ssl_manager_init() {
     # Create certs directory
     mkdir -p "$CERTS_DIR"
 
-    # Detect Root CA files next to main.sh
+    # Detect Root CA files next to ${SCRIPT_NAME}
     detect_root_ca_files
 }
 
@@ -504,7 +505,7 @@ detect_root_ca_files() {
     ROOT_CA_SOURCE_PATH=""
     ROOT_CA_FILES=()  # Array to store found Root CA file names
 
-    # Find all .key/.crt pairs next to main.sh
+    # Find all .key/.crt pairs next to ${SCRIPT_NAME}
     mapfile -t ROOT_CA_FILES < <(detect_root_ca_files_next_to_script)
 
     if [[ ${#ROOT_CA_FILES[@]} -gt 0 ]]; then

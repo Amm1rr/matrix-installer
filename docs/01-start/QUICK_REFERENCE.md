@@ -6,7 +6,7 @@ This is a quick reference guide for Matrix Installer. For complete documentation
 
 ```bash
 cd /path/to/script
-./main.sh
+./matrix-installer.sh
 ```
 
 ## Menu System
@@ -45,7 +45,7 @@ The addon list (options 2-5) is dynamic—all addons in `addons/` appear here.
 
 ```
 script/
-├── main.sh                 # Main orchestrator
+├── matrix-installer.sh     # Main orchestrator
 ├── certs/                  # Certificate storage
 │   ├── rootCA.key          # Root Key private key
 │   ├── rootCA.crt          # Root Key certificate
@@ -63,21 +63,21 @@ script/
 
 ### First Time Setup
 
-1. Run `./main.sh`
+1. Run `./matrix-installer.sh`
 2. Choose "Generate new Root Key"
 3. Choose "Generate server certificate"
 4. Select an addon to install
 
 ### Adding Another Server
 
-1. Run `./main.sh`
+1. Run `./matrix-installer.sh`
 2. Choose "Generate server certificate" (for new server)
 3. Select an addon to install
 
 ### Reusing an Existing Root Key
 
-1. Copy `rootCA.key` and `rootCA.crt` next to `main.sh`
-2. Run `./main.sh`
+1. Copy `rootCA.key` and `rootCA.crt` next to `matrix-installer.sh`
+2. Run `./matrix-installer.sh`
 3. Accept the prompt to use existing Root Key
 
 ## Environment Variables Passed to Addons
@@ -93,14 +93,14 @@ script/
 
 ## Log Files
 
-- `main.log` - Main script log
+- `matrix-installer.log` - Main script log
 - `ansible-synapse.log` - Ansible addon log (if used)
 
 ## Troubleshooting
 
 | Problem | Solution |
 |---------|----------|
-| Root Key not detected | Check that both `rootCA.key` and `rootCA.crt` exist next to `main.sh` |
+| Root Key not detected | Check that both `rootCA.key` and `rootCA.crt` exist next to `matrix-installer.sh` |
 | Certificate errors | Regenerate server certificate from menu |
 | Addon not showing | Check `install.sh` has `ADDON_NAME` in first 15 lines |
 | Installation failed | Check relevant log file in working directory |

@@ -29,10 +29,10 @@ Matrix Installer is a modular installation system for Matrix homeservers. The pr
 
 ```bash
 # Main entry point - starts the interactive CLI
-./main.sh
+./matrix-installer.sh
 
 # View logs
-cat main.log
+cat matrix-installer.log
 cat addons/*/install.log  # Addon-specific logs
 
 # Check certificate structure
