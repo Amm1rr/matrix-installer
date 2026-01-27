@@ -1215,59 +1215,92 @@ check_status() {
         fi
     fi
 
-    echo ""
-    echo -e "${BLUE}=== Docker Containers ===${NC}"
-
+    # Collect all information first
     local containers
-    containers=$(run_remote_command "docker ps --format 'table {{.Names}}\t{{.Status}}\t{{.Ports}}' | grep -E 'matrix|NAMES' || echo 'No Matrix containers found'")
-
-    if echo "$containers" | grep -q "No Matrix"; then
-        print_message "warning" "No Matrix containers running"
-    else
-        echo "$containers"
-    fi
-
-    echo ""
-    echo -e "${BLUE}=== Systemd Services ===${NC}"
-
     local services
-    services=$(run_remote_command "systemctl list-units --type=service --state=running --all | grep matrix || echo 'No Matrix services found'")
-
-    if echo "$services" | grep -q "No Matrix"; then
-        print_message "warning" "No Matrix systemd services found"
-    else
-        run_remote_command "systemctl is-active matrix-* 2>/dev/null || true" | while read -r line; do
-            if [[ -n "$line" ]]; then
-                echo "  $line"
-            fi
-        done
-    fi
-
-    echo ""
-    echo -e "${BLUE}=== Directory & Files ===${NC}"
-
     local matrix_dir
+    local volumes
+    local container_count=0
+    local service_count=0
+
+    containers=$(run_remote_command "docker ps --format '{{.Names}}' | grep '^matrix-' || echo ''" true)
+    container_count=$(echo "$containers" | grep -c "^matrix-" || true)
+
+    services=$(run_remote_command "systemctl list-units --type=service --state=running --all | grep '^matrix-' | wc -l" true)
+    service_count=$(echo "$services" | tr -d ' ')
+
     matrix_dir=$(run_remote_command "test -d /matrix && echo 'EXISTS' || echo 'NOT_FOUND'" true)
 
+    volumes=$(run_remote_command "docker volume ls -q | grep '^matrix' || echo ''" true)
+
+    # Determine overall status
+    local status=""
+    local status_color=""
+    local status_details=""
+
+    if [[ "$matrix_dir" != *"EXISTS"* ]]; then
+        status="NOT INSTALLED"
+        status_color="${RED}"
+        status_details="No Matrix installation found"
+    elif [[ $container_count -eq 0 ]]; then
+        status="INSTALLED (NOT RUNNING)"
+        status_color="${YELLOW}"
+        status_details="/matrix exists but no containers running"
+    elif [[ $container_count -gt 0 ]]; then
+        status="RUNNING"
+        status_color="${GREEN}"
+        status_details="$container_count container(s) running"
+    fi
+
+    # Show summary at top
+    echo ""
+    echo -e "╔══════════════════════════════════════════════════════════╗"
+    echo -e "║                 Matrix Installation Status               ║"
+    echo -e "╚══════════════════════════════════════════════════════════╝"
+    echo ""
+    echo -e "${status_color}  ${status}${NC}"
+    echo -e "${status_color}  ${status_details}${NC}"
+
+    # Only show details if Matrix is installed (directory exists)
     if [[ "$matrix_dir" == *"EXISTS"* ]]; then
+        echo ""
+        echo -e "${BLUE}=== Docker Containers ===${NC}"
+
+        if [[ $container_count -eq 0 ]]; then
+            print_message "warning" "No Matrix containers running"
+        else
+            run_remote_command "docker ps --format 'table {{.Names}}\t{{.Status}}\t{{.Ports}}' | grep -E 'matrix|NAMES'" || true
+        fi
+
+        echo ""
+        echo -e "${BLUE}=== Systemd Services ===${NC}"
+
+        if [[ $service_count -eq 0 ]] || [[ "$service_count" == "0" ]]; then
+            print_message "warning" "No Matrix systemd services found"
+        else
+            run_remote_command "systemctl is-active matrix-* 2>/dev/null || true" | while read -r line; do
+                if [[ -n "$line" ]]; then
+                    echo "  $line"
+                fi
+            done
+        fi
+
+        echo ""
+        echo -e "${BLUE}=== Directory & Files ===${NC}"
+
         print_message "success" "/matrix directory exists"
         echo ""
         echo "  Directory structure:"
         run_remote_command "ls -lh /matrix/ 2>/dev/null | head -20" || true
-    else
-        print_message "warning" "/matrix directory not found"
-    fi
 
-    echo ""
-    echo -e "${BLUE}=== Docker Volumes ===${NC}"
+        echo ""
+        echo -e "${BLUE}=== Docker Volumes ===${NC}"
 
-    local volumes
-    volumes=$(run_remote_command "docker volume ls | grep matrix || echo 'No Matrix volumes found'" true)
-
-    if [[ "$volumes" == *"No Matrix"* ]]; then
-        print_message "warning" "No Matrix volumes found"
-    else
-        echo "$volumes"
+        if [[ -z "$volumes" ]]; then
+            print_message "warning" "No Matrix volumes found"
+        else
+            run_remote_command "docker volume ls | grep matrix" || true
+        fi
     fi
 
     echo ""
