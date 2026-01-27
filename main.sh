@@ -52,9 +52,47 @@ ACTIVE_SERVER=""  # Currently selected server for addon installation
 ACTIVE_ROOT_CA_DIR=""  # Currently active Root CA directory
 SELECTED_ROOT_CA_BASE=""  # Selected Root CA base name from files next to script
 
+# Menu choice constants (for user input handling)
+MENU_CHOICE_BACK="0"
+MENU_CHOICE_NEW="N"
+
+# Menu return codes
+MENU_RETURN_SUCCESS=0
+MENU_RETURN_NEW=1
+MENU_RETURN_BACK=3
+
 # ===========================================
 # HELPER FUNCTIONS
 # ===========================================
+
+# Check if menu choice is special (back, new, etc.)
+# Returns: 0=back, 1=new, 2=numeric
+check_menu_choice_type() {
+    local choice="$1"
+
+    # Empty input = Back
+    if [[ -z "$choice" ]]; then
+        return 0
+    fi
+
+    # Back option
+    if [[ "$choice" == "$MENU_CHOICE_BACK" ]]; then
+        return 0
+    fi
+
+    # New option (case-insensitive)
+    if [[ "$choice" == "$MENU_CHOICE_NEW" ]] || [[ "$choice" == "${MENU_CHOICE_NEW,,}" ]]; then
+        return 1
+    fi
+
+    # Check if numeric
+    if [[ "$choice" =~ ^[0-9]+$ ]]; then
+        return 2
+    fi
+
+    # Invalid
+    return 255
+}
 
 print_message() {
     local msg_type="$1"
@@ -503,20 +541,34 @@ prompt_select_root_ca_from_files() {
 
         # Handle empty input (Enter) as Skip
         if [[ -z "$choice" ]]; then
-            choice=$index
+            SELECTED_ROOT_CA_BASE=""
+            return 1  # Skip
         fi
 
-        if [[ "$choice" -ge 1 ]] && [[ "$choice" -lt $index ]]; then
-            SELECTED_ROOT_CA_BASE="${found_files[$((choice-1))]}"
-            return 0
-        elif [[ "$choice" -eq $index ]]; then
-            SELECTED_ROOT_CA_BASE=""
-            return 1
-        elif [[ "$choice" -eq 0 ]]; then
-            return 3  # Back to previous menu
-        else
-            print_message "error" "Invalid choice"
-        fi
+        # Check choice type
+        check_menu_choice_type "$choice"
+        local choice_type=$?
+
+        case $choice_type in
+            0)  # Back
+                return $MENU_RETURN_BACK
+                ;;
+            1)  # New - not applicable here
+                print_message "error" "Invalid choice"
+                ;;
+            2)  # Numeric - validate range
+                if [[ "$choice" -ge 1 ]] && [[ "$choice" -lt $index ]]; then
+                    SELECTED_ROOT_CA_BASE="${found_files[$((choice-1))]}"
+                    return 0
+                elif [[ "$choice" -eq $index ]]; then
+                    SELECTED_ROOT_CA_BASE=""
+                    return 1  # Skip
+                fi
+                ;;
+        esac
+
+        # Invalid choice
+        print_message "error" "Invalid choice"
     done
 }
 
@@ -665,25 +717,29 @@ prompt_select_root_ca_from_certs() {
     while true; do
         read -rp "Select active Root Key (0-$((index-1)), N=New): " choice || true
 
-        # Handle empty input (Enter) as Back to previous menu
-        if [[ -z "$choice" ]]; then
-            choice=0
-        fi
+        # Check choice type
+        check_menu_choice_type "$choice"
+        local choice_type=$?
 
-        # Check for N/n first (before numeric comparison)
-        if [[ "$choice" == "N" ]] || [[ "$choice" == "n" ]]; then
-            return 1  # User wants to create new
-        elif [[ "$choice" == "0" ]]; then
-            return 3  # Back to previous menu
-        # Now safe to do numeric comparison
-        elif [[ "$choice" =~ ^[0-9]+$ ]] && [[ "$choice" -ge 1 ]] && [[ "$choice" -le ${#root_cas[@]} ]]; then
-            local selected_root_ca="${root_cas[$((choice-1))]}"
-            ACTIVE_ROOT_CA_DIR="${CERTS_DIR}/${selected_root_ca}"
-            print_message "success" "Selected Root Key: ${selected_root_ca}"
-            return 0
-        else
-            print_message "error" "Invalid choice"
-        fi
+        case $choice_type in
+            0)  # Back
+                return $MENU_RETURN_BACK
+                ;;
+            1)  # New
+                return $MENU_RETURN_NEW
+                ;;
+            2)  # Numeric - validate range
+                if [[ "$choice" -ge 1 ]] && [[ "$choice" -le ${#root_cas[@]} ]]; then
+                    local selected_root_ca="${root_cas[$((choice-1))]}"
+                    ACTIVE_ROOT_CA_DIR="${CERTS_DIR}/${selected_root_ca}"
+                    print_message "success" "Selected Root Key: ${selected_root_ca}"
+                    return 0
+                fi
+                ;;&
+        esac
+
+        # If we reach here, choice was invalid
+        print_message "error" "Invalid choice"
     done
 }
 
@@ -1178,8 +1234,8 @@ menu_with_root_key() {
                 exit 0
                 ;;
             *)
-                # Check if it's an addon choice
-                if [[ "$choice" -ge $addon_index_start ]] && [[ "$choice" -le $last_addon_index ]]; then
+                # Check if it's an addon choice (must be numeric first)
+                if [[ "$choice" =~ ^[0-9]+$ ]] && [[ "$choice" -ge $addon_index_start ]] && [[ "$choice" -le $last_addon_index ]]; then
                     local selected_addon="${addons[$((choice - addon_index_start))]}"
                     # Run addon with error handling - return to menu on failure
                     set +e
@@ -1336,31 +1392,50 @@ menu_run_addon() {
 
         read -rp "Select server (1-$index): " choice || true
 
-        if [[ "$choice" -ge 1 ]] && [[ "$choice" -lt $index ]]; then
-            selected_server="${servers[$((choice-1))]}"
-        elif [[ "$choice" -eq $index ]]; then
-            # Create new certificate
-            local new_server
-            local detected_ip
-            detected_ip="$(get_detected_ip)"
+        # Check choice type first
+        check_menu_choice_type "$choice"
+        local choice_type=$?
 
-            while true; do
-                new_server="$(prompt_user "Enter server IP address or domain" "$detected_ip")"
-                if [[ -n "$new_server" ]]; then
-                    break
-                fi
-                echo "Server name cannot be empty. Please try again."
-            done
-
-            if ! ssl_manager_generate_server_cert "$new_server"; then
-                print_message "error" "Failed to generate server certificate"
+        case $choice_type in
+            0)  # Back - not applicable in this menu
+                print_message "error" "Invalid choice"
                 return 1
-            fi
-            selected_server="$new_server"
-        else
-            print_message "error" "Invalid choice"
-            return 1
-        fi
+                ;;
+            1)  # New - check for special value
+                # In this menu, the "new" option is the index value (not N)
+                if [[ "$choice" == "$MENU_CHOICE_NEW" ]] || [[ "$choice" == "${MENU_CHOICE_NEW,,}" ]]; then
+                    print_message "error" "Invalid choice"
+                    return 1
+                fi
+                ;;&
+            2)  # Numeric
+                if [[ "$choice" -ge 1 ]] && [[ "$choice" -lt $index ]]; then
+                    selected_server="${servers[$((choice-1))]}"
+                elif [[ "$choice" -eq $index ]]; then
+                    # Create new certificate
+                    local new_server
+                    local detected_ip
+                    detected_ip="$(get_detected_ip)"
+
+                    while true; do
+                        new_server="$(prompt_user "Enter server IP address or domain" "$detected_ip")"
+                        if [[ -n "$new_server" ]]; then
+                            break
+                        fi
+                        echo "Server name cannot be empty. Please try again."
+                    done
+
+                    if ! ssl_manager_generate_server_cert "$new_server"; then
+                        print_message "error" "Failed to generate server certificate"
+                        return 1
+                    fi
+                    selected_server="$new_server"
+                else
+                    print_message "error" "Invalid choice"
+                    return 1
+                fi
+                ;;
+        esac
     fi
 
     # Set active server
