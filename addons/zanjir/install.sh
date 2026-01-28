@@ -1364,6 +1364,7 @@ check_status() {
     local volumes
     local volume_count=0
     local expected_containers=4  # postgres, dendrite, element, nginx (element-copy is utility)
+    local expected_volumes=6     # postgres-data, dendrite-media, dendrite-jetstream, dendrite-search, web-data, element-web
 
     # Check directory
     if [[ -d "$MATRIX_BASE" ]]; then
@@ -1398,15 +1399,27 @@ check_status() {
         ssl_ca="NOT_FOUND"
     fi
 
-    # Get zanjir- containers
+    # Get zanjir- containers (try without sudo first, then with sudo)
     containers=$(docker ps --format '{{.Names}}' 2>/dev/null | grep '^zanjir-' || echo '')
-    container_count=$(echo "$containers" | grep -c '^zanjir-' 2>/dev/null || echo 0)
-    container_count=$(echo "$container_count" | tr -d '[:space:]')
+    if [[ -z "$containers" ]]; then
+        containers=$(sudo docker ps --format '{{.Names}}' 2>/dev/null | grep '^zanjir-' || echo '')
+    fi
+    if [[ -n "$containers" ]]; then
+        container_count=$(echo "$containers" | wc -l)
+    else
+        container_count=0
+    fi
 
-    # Get zanjir- volumes
+    # Get zanjir- volumes (try without sudo first, then with sudo)
     volumes=$(docker volume ls --format '{{.Name}}' 2>/dev/null | grep '^zanjir-' || echo '')
-    volume_count=$(echo "$volumes" | grep -c '^zanjir-' 2>/dev/null || echo 0)
-    volume_count=$(echo "$volume_count" | tr -d '[:space:]')
+    if [[ -z "$volumes" ]]; then
+        volumes=$(sudo docker volume ls --format '{{.Name}}' 2>/dev/null | grep '^zanjir-' || echo '')
+    fi
+    if [[ -n "$volumes" ]]; then
+        volume_count=$(echo "$volumes" | wc -l)
+    else
+        volume_count=0
+    fi
 
     # Determine overall status
     local status=""
@@ -1452,7 +1465,12 @@ check_status() {
         print_message "info" "Containers (zanjir- prefix):"
         echo ""
         if [[ $container_count -gt 0 ]]; then
-            docker ps --filter "name=zanjir-" --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}" 2>/dev/null
+            local container_output
+            container_output=$(docker ps --filter "name=zanjir-" --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}" 2>/dev/null)
+            if [[ -z "$container_output" ]]; then
+                container_output=$(sudo docker ps --filter "name=zanjir-" --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}" 2>/dev/null)
+            fi
+            echo "$container_output"
         else
             echo "  No zanjir containers running"
         fi
@@ -1490,7 +1508,7 @@ check_status() {
 
         # Expected Services
         echo ""
-        print_message "info" "Expected containers ($expected_containers):"
+        print_message "info" "Expected containers (${container_count}/${expected_containers}):"
         echo "  - zanjir-postgres (PostgreSQL database)"
         echo "  - zanjir-dendrite (Matrix homeserver)"
         echo "  - zanjir-element (Element Web client)"
@@ -1498,7 +1516,7 @@ check_status() {
 
         # Expected Volumes
         echo ""
-        print_message "info" "Expected volumes (6):"
+        print_message "info" "Expected volumes (${volume_count}/${expected_volumes}):"
         echo "  - zanjir-postgres-data"
         echo "  - zanjir-dendrite-media"
         echo "  - zanjir-dendrite-jetstream"

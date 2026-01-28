@@ -1028,7 +1028,7 @@ check_status() {
 
         # Expected Services
         echo ""
-        print_message "info" "Expected services ($expected_containers):"
+        print_message "info" "Expected services (${container_count}/${expected_containers}):"
         echo "  - traefik (reverse proxy v3.6)"
         echo "  - postgres (database)"
         echo "  - synapse (Matrix homeserver)"
