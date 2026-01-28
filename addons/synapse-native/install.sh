@@ -24,6 +24,7 @@ RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
+GRAY='\033[0;90m'
 NC='\033[0m'
 
 # OS Detection Result
@@ -1307,14 +1308,14 @@ print_installation_summary() {
     echo ""
 
     # Access URLs
-    echo "Access URLs:"
-    echo "  - Synapse: https://${SERVER_NAME}:8448"
+    echo -e "${BLUE}Access URLs:${NC}"
+    echo -e "  ${GREEN}➜${NC} Synapse:       https://${SERVER_NAME}:8448"
     if systemctl is-active --quiet nginx 2>/dev/null; then
         if [[ -d "/var/www/element" ]]; then
-            echo "  - Element Web: https://${SERVER_NAME}/element"
+            echo -e "  ${GREEN}➜${NC} Element Web:   https://${SERVER_NAME}/element"
         fi
         if [[ -d "/var/www/synapse-admin" ]]; then
-            echo "  - Synapse Admin: https://${SERVER_NAME}/synapse-admin"
+            echo -e "  ${GREEN}➜${NC} Synapse Admin: https://${SERVER_NAME}/synapse-admin"
         fi
     fi
 
@@ -1322,24 +1323,24 @@ print_installation_summary() {
 
     # Admin user info
     if [[ "$admin_created" == "true" ]] && [[ -n "$admin_username" ]]; then
-        echo "Admin User:"
-        echo "  - Username: ${admin_username}"
-        echo "  - Credentials saved to: ${WORKING_DIR}/synapse-credentials.txt"
+        echo -e "${BLUE}Admin User:${NC}"
+        echo -e "  ${YELLOW}➜${NC} Username:    ${admin_username}"
+        echo -e "  ${YELLOW}➜${NC} Credentials: ${WORKING_DIR}/synapse-credentials.txt"
         echo ""
     fi
 
     # Service management commands
-    echo "Service Management:"
-    echo "  - PostgreSQL: sudo systemctl status postgresql"
-    echo "  - Synapse: sudo systemctl status ${synapse_service}"
+    echo -e "${BLUE}Service Management:${NC}"
+    echo -e "  ${GRAY}➜${NC} sudo systemctl status postgresql"
+    echo -e "  ${GRAY}➜${NC} sudo systemctl status ${synapse_service}"
     if systemctl is-enabled --quiet nginx 2>/dev/null; then
-        echo "  - nginx: sudo systemctl status nginx"
+        echo -e "  ${GRAY}➜${NC} sudo systemctl status nginx"
     fi
 
     echo ""
 
     # Log file
-    echo "Log file: $LOG_FILE"
+    echo -e "${BLUE}Log file:${NC} ${GRAY}${LOG_FILE}${NC}"
     echo ""
 }
 
