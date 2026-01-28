@@ -245,6 +245,8 @@ EOF
     REGISTRATION_SHARED_SECRET="$(rand_secret)"
     POSTGRES_PASSWORD="$(rand_secret)"
     ADMIN_PASSWORD="$(rand_secret)"
+    MACAROON_SECRET_KEY="$(rand_secret)"
+    FORM_SECRET="$(rand_secret)"
 
     # Get public IP
     print_message "info" "Detecting public IP..."
@@ -277,23 +279,6 @@ install_matrix() {
 
     # Configure DuckDNS
     configure_duckdns
-
-    # Root privilege check
-    if [[ $EUID -ne 0 ]]; then
-        print_message "warning" "This installation requires root privileges"
-        if [[ "$(prompt_yes_no "Continue with sudo?" "y")" != "yes" ]]; then
-            print_message "info" "Installation cancelled"
-            exit 0
-        fi
-
-        # Export configuration for sudo execution
-        export DUCKDNS_TOKEN DOMAIN_SUB MAX_REG_DEFAULT ENABLE_REGISTRATION
-        export REGISTRATION_SHARED_SECRET POSTGRES_PASSWORD ADMIN_PASSWORD
-        export PUBLIC_IP CLEAN_HOST DOMAIN EMAIL
-
-        print_message "info" "Restarting with sudo..."
-        exec sudo bash "$0" "$@"
-    fi
 
     # Check if already installed
     if [[ -d "$MATRIX_BASE" ]]; then
@@ -348,16 +333,31 @@ services:
       - POSTGRES_DB=synapsedb
       - POSTGRES_USER=synapse
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_INITDB_ARGS=-E UTF8 --locale=C
     volumes: ["./data/postgres:/var/lib/postgresql/data"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U synapse -d synapsedb"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
     networks: [matrix]
 
   synapse:
     image: ghcr.io/matrix-org/synapse:latest
-    depends_on: [postgres]
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
     volumes: ["./data/synapse:/data"]
     environment:
       SYNAPSE_SERVER_NAME: ${DOMAIN}
       SYNAPSE_REPORT_STATS: "no"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fSs http://localhost:8008/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.synapse.rule=Host(\`${DOMAIN}\`) && (PathPrefix(\`/_matrix\`) || PathPrefix(\`/_synapse\`))"
@@ -389,13 +389,24 @@ EOF
     print_message "info" "Cleaning up old containers..."
     docker compose down --remove-orphans 2>/dev/null || true
 
-    # Initialize Synapse
-    print_message "info" "Initializing Synapse..."
-    docker compose run --rm synapse generate || true
+    # Create synapse data directory
+    print_message "info" "Creating synapse data directory..."
+    mkdir -p data/synapse
 
-    # Write Homeserver Config
-    print_message "info" "Configuring Synapse..."
-    cat >> data/synapse/homeserver.yaml <<EOF
+    # Create homeserver.yaml from scratch (same pattern as docker-synapse-root-key)
+    print_message "info" "Creating homeserver configuration..."
+    cat > data/synapse/homeserver.yaml <<EOF
+# Configuration file for Synapse
+server_name: "${DOMAIN}"
+pid_file: /data/homeserver.pid
+listeners:
+  - port: 8008
+    tls: false
+    type: http
+    x_forwarded: true
+    resources:
+      - names: [client, federation]
+        compress: false
 database:
   name: psycopg2
   args:
@@ -403,22 +414,69 @@ database:
     password: ${POSTGRES_PASSWORD}
     database: synapsedb
     host: postgres
-enable_registration: ${ENABLE_REGISTRATION}
+media_store_path: /data/media_store
 registration_shared_secret: "${REGISTRATION_SHARED_SECRET}"
+report_stats: false
+macaroon_secret_key: "${MACAROON_SECRET_KEY}"
+form_secret: "${FORM_SECRET}"
+signing_key_path: "/data/${DOMAIN}.signing.key"
 EOF
+
+    # Fix ownership of synapse data files (synapse runs as UID 991)
+    chown -R 991:991 data/synapse/
+
+    # Add registration settings
+    cat >> data/synapse/homeserver.yaml <<EOF
+enable_registration: ${ENABLE_REGISTRATION}
+enable_registration_without_verification: true
+EOF
+
+    # Fix ownership again after modifications
+    chown -R 991:991 data/synapse/
 
     # Start services
     print_message "info" "Starting services and generating SSL certificates..."
     print_message "warning" "This may take 1-2 minutes..."
     docker compose up -d
 
-    # Wait for SSL certificate generation
-    print_message "info" "Waiting for SSL certificate (approximately 45 seconds)..."
-    sleep 45
+    # Wait for SSL certificate generation and synapse startup
+    print_message "info" "Waiting for services to start (this may take 1-2 minutes)..."
+
+    local max_wait=120
+    local waited=0
+    local synapse_ready=false
+
+    while [[ $waited -lt $max_wait ]]; do
+        # Check if synapse container is running
+        if docker compose ps -q synapse 2>/dev/null | grep -q . && \
+           docker compose exec -T synapse curl -fSs http://localhost:8008/health &>/dev/null 2>&1; then
+            synapse_ready=true
+            break
+        fi
+        sleep 5
+        waited=$((waited + 5))
+        echo -n "."
+    done
+    echo ""
+
+    if [[ "$synapse_ready" != "true" ]]; then
+        print_message "warning" "Synapse did not start within ${max_wait} seconds"
+        print_message "info" "Checking synapse logs for errors..."
+        docker compose logs --tail=30 synapse 2>/dev/null || true
+        print_message "warning" "Admin user creation may fail"
+    else
+        print_message "success" "Synapse is ready (took ${waited} seconds)"
+    fi
 
     # Create Admin User
     print_message "info" "Creating admin user..."
-    docker compose exec -T synapse register_new_matrix_user -u admin -p "${ADMIN_PASSWORD}" -a -c /data/homeserver.yaml || true
+    if docker compose exec -T synapse register_new_matrix_user -u admin -p "${ADMIN_PASSWORD}" -a -c /data/homeserver.yaml 2>/dev/null; then
+        print_message "success" "Admin user created successfully"
+    else
+        print_message "warning" "Failed to create admin user automatically"
+        print_message "info" "You can create it manually later with:"
+        echo "  cd ${MATRIX_BASE} && docker compose exec synapse register_new_matrix_user -u admin -a -c /data/homeserver.yaml"
+    fi
 
     # Print summary
     print_summary
@@ -445,10 +503,21 @@ uninstall_matrix() {
         return 0
     fi
 
+    # Root privilege check
+    if [[ $EUID -ne 0 ]]; then
+        print_message "warning" "Uninstall requires root privileges"
+        if [[ "$(prompt_yes_no "Continue with sudo?" "y")" != "yes" ]]; then
+            print_message "info" "Uninstall cancelled"
+            return 0
+        fi
+        print_message "info" "Restarting with sudo..."
+        exec sudo -E bash "$0" --uninstall
+    fi
+
     cd "$MATRIX_BASE" || { print_message "error" "Cannot access ${MATRIX_BASE}"; return 1; }
 
     print_message "info" "Stopping and removing containers..."
-    docker compose down -v 2>/dev/null || true
+    docker compose down -v 2>/dev/null || sudo docker compose down -v 2>/dev/null || true
 
     cd /
     print_message "info" "Removing installation directory..."
@@ -632,6 +701,20 @@ main() {
     mkdir -p "$(dirname "$LOG_FILE")"
     echo "docker-compose-synapse addon log - $(date)" > "$LOG_FILE"
 
+    # Check for --install flag (for sudo re-exec)
+    if [[ "${1:-}" == "--install" ]]; then
+        # Skip menu, go directly to installation
+        install_matrix "$@"
+        return $?
+    fi
+
+    # Check for --uninstall flag (for sudo re-exec)
+    if [[ "${1:-}" == "--uninstall" ]]; then
+        # Skip menu, go directly to uninstallation
+        uninstall_matrix
+        return $?
+    fi
+
     # Banner
     cat <<'EOF'
 ╔══════════════════════════════════════════════════════════╗
@@ -663,6 +746,16 @@ EOF
 
         case "$choice" in
             1)
+                # Check for sudo before starting installation
+                if [[ $EUID -ne 0 ]]; then
+                    print_message "warning" "Installation requires root privileges"
+                    if [[ "$(prompt_yes_no "Continue with sudo?" "y")" != "yes" ]]; then
+                        print_message "info" "Installation cancelled"
+                        continue
+                    fi
+                    print_message "info" "Restarting with sudo..."
+                    exec sudo -E bash "$0" --install
+                fi
                 install_matrix "$@"
                 break
                 ;;
