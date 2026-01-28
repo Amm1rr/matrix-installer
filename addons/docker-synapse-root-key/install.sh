@@ -945,7 +945,11 @@ check_status() {
     # Get containers
     if [[ "$matrix_dir" == "EXISTS" ]] && cd "$MATRIX_BASE" 2>/dev/null; then
         containers=$(docker compose ps --format '{{.Name}}' 2>/dev/null | grep -v '^$' || echo '')
-        container_count=$(echo "$containers" | grep -c '.' || echo 0)
+        if [[ -n "$containers" ]]; then
+            container_count=$(echo "$containers" | wc -l)
+        else
+            container_count=0
+        fi
         cd - > /dev/null
     fi
 
