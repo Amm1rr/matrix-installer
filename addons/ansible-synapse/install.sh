@@ -77,16 +77,9 @@ HAS_ANSIBLE=false
 HAS_GIT=false
 HAS_PYTHON=false
 
-INSTALLATION_MODE=""
+INSTALLATION_MODE="local"
 SERVER_IP=""
 SERVER_IS_IP=""
-SERVER_USER=""
-SERVER_PORT=""
-SSH_HOST=""
-USE_SSH_KEY=""
-SSH_KEY_PATH=""
-SSH_PASSWORD=""
-SUDO_PASSWORD=""
 
 MATRIX_SECRET=""
 POSTGRES_PASSWORD=""
@@ -1143,40 +1136,17 @@ ANSIBLE-SYNAPSE INSTALLATION COMPLETE
 }
 
 # ===========================================
-# HELPER: Run command on target
+# HELPER: Run command with sudo
 # ===========================================
 
-run_remote_command() {
+run_sudo_command() {
     local cmd="$1"
     local silent="${2:-false}"
 
-    if [[ "$INSTALLATION_MODE" == "local" ]]; then
-        # Local mode: run directly with sudo (let sudo prompt for password)
-        if [[ "$silent" == "true" ]]; then
-            sudo sh -c "$cmd" 2>/dev/null
-        else
-            sudo sh -c "$cmd" 2>&1
-        fi
+    if [[ "$silent" == "true" ]]; then
+        sudo sh -c "$cmd" 2>/dev/null
     else
-        # Remote mode: use SSH with -t flag for interactive sudo prompt
-        local ssh_opts="-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=10 -t"
-        local ssh_auth=""
-
-        if [[ "$USE_SSH_KEY" == "yes" ]] && [[ -n "$SSH_KEY_PATH" ]]; then
-            ssh_opts="$ssh_opts -i $SSH_KEY_PATH"
-        fi
-
-        if [[ -n "$SSH_PASSWORD" ]]; then
-            ssh_auth="sshpass -p '$SSH_PASSWORD'"
-        fi
-
-        local ssh_cmd="$ssh_auth ssh $ssh_opts -p $SERVER_PORT ${SERVER_USER}@${SSH_HOST}"
-
-        if [[ "$silent" == "true" ]]; then
-            eval "$ssh_cmd \"sudo sh -c '$cmd'\" 2>/dev/null"
-        else
-            eval "$ssh_cmd \"sudo sh -c '$cmd'\" 2>&1"
-        fi
+        sudo sh -c "$cmd" 2>&1
     fi
 }
 
@@ -1187,34 +1157,6 @@ run_remote_command() {
 check_status() {
     print_message "info" "Checking Matrix status..."
 
-    # For remote mode, collect SSH info
-    if [[ "$INSTALLATION_MODE" == "remote" ]]; then
-        if [[ -z "${SSH_HOST:-}" ]] || [[ -z "${SERVER_USER:-}" ]] || [[ -z "${SERVER_PORT:-}" ]]; then
-            echo ""
-            SERVER_IP="$(prompt_user "Enter server IP address or domain")"
-            SERVER_USER="$(prompt_user "SSH username" "$DEFAULT_SSH_USER")"
-            SSH_HOST="$(prompt_user "SSH host" "$SERVER_IP")"
-            SERVER_PORT="$(prompt_user "SSH port" "22")"
-
-            if [[ "$(prompt_yes_no "Use custom SSH key?" "n")" == "yes" ]]; then
-                SSH_KEY_PATH="$(prompt_user "SSH key path" "$HOME/.ssh/id_rsa")"
-                USE_SSH_KEY="yes"
-            elif [[ "$(prompt_yes_no "Use password authentication?" "n")" == "yes" ]]; then
-                SSH_PASSWORD="$(prompt_user "SSH password")"
-                USE_SSH_KEY="no"
-            else
-                USE_SSH_KEY="no"
-            fi
-        fi
-
-        if [[ -n "$SSH_PASSWORD" ]] && ! command -v sshpass &> /dev/null; then
-            print_message "error" "sshpass is required for password authentication. Install it first:"
-            echo "  Ubuntu/Debian: sudo apt-get install -y sshpass"
-            echo "  Arch/Manjaro:  sudo pacman -S sshpass"
-            return 1
-        fi
-    fi
-
     # Collect all information first
     local containers
     local services
@@ -1223,15 +1165,15 @@ check_status() {
     local container_count=0
     local service_count=0
 
-    containers=$(run_remote_command "docker ps --format '{{.Names}}' | grep '^matrix-' || echo ''" true)
+    containers=$(run_sudo_command "docker ps --format '{{.Names}}' | grep '^matrix-' || echo ''" true)
     container_count=$(echo "$containers" | grep -c "^matrix-" || true)
 
-    services=$(run_remote_command "systemctl list-units --type=service --state=running --all | grep '^matrix-' | wc -l" true)
+    services=$(run_sudo_command "systemctl list-units --type=service --state=running --all | grep '^matrix-' | wc -l" true)
     service_count=$(echo "$services" | tr -d ' ')
 
-    matrix_dir=$(run_remote_command "test -d /matrix && echo 'EXISTS' || echo 'NOT_FOUND'" true)
+    matrix_dir=$(run_sudo_command "test -d /matrix && echo 'EXISTS' || echo 'NOT_FOUND'" true)
 
-    volumes=$(run_remote_command "docker volume ls -q | grep '^matrix' || echo ''" true)
+    volumes=$(run_sudo_command "docker volume ls -q | grep '^matrix' || echo ''" true)
 
     # Determine overall status
     local status=""
@@ -1269,7 +1211,7 @@ check_status() {
         if [[ $container_count -eq 0 ]]; then
             print_message "warning" "No Matrix containers running"
         else
-            run_remote_command "docker ps --format 'table {{.Names}}\t{{.Status}}\t{{.Ports}}' | grep -E 'matrix|NAMES'" || true
+            run_sudo_command "docker ps --format 'table {{.Names}}\t{{.Status}}\t{{.Ports}}' | grep -E 'matrix|NAMES'" || true
         fi
 
         echo ""
@@ -1278,7 +1220,7 @@ check_status() {
         if [[ $service_count -eq 0 ]] || [[ "$service_count" == "0" ]]; then
             print_message "warning" "No Matrix systemd services found"
         else
-            run_remote_command "systemctl is-active matrix-* 2>/dev/null || true" | while read -r line; do
+            run_sudo_command "systemctl is-active matrix-* 2>/dev/null || true" | while read -r line; do
                 if [[ -n "$line" ]]; then
                     echo "  $line"
                 fi
@@ -1291,7 +1233,7 @@ check_status() {
         print_message "success" "/matrix directory exists"
         echo ""
         echo "  Directory structure:"
-        run_remote_command "ls -lh /matrix/ 2>/dev/null | head -20" || true
+        run_sudo_command "ls -lh /matrix/ 2>/dev/null | head -20" || true
 
         echo ""
         echo -e "${BLUE}=== Docker Volumes ===${NC}"
@@ -1299,7 +1241,7 @@ check_status() {
         if [[ -z "$volumes" ]]; then
             print_message "warning" "No Matrix volumes found"
         else
-            run_remote_command "docker volume ls | grep matrix" || true
+            run_sudo_command "docker volume ls | grep matrix" || true
         fi
     fi
 
@@ -1312,34 +1254,6 @@ check_status() {
 # ===========================================
 
 uninstall_matrix() {
-    # For remote mode, collect SSH info
-    if [[ "$INSTALLATION_MODE" == "remote" ]]; then
-        if [[ -z "${SSH_HOST:-}" ]] || [[ -z "${SERVER_USER:-}" ]] || [[ -z "${SERVER_PORT:-}" ]]; then
-            echo ""
-            SERVER_IP="$(prompt_user "Enter server IP address or domain")"
-            SERVER_USER="$(prompt_user "SSH username" "$DEFAULT_SSH_USER")"
-            SSH_HOST="$(prompt_user "SSH host" "$SERVER_IP")"
-            SERVER_PORT="$(prompt_user "SSH port" "22")"
-
-            if [[ "$(prompt_yes_no "Use custom SSH key?" "n")" == "yes" ]]; then
-                SSH_KEY_PATH="$(prompt_user "SSH key path" "$HOME/.ssh/id_rsa")"
-                USE_SSH_KEY="yes"
-            elif [[ "$(prompt_yes_no "Use password authentication?" "n")" == "yes" ]]; then
-                SSH_PASSWORD="$(prompt_user "SSH password")"
-                USE_SSH_KEY="no"
-            else
-                USE_SSH_KEY="no"
-            fi
-        fi
-
-        if [[ -n "$SSH_PASSWORD" ]] && ! command -v sshpass &> /dev/null; then
-            print_message "error" "sshpass is required for password authentication. Install it first:"
-            echo "  Ubuntu/Debian: sudo apt-get install -y sshpass"
-            echo "  Arch/Manjaro:  sudo pacman -S sshpass"
-            return 1
-        fi
-    fi
-
     print_message "warning" "This will:"
     echo "  - Stop all Matrix services"
     echo "  - Remove Matrix Docker containers, volumes, and networks"
@@ -1355,27 +1269,27 @@ uninstall_matrix() {
 
     # Stop Matrix services (including timers and sockets)
     print_message "info" "Stopping Matrix services..."
-    run_remote_command "systemctl stop 'matrix-*' 2>/dev/null || true" >> "$LOG_FILE" 2>&1
+    run_sudo_command "systemctl stop 'matrix-*' 2>/dev/null || true" >> "$LOG_FILE" 2>&1
 
     # Remove containers
     print_message "info" "Removing Matrix containers..."
-    run_remote_command "docker ps -a --format '{{.Names}}' | grep '^matrix-' | xargs -r docker rm -f 2>/dev/null || true" >> "$LOG_FILE" 2>&1
+    run_sudo_command "docker ps -a --format '{{.Names}}' | grep '^matrix-' | xargs -r docker rm -f 2>/dev/null || true" >> "$LOG_FILE" 2>&1
 
     # Remove volumes
     print_message "info" "Removing Matrix volumes..."
-    run_remote_command "docker volume ls -q | grep '^matrix' | xargs -r docker volume rm -f 2>/dev/null || true" >> "$LOG_FILE" 2>&1
+    run_sudo_command "docker volume ls -q | grep '^matrix' | xargs -r docker volume rm -f 2>/dev/null || true" >> "$LOG_FILE" 2>&1
 
     # Remove networks
     print_message "info" "Removing Matrix Docker networks..."
-    run_remote_command "docker network ls --format '{{.Name}}' | grep '^matrix' | xargs -r docker network rm 2>/dev/null || true" >> "$LOG_FILE" 2>&1
+    run_sudo_command "docker network ls --format '{{.Name}}' | grep '^matrix' | xargs -r docker network rm 2>/dev/null || true" >> "$LOG_FILE" 2>&1
 
     # Remove systemd services (all types: service, timer, socket, etc.)
     print_message "info" "Removing systemd services..."
-    run_remote_command "rm -f /etc/systemd/system/matrix-*.* && systemctl daemon-reload && systemctl reset-failed 2>/dev/null || true" >> "$LOG_FILE" 2>&1
+    run_sudo_command "rm -f /etc/systemd/system/matrix-*.* && systemctl daemon-reload && systemctl reset-failed 2>/dev/null || true" >> "$LOG_FILE" 2>&1
 
     # Remove /matrix directory
     print_message "info" "Removing /matrix directory..."
-    run_remote_command "rm -rf /matrix" >> "$LOG_FILE" 2>&1
+    run_sudo_command "rm -rf /matrix" >> "$LOG_FILE" 2>&1
 
     # Ask about firewall rules
     echo ""
@@ -1383,7 +1297,7 @@ uninstall_matrix() {
         print_message "info" "Detecting firewall..."
 
         local firewall_output
-        firewall_output=$(run_remote_command "command -v ufw && echo 'ufw' || (command -v firewall-cmd && echo 'firewalld') || (iptables -nL >/dev/null 2>&1 && echo 'iptables') || echo 'none'" true)
+        firewall_output=$(run_sudo_command "command -v ufw && echo 'ufw' || (command -v firewall-cmd && echo 'firewalld') || (iptables -nL >/dev/null 2>&1 && echo 'iptables') || echo 'none'" true)
 
         local firewall_type
         firewall_type=$(echo "$firewall_output" | tr -d ' \n\r')
@@ -1391,12 +1305,12 @@ uninstall_matrix() {
         case "$firewall_type" in
             ufw)
                 print_message "info" "Removing UFW rules..."
-                run_remote_command "ufw delete allow 443/tcp && ufw delete allow 8448/tcp" >> "$LOG_FILE" 2>&1
+                run_sudo_command "ufw delete allow 443/tcp && ufw delete allow 8448/tcp" >> "$LOG_FILE" 2>&1
                 print_message "success" "UFW rules removed"
                 ;;
             firewalld)
                 print_message "info" "Removing firewalld rules..."
-                run_remote_command "firewall-cmd --permanent --remove-service=https && firewall-cmd --permanent --remove-port=8448/tcp && firewall-cmd --reload" >> "$LOG_FILE" 2>&1
+                run_sudo_command "firewall-cmd --permanent --remove-service=https && firewall-cmd --permanent --remove-port=8448/tcp && firewall-cmd --reload" >> "$LOG_FILE" 2>&1
                 print_message "success" "firewalld rules removed"
                 ;;
             iptables)
@@ -1424,36 +1338,14 @@ install_matrix() {
     # COLLECT SERVER INFO
     # ============================================
 
-    if [[ "$INSTALLATION_MODE" == "local" ]]; then
-        # Detect server IP
-        print_message "info" "Detecting server IP..."
-        SERVER_IP="$(ip route get 1 2>/dev/null | awk '{for(i=1;i<=NF;i++)if($i=="src"){print $(i+1);exit}}')"
-        if [[ -z "$SERVER_IP" ]]; then
-            SERVER_IP="$(ip -4 addr show 2>/dev/null | grep -oP '(?<=inet\s)\d+(\.\d+){3}' | grep -v '127.0.0.1' | head -n1)"
-        fi
-        # Prompt with detected IP as default
-        SERVER_IP="$(prompt_user "Enter server IP address or domain" "$SERVER_IP")"
-        SUDO_PASSWORD="$(prompt_user "Sudo password")"
-    else
-        # Remote mode
-        echo ""
-        SERVER_IP="$(prompt_user "Enter server IP address or domain")"
-        SERVER_USER="$(prompt_user "SSH username" "$DEFAULT_SSH_USER")"
-        SSH_HOST="$(prompt_user "SSH host" "$SERVER_IP")"
-        SERVER_PORT="$(prompt_user "SSH port" "22")"
-
-        if [[ "$(prompt_yes_no "Use custom SSH key?" "n")" == "yes" ]]; then
-            SSH_KEY_PATH="$(prompt_user "SSH key path" "$HOME/.ssh/id_rsa")"
-            USE_SSH_KEY="yes"
-        elif [[ "$(prompt_yes_no "Use password authentication?" "n")" == "yes" ]]; then
-            SSH_PASSWORD="$(prompt_user "SSH password")"
-            USE_SSH_KEY="no"
-        else
-            USE_SSH_KEY="no"
-        fi
-
-        SUDO_PASSWORD="$(prompt_user "Sudo password")"
+    # Detect server IP
+    print_message "info" "Detecting server IP..."
+    SERVER_IP="$(ip route get 1 2>/dev/null | awk '{for(i=1;i<=NF;i++)if($i=="src"){print $(i+1);exit}}')"
+    if [[ -z "$SERVER_IP" ]]; then
+        SERVER_IP="$(ip -4 addr show 2>/dev/null | grep -oP '(?<=inet\s)\d+(\.\d+){3}' | grep -v '127.0.0.1' | head -n1)"
     fi
+    # Prompt with detected IP as default
+    SERVER_IP="$(prompt_user "Enter server IP address or domain" "$SERVER_IP")"
 
     # Update SERVER_IS_IP based on final SERVER_IP
     if is_ip_address "$SERVER_IP"; then
