@@ -1353,73 +1353,90 @@ uninstall_matrix() {
 check_status() {
     print_message "info" "Checking Matrix status..."
 
-    if [[ ! -d "$MATRIX_BASE" ]]; then
-        print_message "warning" "Matrix is not installed"
-        return 0
-    fi
+    # Collect all information first
+    local matrix_dir
+    local compose_file
+    local containers
+    local container_count=0
 
-    if [[ ! -f "$MATRIX_BASE/docker-compose.yml" ]]; then
-        print_message "warning" "Matrix is not properly installed (docker-compose.yml not found)"
-        print_message "info" "Directory exists at: ${MATRIX_BASE}"
-        return 0
-    fi
-
-    print_message "success" "Matrix is installed at: ${MATRIX_BASE}"
-    echo ""
-
-    # Show all running Docker containers
-    print_message "info" "All running Docker containers:"
-    echo ""
-
-    local running_containers
-    running_containers=$(docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}" 2>/dev/null)
-
-    if [[ -n "$running_containers" ]]; then
-        echo "$running_containers"
-        echo ""
-        local total_running
-        total_running=$(docker ps --format "{{.Names}}" 2>/dev/null | wc -l)
-        print_message "success" "Total running containers: ${total_running}"
+    # Check directory
+    if [[ -d "$MATRIX_BASE" ]]; then
+        matrix_dir="EXISTS"
     else
-        print_message "warning" "No containers are currently running"
-        print_message "info" "Docker might not be running - check with: systemctl status docker"
+        matrix_dir="NOT_FOUND"
     fi
-    echo ""
 
-    # Check Matrix-specific containers
-    print_message "info" "Matrix containers status:"
-    echo ""
-
-    # Count running Matrix containers by name
-    local matrix_running_count
-    matrix_running_count=$(docker ps --format "{{.Names}}" 2>/dev/null | grep -c "^zanjir-" || echo "0")
-    matrix_running_count=$(echo "$matrix_running_count" | tr -d '[:space:]')
-
-    if [[ "$matrix_running_count" -gt 0 ]]; then
-        # Show Matrix container details
-        docker ps --filter "name=zanjir-" --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}" 2>/dev/null
-        echo ""
-        print_message "success" "Matrix services are running (${matrix_running_count} containers active)"
+    # Check docker-compose.yml
+    if [[ -f "$MATRIX_BASE/docker-compose.yml" ]]; then
+        compose_file="EXISTS"
     else
-        print_message "warning" "Matrix services are not running"
-        print_message "info" "Start them with: cd ${MATRIX_BASE} && docker compose up -d"
+        compose_file="NOT_FOUND"
     fi
+
+    # Get containers
+    if [[ "$matrix_dir" == "EXISTS" ]] && cd "$MATRIX_BASE" 2>/dev/null; then
+        containers=$(docker compose ps --format '{{.Name}}' 2>/dev/null | grep -v '^$' || echo '')
+        container_count=$(echo "$containers" | grep -c '.' || echo 0)
+        cd - > /dev/null
+    fi
+
+    # Determine overall status
+    local status=""
+    local status_color=""
+    local status_details=""
+
+    if [[ "$matrix_dir" != "EXISTS" ]]; then
+        status="NOT INSTALLED"
+        status_color="${RED}"
+        status_details="No Matrix installation found"
+    elif [[ "$compose_file" != "EXISTS" ]]; then
+        status="NOT INSTALLED"
+        status_color="${RED}"
+        status_details="Installation directory exists but docker-compose.yml not found"
+    elif [[ $container_count -eq 0 ]]; then
+        status="INSTALLED (NOT RUNNING)"
+        status_color="${YELLOW}"
+        status_details="docker-compose.yml exists but no containers running"
+    elif [[ $container_count -gt 0 ]]; then
+        status="RUNNING"
+        status_color="${GREEN}"
+        status_details="${container_count} service(s) running"
+    fi
+
+    # Show summary at top
     echo ""
+    echo -e "╔══════════════════════════════════════════════════════════╗"
+    echo -e "║                 Matrix Installation Status               ║"
+    echo -e "╚══════════════════════════════════════════════════════════╝"
+    echo ""
+    echo -e "${status_color}  ${status}${NC}"
+    echo -e "${status_color}  ${status_details}${NC}"
 
-    # Try docker compose ps for detailed status
-    local current_dir="$(pwd)"
-    if cd "$MATRIX_BASE" 2>/dev/null; then
-        local compose_output
-        compose_output=$(docker compose ps 2>&1)
-        local compose_exit=$?
+    # Only show details if Matrix is installed
+    if [[ "$matrix_dir" == "EXISTS" ]]; then
+        echo ""
 
-        if [[ $compose_exit -eq 0 && -n "$compose_output" ]]; then
-            print_message "info" "Docker Compose detailed status:"
-            echo "$compose_output"
+        # Services Section
+        print_message "info" "Services:"
+        echo ""
+        if [[ $container_count -gt 0 ]]; then
+            cd "$MATRIX_BASE" 2>/dev/null || return 1
+            docker compose ps 2>/dev/null
+            cd - > /dev/null
+
+            # Show URLs
+            echo ""
+            print_message "info" "Access URLs:"
+            echo "  - Element Web: https://${SERVER_NAME}"
+            echo "  - Mobile Guide: https://${SERVER_NAME}/mobile_guide"
+        else
+            echo "  No services running"
+            print_message "info" "Start them with: cd $MATRIX_BASE && docker compose up -d"
         fi
-
-        cd "$current_dir" 2>/dev/null || true
     fi
+
+    echo ""
+    print_message "success" "Status check completed"
 }
 
 # ===========================================
