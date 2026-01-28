@@ -406,14 +406,18 @@ setup_synapse_user_and_db() {
     local db_name="synapsedb"
     POSTGRES_PASSWORD="$(generate_password 32)"
 
-    # Create user and database
+    # Create user and database with C collation (required by Synapse)
     case "$DETECTED_OS" in
         ubuntu|arch)
+            # Drop database if it exists (to recreate with correct collation)
+            sudo -u postgres psql -c "DROP DATABASE IF EXISTS $db_name;" 2>/dev/null || true
+
+            # Create user
             sudo -u postgres createuser "$db_user" 2>/dev/null || true
             sudo -u postgres psql -c "ALTER USER $db_user PASSWORD '$POSTGRES_PASSWORD';"
-            sudo -u postgres createdb -O "$db_user" "$db_name" 2>/dev/null || {
-                print_message "warning" "Database may already exist, continuing..."
-            }
+
+            # Create database with C collation (Synapse requirement)
+            sudo -u postgres createdb --locale=C --encoding=UTF8 --template=template0 -O "$db_user" "$db_name"
             ;;
     esac
 
@@ -571,14 +575,13 @@ database:
     cp_min: 5
     cp_max: 10
 
-tls_certificate_path: \${config_dir}/${SERVER_NAME}.crt
-tls_private_key_path: \${config_dir}/${SERVER_NAME}.key
+tls_certificate_path: "${config_dir}/${SERVER_NAME}.crt"
+tls_private_key_path: "${config_dir}/${SERVER_NAME}.key"
 
 # Federation settings for Root Key
 federation_verify_certificates: false
-trust_signed_third_party_certificates: false
 
-# Trusted key servers (accept insecurely for self-signed cert federation)
+# Trusted key servers
 trusted_key_servers:
   - server_name: "matrix.org"
     accept_keys_insecurely: true
@@ -588,6 +591,7 @@ suppress_key_server_warning: true
 
 # Registration
 enable_registration: ${ENABLE_REGISTRATION}
+enable_registration_without_verification: true
 registration_shared_secret: "${REGISTRATION_SHARED_SECRET}"
 
 # Report stats
