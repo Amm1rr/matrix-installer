@@ -930,6 +930,13 @@ check_status() {
         ssl_cert="NOT_FOUND"
     fi
 
+    # Check Let's Encrypt SSL (for detecting other addon installations)
+    if [[ -f "$MATRIX_BASE/data/traefik/acme.json" ]]; then
+        acme_file="EXISTS"
+    else
+        acme_file="NOT_FOUND"
+    fi
+
     if [[ -f "$MATRIX_BASE/ssl/server.key" ]]; then
         ssl_key="EXISTS"
     else
@@ -1048,6 +1055,18 @@ check_status() {
 
     echo ""
     print_message "success" "Status check completed"
+
+    # Detect installation type for clear user feedback
+    if [[ "$matrix_dir" == "EXISTS" ]]; then
+        echo ""
+        if [[ "$ssl_cert" == "EXISTS" ]]; then
+            print_message "info" "Installation: Yes - Private Key (Root Key)"
+        elif [[ "$acme_file" == "EXISTS" ]]; then
+            print_message "warning" "Installation: No - Matrix is installed, but with a different way (not Private Key)"
+        else
+            print_message "warning" "Installation: Not Private Key (or SSL not found)"
+        fi
+    fi
 }
 
 # ===========================================

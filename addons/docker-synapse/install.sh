@@ -562,6 +562,13 @@ check_status() {
         acme_file="NOT_FOUND"
     fi
 
+    # Check Private Key SSL (for detecting other addon installations)
+    if [[ -f "$MATRIX_BASE/ssl/cert-full-chain.pem" ]]; then
+        ssl_cert="EXISTS"
+    else
+        ssl_cert="NOT_FOUND"
+    fi
+
     # Get containers
     if [[ "$matrix_dir" == "EXISTS" ]] && cd "$MATRIX_BASE" 2>/dev/null; then
         containers=$(docker compose ps --format '{{.Name}}' 2>/dev/null | grep -v '^$' || echo '')
@@ -651,6 +658,18 @@ check_status() {
 
     echo ""
     print_message "success" "Status check completed"
+
+    # Detect installation type for clear user feedback
+    if [[ "$matrix_dir" == "EXISTS" ]]; then
+        echo ""
+        if [[ "$acme_file" == "EXISTS" ]]; then
+            print_message "info" "Installation: Yes - Let's Encrypt (DuckDNS)"
+        elif [[ "$ssl_cert" == "EXISTS" ]]; then
+            print_message "warning" "Installation: No - Matrix is installed, but with a different way (not Let's Encrypt)"
+        else
+            print_message "warning" "Installation: Not Let's Encrypt (or SSL not found)"
+        fi
+    fi
 }
 
 # ===========================================
