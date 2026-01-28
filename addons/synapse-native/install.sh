@@ -1222,6 +1222,128 @@ check_port_443() {
 }
 
 # ===========================================
+# INSTALLATION SUMMARY
+# ===========================================
+
+print_installation_summary() {
+    local synapse_service="$(get_synapse_service_name)"
+    local admin_username="${1:-}"
+    local admin_created="${2:-false}"
+
+    echo ""
+    echo "╔══════════════════════════════════════════════════════════╗"
+    echo "║          Synapse Installation Completed!                  ║"
+    echo "╚══════════════════════════════════════════════════════════╝"
+    echo ""
+
+    # OS detection
+    echo "OS: $DETECTED_OS"
+    echo ""
+
+    # Synapse service
+    if sudo systemctl is-active --quiet "$synapse_service" 2>/dev/null; then
+        echo -e "${GREEN}✓ Synapse: RUNNING${NC}"
+    else
+        echo -e "${RED}✗ Synapse: NOT RUNNING${NC}"
+    fi
+
+    if sudo systemctl is-enabled --quiet "$synapse_service" 2>/dev/null; then
+        echo "  Service: Enabled on boot"
+    else
+        echo "  Service: Not enabled on boot"
+    fi
+
+    echo ""
+
+    # PostgreSQL service
+    if sudo systemctl is-active --quiet postgresql 2>/dev/null; then
+        echo -e "${GREEN}✓ PostgreSQL: RUNNING${NC}"
+    else
+        echo -e "${RED}✗ PostgreSQL: NOT RUNNING${NC}"
+    fi
+
+    echo ""
+
+    # nginx service
+    if systemctl is-enabled --quiet nginx 2>/dev/null; then
+        if systemctl is-active --quiet nginx 2>/dev/null; then
+            echo -e "${GREEN}✓ nginx: RUNNING${NC}"
+        else
+            echo -e "${RED}✗ nginx: NOT RUNNING${NC}"
+        fi
+    else
+        echo -e "${YELLOW}⚠ nginx: Not installed${NC}"
+    fi
+
+    echo ""
+
+    # Connection test
+    if sudo systemctl is-active --quiet "$synapse_service" 2>/dev/null; then
+        echo "Testing connection to $SERVER_NAME:8448..."
+        if curl -fsS -k "https://${SERVER_NAME}:8448/_matrix/client/versions" >/dev/null 2>&1; then
+            echo -e "${GREEN}✓ Synapse API is accessible${NC}"
+        else
+            echo -e "${YELLOW}⚠ Cannot connect to Synapse API${NC}"
+        fi
+        echo ""
+    fi
+
+    # Element Web
+    if [[ -d "/var/www/element" ]]; then
+        echo -e "${GREEN}✓ Element Web: Installed${NC}"
+    else
+        echo -e "${YELLOW}⚠ Element Web: Not installed${NC}"
+    fi
+
+    # Synapse Admin
+    if [[ -d "/var/www/synapse-admin" ]]; then
+        echo -e "${GREEN}✓ Synapse Admin: Installed${NC}"
+    else
+        echo -e "${YELLOW}⚠ Synapse Admin: Not installed${NC}"
+    fi
+
+    echo ""
+    echo "────────────────────────────────────────────────────────────"
+    echo ""
+
+    # Access URLs
+    echo "Access URLs:"
+    echo "  - Synapse: https://${SERVER_NAME}:8448"
+    if systemctl is-active --quiet nginx 2>/dev/null; then
+        if [[ -d "/var/www/element" ]]; then
+            echo "  - Element Web: https://${SERVER_NAME}/element"
+        fi
+        if [[ -d "/var/www/synapse-admin" ]]; then
+            echo "  - Synapse Admin: https://${SERVER_NAME}/synapse-admin"
+        fi
+    fi
+
+    echo ""
+
+    # Admin user info
+    if [[ "$admin_created" == "true" ]] && [[ -n "$admin_username" ]]; then
+        echo "Admin User:"
+        echo "  - Username: ${admin_username}"
+        echo "  - Credentials saved to: ${WORKING_DIR}/synapse-credentials.txt"
+        echo ""
+    fi
+
+    # Service management commands
+    echo "Service Management:"
+    echo "  - PostgreSQL: sudo systemctl status postgresql"
+    echo "  - Synapse: sudo systemctl status ${synapse_service}"
+    if systemctl is-enabled --quiet nginx 2>/dev/null; then
+        echo "  - nginx: sudo systemctl status nginx"
+    fi
+
+    echo ""
+
+    # Log file
+    echo "Log file: $LOG_FILE"
+    echo ""
+}
+
+# ===========================================
 # MAIN INSTALLATION FUNCTION
 # ===========================================
 
@@ -1316,48 +1438,18 @@ install_synapse() {
     enable_and_start_services || return 1
 
     # Create admin user
+    local admin_created=false
     echo ""
     if [[ "$(prompt_yes_no "Create admin user now?" "y")" == "yes" ]]; then
-        create_admin_user "$admin_username" || true
+        if create_admin_user "$admin_username"; then
+            admin_created=true
+        fi
     else
         print_message "info" "You can create an admin user later with the 'Create Admin User' option"
     fi
 
-    # Print summary
-    echo ""
-    echo "=========================================="
-    print_message "success" "Synapse installation completed!"
-    echo "=========================================="
-    echo ""
-    echo "Services:"
-    echo "  - PostgreSQL: sudo systemctl status postgresql"
-    echo "  - Synapse: sudo systemctl status $synapse_service"
-    echo ""
-    echo "Access:"
-    echo "  - Synapse: https://${SERVER_NAME}:8448"
-    if [[ "$INSTALL_NGINX" == true ]]; then
-        echo "  - Element Web: https://${SERVER_NAME}/element"
-        if [[ "$INSTALL_SYNAPSE_ADMIN" == true ]]; then
-            echo "  - Synapse Admin: https://${SERVER_NAME}/synapse-admin"
-        fi
-    else
-        if [[ "$INSTALL_ELEMENT_WEB" == true ]]; then
-            echo "  - Element Web: http://${SERVER_NAME}/element (requires web server configuration)"
-        fi
-        if [[ "$INSTALL_SYNAPSE_ADMIN" == true ]]; then
-            echo "  - Synapse Admin: http://${SERVER_NAME}/synapse-admin (requires web server configuration)"
-        fi
-    fi
-    echo ""
-    echo "Services:"
-    echo "  - PostgreSQL: sudo systemctl status postgresql"
-    echo "  - Synapse: sudo systemctl status $synapse_service"
-    if [[ "$INSTALL_NGINX" == true ]]; then
-        echo "  - nginx: sudo systemctl status nginx"
-    fi
-    echo ""
-    echo "Log file: $LOG_FILE"
-    echo ""
+    # Print installation summary
+    print_installation_summary "$admin_username" "$admin_created"
 
     return 0
 }
