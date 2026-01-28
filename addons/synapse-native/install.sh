@@ -12,6 +12,19 @@ ADDON_AUTHOR="Matrix Installer"
 ADDON_HIDDEN="false"
 
 # ===========================================
+# ENVIRONMENT VARIABLES FROM matrix-installer.sh
+# ===========================================
+# These variables are exported by matrix-installer.sh before running this addon:
+#
+# SERVER_NAME="172.19.39.69"                                  # Server IP or domain name
+# SSL_CERT="/path/to/certs/172.19.39.69/cert-full-chain.pem"  # Full chain certificate
+# SSL_KEY="/path/to/certs/172.19.39.69/server.key"            # SSL private key
+# ROOT_CA="/path/to/certs/rootCA.crt"                         # Root Key certificate
+# CERTS_DIR="/path/to/certs"                                  # Certificates directory
+# WORKING_DIR="/path/to/script"                               # Script working directory
+# ===========================================
+
+# ===========================================
 # CONFIGURATION
 # ===========================================
 ADDON_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -1258,7 +1271,7 @@ print_installation_summary() {
 
     echo ""
     echo "╔══════════════════════════════════════════════════════════╗"
-    echo "║          Synapse Installation Completed!                  ║"
+    echo "║          Synapse Installation Completed!                 ║"
     echo "╚══════════════════════════════════════════════════════════╝"
     echo ""
 
@@ -1492,7 +1505,7 @@ check_status() {
 
     echo ""
     echo "╔══════════════════════════════════════════════════════════╗"
-    echo "║              Synapse Installation Status                  ║"
+    echo "║              Synapse Installation Status                 ║"
     echo "╚══════════════════════════════════════════════════════════╝"
     echo ""
 
@@ -1656,17 +1669,16 @@ show_uninstall_menu() {
     echo "Select uninstall level:"
     echo ""
     echo "  1) Remove Synapse only (Recommended)"
-    echo "     - Keep PostgreSQL and nginx"
-    echo "     - Remove Synapse venv, configs and data"
+    echo "     - Remove Synapse configs, data, and service"
+    echo "     - Keep PostgreSQL database and nginx"
     echo "     - Safe if other services use PostgreSQL"
     echo ""
     echo "  2) Remove Synapse + Database"
-    echo "     - Remove Synapse venv, configs and data"
-    echo "     - Remove Synapse database and user"
-    echo "     - Keep PostgreSQL package"
+    echo "     - Remove Synapse configs, data, service, and database"
+    echo "     - Keep PostgreSQL package and nginx"
     echo ""
     echo "  3) Complete Removal (Advanced)"
-    echo "     - Remove everything including PostgreSQL"
+    echo "     - Remove everything including PostgreSQL and nginx"
     echo "     - WARNING: May affect other services!"
     echo ""
     echo "  0) Cancel"
@@ -1780,9 +1792,23 @@ uninstall_synapse() {
 uninstall_synapse_only() {
     local synapse_service="$1"
     local synapse_user="$2"
+    local remove_venv=false
 
+    # Ask about removing virtual environment (only if it exists)
+    if [[ -d "/opt/synapse-venv" ]]; then
+        echo ""
+        echo "Found virtual environment at /opt/synapse-venv (~500MB)"
+        echo "Keeping it will make next installation faster."
+        echo ""
+        if [[ "$(prompt_yes_no "Remove virtual environment?" "n")" == "yes" ]]; then
+            remove_venv=true
+        fi
+    fi
+
+    # Show warning and ask for confirmation
+    echo ""
     print_message "warning" "This will remove Synapse configuration and data"
-    print_message "info" "PostgreSQL and system packages will be kept"
+    print_message "info" "PostgreSQL and nginx will be kept"
     echo ""
 
     if [[ "$(prompt_yes_no "Continue?" "n")" != "yes" ]]; then
@@ -1795,10 +1821,12 @@ uninstall_synapse_only() {
     sudo systemctl stop "$synapse_service" 2>/dev/null || true
     sudo systemctl disable "$synapse_service" 2>/dev/null || true
 
-    # Remove Synapse virtual environment (pip installation)
-    if [[ -d "/opt/synapse-venv" ]]; then
+    # Remove Synapse virtual environment if requested
+    if [[ "$remove_venv" == "true" ]]; then
         print_message "info" "Removing Synapse virtual environment..."
         sudo rm -rf /opt/synapse-venv
+    elif [[ -d "/opt/synapse-venv" ]]; then
+        print_message "info" "Keeping virtual environment for faster reinstall"
     fi
 
     # Remove old synapse directory if exists
@@ -1850,7 +1878,7 @@ uninstall_with_database() {
     local synapse_user="$2"
 
     print_message "warning" "This will remove Synapse and its database"
-    print_message "info" "PostgreSQL package will be kept"
+    print_message "info" "PostgreSQL package and nginx will be kept"
     echo ""
 
     if [[ "$(prompt_yes_no "Continue?" "n")" != "yes" ]]; then
