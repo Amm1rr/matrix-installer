@@ -1556,38 +1556,9 @@ EOF
     # INSTALLATION MODE SELECTION
     # ============================================
 
-    cat <<'EOF'
-
-Select installation mode:
-
-  1) This Is Server
-     - Install Matrix on THIS machine
-     - Ansible will run locally (ansible_connection=local)
-
-  2) Remote VPS (Beta)
-     - Install Matrix on a remote server via SSH
-
-EOF
-
-    while true; do
-        read -rp "Enter your choice (1 or 2): " choice
-
-        case "$choice" in
-            1)
-                INSTALLATION_MODE="local"
-                print_message "info" "Local installation mode selected"
-                break
-                ;;
-            2)
-                INSTALLATION_MODE="remote"
-                print_message "info" "Remote installation mode selected"
-                break
-                ;;
-            *)
-                echo "Invalid choice. Please enter 1 or 2."
-                ;;
-        esac
-    done
+    # Always use local mode (This Is Server)
+    INSTALLATION_MODE="local"
+    print_message "info" "Local installation mode selected"
 
     # ============================================
     # MAIN MENU LOOP
