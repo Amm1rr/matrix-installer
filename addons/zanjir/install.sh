@@ -1400,11 +1400,13 @@ check_status() {
 
     # Get zanjir- containers
     containers=$(docker ps --format '{{.Names}}' 2>/dev/null | grep '^zanjir-' || echo '')
-    container_count=$(echo "$containers" | grep -c '^zanjir-' || echo 0)
+    container_count=$(echo "$containers" | grep -c '^zanjir-' 2>/dev/null || echo 0)
+    container_count=$(echo "$container_count" | tr -d '[:space:]')
 
     # Get zanjir- volumes
     volumes=$(docker volume ls --format '{{.Name}}' 2>/dev/null | grep '^zanjir-' || echo '')
-    volume_count=$(echo "$volumes" | grep -c '^zanjir-' || echo 0)
+    volume_count=$(echo "$volumes" | grep -c '^zanjir-' 2>/dev/null || echo 0)
+    volume_count=$(echo "$volume_count" | tr -d '[:space:]')
 
     # Determine overall status
     local status=""
@@ -1471,19 +1473,19 @@ check_status() {
         print_message "info" "SSL Certificates (Private Key):"
         echo ""
         if [[ "$ssl_cert" == "EXISTS" ]]; then
-            echo "  Certificate: ${GREEN}✓ Found${NC} (ssl/cert-full-chain.pem)"
+            echo -e "  Certificate: ${GREEN}✓ Found${NC} (ssl/cert-full-chain.pem)"
         else
-            echo "  Certificate: ${RED}✗ Not found${NC} (ssl/cert-full-chain.pem)"
+            echo -e "  Certificate: ${RED}✗ Not found${NC} (ssl/cert-full-chain.pem)"
         fi
         if [[ "$ssl_key" == "EXISTS" ]]; then
-            echo "  Private Key: ${GREEN}✓ Found${NC} (ssl/server.key)"
+            echo -e "  Private Key: ${GREEN}✓ Found${NC} (ssl/server.key)"
         else
-            echo "  Private Key: ${RED}✗ Not found${NC} (ssl/server.key)"
+            echo -e "  Private Key: ${RED}✗ Not found${NC} (ssl/server.key)"
         fi
         if [[ "$ssl_ca" == "EXISTS" ]]; then
-            echo "  Root CA:     ${GREEN}✓ Found${NC} (ssl/rootCA.crt)"
+            echo -e "  Root CA:     ${GREEN}✓ Found${NC} (ssl/rootCA.crt)"
         else
-            echo "  Root CA:     ${RED}✗ Not found${NC} (ssl/rootCA.crt)"
+            echo -e "  Root CA:     ${RED}✗ Not found${NC} (ssl/rootCA.crt)"
         fi
 
         # Expected Services

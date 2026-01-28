@@ -1011,19 +1011,19 @@ check_status() {
         print_message "info" "SSL Certificates (Private Key):"
         echo ""
         if [[ "$ssl_cert" == "EXISTS" ]]; then
-            echo "  Certificate: ${GREEN}✓ Found${NC} (ssl/cert-full-chain.pem)"
+            echo -e "  Certificate: ${GREEN}✓ Found${NC} (ssl/cert-full-chain.pem)"
         else
-            echo "  Certificate: ${RED}✗ Not found${NC} (ssl/cert-full-chain.pem)"
+            echo -e "  Certificate: ${RED}✗ Not found${NC} (ssl/cert-full-chain.pem)"
         fi
         if [[ "$ssl_key" == "EXISTS" ]]; then
-            echo "  Private Key: ${GREEN}✓ Found${NC} (ssl/server.key)"
+            echo -e "  Private Key: ${GREEN}✓ Found${NC} (ssl/server.key)"
         else
-            echo "  Private Key: ${RED}✗ Not found${NC} (ssl/server.key)"
+            echo -e "  Private Key: ${RED}✗ Not found${NC} (ssl/server.key)"
         fi
         if [[ "$ssl_ca" == "EXISTS" ]]; then
-            echo "  Root CA:     ${GREEN}✓ Found${NC} (ssl/rootCA.crt)"
+            echo -e "  Root CA:     ${GREEN}✓ Found${NC} (ssl/rootCA.crt)"
         else
-            echo "  Root CA:     ${RED}✗ Not found${NC} (ssl/rootCA.crt)"
+            echo -e "  Root CA:     ${RED}✗ Not found${NC} (ssl/rootCA.crt)"
         fi
 
         # Expected Services
