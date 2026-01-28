@@ -564,6 +564,14 @@ listeners:
     resources:
       - names: [client, federation]
         compress: false
+  - port: 8008
+    tls: false
+    type: http
+    x_forwarded: false
+    bind_addresses: ['::1', '127.0.0.1']
+    resources:
+      - names: [client]
+        compress: false
 
 database:
   name: psycopg2
@@ -914,30 +922,39 @@ create_admin_user() {
 
     print_message "info" "Creating admin user: $username"
 
-    local synapse_service="$(get_synapse_service_name)"
     local synapse_user="$(get_synapse_user)"
+    local synapse_venv="/opt/synapse-venv"
+    local register_cmd="$synapse_venv/bin/register_new_matrix_user"
+    local config_file="/etc/synapse/homeserver.yaml"
 
     # Check if synapse user exists
     if ! id "$synapse_user" &>/dev/null; then
         print_message "error" "Synapse user '$synapse_user' does not exist"
         print_message "info" "Install Synapse first"
-        return 1
+        return 0
     fi
 
-    # Wait for synapse to be ready
-    local max_wait=30
-    local waited=0
-    while [[ $waited -lt $max_wait ]]; do
-        # Try register_new_matrix_user from different locations
-        if sudo -u "$synapse_user" register_new_matrix_user \
-            --server "$SERVER_NAME:8448" \
-            --user "$username" \
-            --password "$password" \
-            --admin \
-            --no-progress 2>&1; then
+    # Check if config file exists
+    if [[ ! -f "$config_file" ]]; then
+        print_message "error" "Config file not found: $config_file"
+        return 0
+    fi
 
-            # Save credentials
-            cat > "${WORKING_DIR}/synapse-credentials.txt" <<EOF
+    # Check if register command exists
+    if [[ ! -x "$register_cmd" ]]; then
+        print_message "error" "register_new_matrix_user not found at $register_cmd"
+        return 0
+    fi
+
+    # Create admin user using -c flag with config file
+    if sudo -u "$synapse_user" PATH="$synapse_venv/bin:$PATH" "$register_cmd" \
+        -c "$config_file" \
+        -u "$username" \
+        -p "$password" \
+        -a 2>&1; then
+
+        # Save credentials
+        cat > "${WORKING_DIR}/synapse-credentials.txt" <<EOF
 Synapse Admin User Credentials
 ==============================
 Server: https://${SERVER_NAME}:8448
@@ -945,18 +962,15 @@ Username: ${username}
 Password: ${password}
 EOF
 
-            chmod 600 "${WORKING_DIR}/synapse-credentials.txt"
-            print_message "success" "Admin user created. Credentials saved to synapse-credentials.txt"
-            return 0
-        fi
-        sleep 2
-        waited=$((waited + 2))
-    done
-
-    print_message "warning" "Failed to create admin user automatically"
-    print_message "info" "Create manually with:"
-    print_message "info" "  sudo -u $synapse_user register_new_matrix_user --server $SERVER_NAME:8448 --admin"
-    return 1
+        chmod 600 "${WORKING_DIR}/synapse-credentials.txt"
+        print_message "success" "Admin user created. Credentials saved to synapse-credentials.txt"
+        return 0
+    else
+        print_message "warning" "Failed to create admin user"
+        print_message "info" "Create manually with:"
+        print_message "info" "  sudo -u $synapse_user $register_cmd -c $config_file -a"
+        return 0
+    fi
 }
 
 # ===========================================
