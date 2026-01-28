@@ -1301,6 +1301,39 @@ uninstall_matrix() {
         exec sudo bash -c "export UNINSTALL_MODE=1; bash '$script_path'"
     fi
 
+    # Check if installation exists first
+    if [[ ! -d "$MATRIX_BASE" ]]; then
+        print_message "warning" "Zanjir Synapse is not installed"
+        return 0
+    fi
+
+    # Detect existing installation type (check for Private Key SSL files)
+    local existing_type="unknown"
+    if [[ -f "$MATRIX_BASE/ssl/cert-full-chain.pem" ]]; then
+        existing_type="private-key"
+    elif [[ -f "/opt/matrix/data/traefik/acme.json" ]]; then
+        existing_type="letsencrypt"
+    fi
+
+    # Check if this addon can uninstall this installation
+    if [[ "$existing_type" == "letsencrypt" ]]; then
+        print_message "warning" "This addon can only uninstall Private Key (Zanjir) installations."
+        print_message "info" "The existing installation appears to be: Let's Encrypt (DuckDNS)"
+        echo ""
+        print_message "info" "Please use the 'Install Docker Synapse (Let's Encrypt)' addon to uninstall."
+        echo ""
+        read -rp "Press Enter to continue..."
+        return 0
+    elif [[ "$existing_type" == "unknown" ]]; then
+        print_message "warning" "Unable to determine installation type."
+        print_message "info" "This addon can only uninstall Private Key (Zanjir) installations."
+        echo ""
+        print_message "info" "Please verify the installation type and use the appropriate addon."
+        echo ""
+        read -rp "Press Enter to continue..."
+        return 0
+    fi
+
     print_message "warning" "This will:"
     echo "  - Stop all Zanjir Synapse containers"
     echo "  - Remove all Zanjir containers (both old and new)"
@@ -1365,6 +1398,7 @@ check_status() {
     local volume_count=0
     local expected_containers=4  # postgres, dendrite, element, nginx (element-copy is utility)
     local expected_volumes=6     # postgres-data, dendrite-media, dendrite-jetstream, dendrite-search, web-data, element-web
+    local acme_file=""
 
     # Check directory
     if [[ -d "$MATRIX_BASE" ]]; then
@@ -1397,6 +1431,11 @@ check_status() {
         ssl_ca="EXISTS"
     else
         ssl_ca="NOT_FOUND"
+    fi
+
+    # Check Let's Encrypt SSL (for detecting other addon installations)
+    if [[ -f "/opt/matrix/data/traefik/acme.json" ]]; then
+        acme_file="EXISTS"
     fi
 
     # Get zanjir- containers (try without sudo first, then with sudo)
@@ -1527,6 +1566,18 @@ check_status() {
 
     echo ""
     print_message "success" "Status check completed"
+
+    # Detect installation type for clear user feedback
+    if [[ "$matrix_dir" == "EXISTS" ]]; then
+        echo ""
+        if [[ "$ssl_cert" == "EXISTS" ]]; then
+            print_message "info" "Installation: Yes - Private Key (Zanjir)"
+        elif [[ "$acme_file" == "EXISTS" ]]; then
+            print_message "warning" "Installation: No - Matrix is installed, but with a different addon (not Zanjir)"
+        else
+            print_message "warning" "Installation: Unknown type (SSL certificates not found)"
+        fi
+    fi
 }
 
 # ===========================================

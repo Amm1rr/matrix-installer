@@ -1125,6 +1125,8 @@ check_status() {
     local volumes
     local container_count=0
     local service_count=0
+    local ssl_cert=""
+    local acme_file=""
 
     # Check /matrix directory first (no sudo needed for basic check)
     if [[ -d "/matrix" ]]; then
@@ -1142,6 +1144,13 @@ check_status() {
         service_count=$(echo "$services" | tr -d ' ')
 
         volumes=$(try_command "docker volume ls -q 2>/dev/null | grep '^matrix' || echo ''" true)
+
+        # Check SSL type (for installation detection)
+        if [[ -f "/matrix/ssl/cert-full-chain.pem" ]] || [[ -f "/matrix/data/ssl/cert-full-chain.pem" ]]; then
+            ssl_cert="EXISTS"
+        elif [[ -f "/opt/matrix/data/traefik/acme.json" ]]; then
+            acme_file="EXISTS"
+        fi
     fi
 
     # Determine overall status
@@ -1216,6 +1225,18 @@ check_status() {
 
     echo ""
     print_message "success" "Status check completed"
+
+    # Detect installation type for clear user feedback
+    if [[ "$matrix_dir" == "EXISTS" ]]; then
+        echo ""
+        if [[ "$ssl_cert" == "EXISTS" ]]; then
+            print_message "info" "Installation: Yes - Private Key (Ansible)"
+        elif [[ "$acme_file" == "EXISTS" ]]; then
+            print_message "warning" "Installation: No - Matrix is installed, but with a different addon (not Ansible)"
+        else
+            print_message "warning" "Installation: Unknown type (SSL certificates not found)"
+        fi
+    fi
 }
 
 # ===========================================
@@ -1223,6 +1244,39 @@ check_status() {
 # ===========================================
 
 uninstall_matrix() {
+    # Check if installation exists first
+    if [[ ! -d "/matrix" ]]; then
+        print_message "warning" "Matrix is not installed"
+        return 0
+    fi
+
+    # Detect existing installation type (check for Private Key SSL files)
+    local existing_type="unknown"
+    if [[ -f "/matrix/ssl/cert-full-chain.pem" ]] || [[ -f "/matrix/data/ssl/cert-full-chain.pem" ]]; then
+        existing_type="private-key"
+    elif [[ -f "/opt/matrix/data/traefik/acme.json" ]]; then
+        existing_type="letsencrypt"
+    fi
+
+    # Check if this addon can uninstall this installation
+    if [[ "$existing_type" == "letsencrypt" ]]; then
+        print_message "warning" "This addon can only uninstall Private Key (Ansible) installations."
+        print_message "info" "The existing installation appears to be: Let's Encrypt (DuckDNS)"
+        echo ""
+        print_message "info" "Please use the 'Install Docker Synapse (Let's Encrypt)' addon to uninstall."
+        echo ""
+        read -rp "Press Enter to continue..."
+        return 0
+    elif [[ "$existing_type" == "unknown" ]]; then
+        print_message "warning" "Unable to determine installation type."
+        print_message "info" "This addon can only uninstall Private Key (Ansible) installations."
+        echo ""
+        print_message "info" "Please verify the installation type and use the appropriate addon."
+        echo ""
+        read -rp "Press Enter to continue..."
+        return 0
+    fi
+
     print_message "warning" "This will:"
     echo "  - Stop all Matrix services"
     echo "  - Remove Matrix Docker containers, volumes, and networks"
