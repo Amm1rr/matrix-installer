@@ -945,6 +945,9 @@ check_status() {
     # Get containers
     if [[ "$matrix_dir" == "EXISTS" ]] && cd "$MATRIX_BASE" 2>/dev/null; then
         containers=$(docker compose ps --format '{{.Name}}' 2>/dev/null | grep -v '^$' || echo '')
+        if [[ -z "$containers" ]]; then
+            containers=$(sudo docker compose ps --format '{{.Name}}' 2>/dev/null | grep -v '^$' || echo '')
+        fi
         if [[ -n "$containers" ]]; then
             container_count=$(echo "$containers" | wc -l)
         else
@@ -998,13 +1001,16 @@ check_status() {
         echo ""
         if [[ $container_count -gt 0 ]]; then
             cd "$MATRIX_BASE" 2>/dev/null || return 1
-            docker compose ps 2>/dev/null
+            if ! docker compose ps 2>/dev/null; then
+                sudo docker compose ps 2>/dev/null || true
+            fi
             cd - > /dev/null
 
             # Show URLs
             echo ""
             print_message "info" "Access URLs:"
-            echo "  - Element Web: https://${DOMAIN}"
+            local display_domain="${DOMAIN:-${SERVER_NAME:-your-server}}"
+            echo "  - Element Web: https://${display_domain}"
         else
             echo "  No services running"
             print_message "info" "Start them with: cd $MATRIX_BASE && docker compose up -d"

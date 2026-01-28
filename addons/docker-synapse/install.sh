@@ -496,6 +496,9 @@ check_status() {
     # Get containers
     if [[ "$matrix_dir" == "EXISTS" ]] && cd "$MATRIX_BASE" 2>/dev/null; then
         containers=$(docker compose ps --format '{{.Name}}' 2>/dev/null | grep -v '^$' || echo '')
+        if [[ -z "$containers" ]]; then
+            containers=$(sudo docker compose ps --format '{{.Name}}' 2>/dev/null | grep -v '^$' || echo '')
+        fi
         if [[ -n "$containers" ]]; then
             container_count=$(echo "$containers" | wc -l)
         else
@@ -549,7 +552,9 @@ check_status() {
         echo ""
         if [[ $container_count -gt 0 ]]; then
             cd "$MATRIX_BASE" 2>/dev/null || return 1
-            docker compose ps
+            if ! docker compose ps 2>/dev/null; then
+                sudo docker compose ps 2>/dev/null || true
+            fi
             cd - > /dev/null
         else
             echo "  No services running"
@@ -560,9 +565,9 @@ check_status() {
         print_message "info" "Let's Encrypt SSL:"
         echo ""
         if [[ "$acme_file" == "EXISTS" ]]; then
-            echo "  Certificate file: ${GREEN}✓ Found${NC} (data/traefik/acme.json)"
+            echo -e "  Certificate file: ${GREEN}✓ Found${NC} (data/traefik/acme.json)"
         else
-            echo "  Certificate file: ${RED}✗ Not found${NC} (data/traefik/acme.json)"
+            echo -e "  Certificate file: ${RED}✗ Not found${NC} (data/traefik/acme.json)"
         fi
 
         # Expected Services
