@@ -1128,6 +1128,100 @@ EOF
 }
 
 # ===========================================
+# PORT 443 CHECK FUNCTION
+# ===========================================
+
+check_port_443() {
+    print_message "info" "Checking if port 443 is available..."
+
+    # Check if port 443 is in use
+    local port_info
+    port_info=$(sudo ss -tlnp 2>/dev/null | grep ":443 " || true)
+
+    if [[ -z "$port_info" ]]; then
+        print_message "success" "Port 443 is available"
+        return 0
+    fi
+
+    # Port is in use - extract process info
+    local process_name
+    local process_pid
+    process_name=$(echo "$port_info" | head -1 | grep -oP 'users:\(\K[^)]+' | grep -oP '"\K[^"]+' | head -1)
+    process_pid=$(echo "$port_info" | head -1 | grep -oP 'users:\(\K[^)]+' | grep -oP 'pid=\K[0-9]+' | head -1)
+
+    echo ""
+    echo "╔════════════════════════════════════════════════════════════════╗"
+    echo "║                    PORT 443 ALREADY IN USE                     ║"
+    echo "╚════════════════════════════════════════════════════════════════╝"
+    echo ""
+    print_message "error" "Port 443 is already in use by: ${process_name:-unknown} (PID: ${process_pid:-unknown})"
+    echo ""
+    echo "To free the port, run one of these commands:"
+    echo ""
+
+    # Show specific commands based on the process
+    if [[ "$process_name" == "docker-proxy" ]]; then
+        echo "  • Stop Docker service:"
+        echo "      sudo systemctl stop docker"
+        echo ""
+        echo "  • Or stop specific container:"
+        echo "      docker ps"
+        echo "      docker stop <container_name>"
+        echo ""
+    elif [[ "$process_name" == "nginx" ]]; then
+        echo "  • Stop nginx service:"
+        echo "      sudo systemctl stop nginx"
+        echo ""
+    elif [[ "$process_name" == "apache2" ]]; then
+        echo "  • Stop Apache service:"
+        echo "      sudo systemctl stop apache2"
+        echo ""
+    else
+        echo "  • Stop the service using port 443:"
+        echo "      sudo kill ${process_pid:-<PID>}"
+        echo ""
+    fi
+
+    echo "────────────────────────────────────────────────────────────────"
+    echo ""
+
+    # Loop until port is free or user cancels
+    while true; do
+        echo "Options:"
+        echo "  1) Check port again"
+        echo "  0) Cancel installation"
+        echo ""
+        read -rp "Enter your choice: " choice
+
+        case "$choice" in
+            1|check)
+                echo ""
+                print_message "info" "Checking port 443 again..."
+                port_info=$(sudo ss -tlnp 2>/dev/null | grep ":443 " || true)
+                if [[ -z "$port_info" ]]; then
+                    print_message "success" "Port 443 is now available"
+                    echo ""
+                    return 0
+                else
+                    process_name=$(echo "$port_info" | head -1 | grep -oP 'users:\(\K[^)]+' | grep -oP '"\K[^"]+' | head -1)
+                    process_pid=$(echo "$port_info" | head -1 | grep -oP 'users:\(\K[^)]+' | grep -oP 'pid=\K[0-9]+' | head -1)
+                    print_message "error" "Port 443 is still in use by: ${process_name:-unknown} (PID: ${process_pid:-unknown})"
+                    echo ""
+                fi
+                ;;
+            0|cancel|exit|q)
+                echo ""
+                print_message "info" "Installation cancelled"
+                return 1
+                ;;
+            *)
+                print_message "error" "Invalid option: $choice"
+                ;;
+        esac
+    done
+}
+
+# ===========================================
 # MAIN INSTALLATION FUNCTION
 # ===========================================
 
@@ -1173,6 +1267,11 @@ install_synapse() {
         if [[ "$(prompt_yes_no "Install nginx for Element/Synapse Admin?" "y")" == "yes" ]]; then
             INSTALL_NGINX=true
         fi
+    fi
+
+    # Check port 443 if nginx is being installed
+    if [[ "$INSTALL_NGINX" == true ]]; then
+        check_port_443 || return 1
     fi
 
     local admin_username="$(prompt_user "Admin username" "admin")"
