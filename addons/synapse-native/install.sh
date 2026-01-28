@@ -1533,6 +1533,50 @@ check_status() {
     fi
 
     echo ""
+
+    # Port status check
+    echo "────────────────────────────────────────────────────────────"
+    echo ""
+    echo "Port Status:"
+    echo ""
+
+    # Check port 8448 (Synapse TLS)
+    local port_8448_info=$(sudo ss -tlnp 2>/dev/null | grep ":8448 " || true)
+    if [[ -n "$port_8448_info" ]]; then
+        local process_8448=$(echo "$port_8448_info" | grep -oP 'users:\(\K[^)]+' | grep -oP '"\K[^"]+' | head -1)
+        echo -e "${GREEN}✓ Port 8448 (Synapse TLS): In use by ${process_8448:-synapse}${NC}"
+    else
+        echo -e "${YELLOW}⚠ Port 8448 (Synapse TLS): Not listening${NC}"
+    fi
+
+    # Check port 8008 (Synapse HTTP/Admin API)
+    local port_8008_info=$(sudo ss -tlnp 2>/dev/null | grep ":8008 " || true)
+    if [[ -n "$port_8008_info" ]]; then
+        local process_8008=$(echo "$port_8008_info" | grep -oP 'users:\(\K[^)]+' | grep -oP '"\K[^"]+' | head -1)
+        echo -e "${GREEN}✓ Port 8008 (Admin API): In use by ${process_8008:-synapse}${NC}"
+    else
+        echo -e "${YELLOW}⚠ Port 8008 (Admin API): Not listening${NC}"
+    fi
+
+    # Check port 443 (nginx HTTPS)
+    local port_443_info=$(sudo ss -tlnp 2>/dev/null | grep ":443 " || true)
+    if [[ -n "$port_443_info" ]]; then
+        local process_443=$(echo "$port_443_info" | grep -oP 'users:\(\K[^)]+' | grep -oP '"\K[^"]+' | head -1)
+        echo -e "${GREEN}✓ Port 443 (HTTPS): In use by ${process_443:-nginx}${NC}"
+    else
+        echo -e "${YELLOW}⚠ Port 443 (HTTPS): Not listening${NC}"
+    fi
+
+    # Check port 5432 (PostgreSQL)
+    local port_5432_info=$(sudo ss -tlnp 2>/dev/null | grep ":5432 " || true)
+    if [[ -n "$port_5432_info" ]]; then
+        local process_5432=$(echo "$port_5432_info" | grep -oP 'users:\(\K[^)]+' | grep -oP '"\K[^"]+' | head -1)
+        echo -e "${GREEN}✓ Port 5432 (PostgreSQL): In use by ${process_5432:-postgres}${NC}"
+    else
+        echo -e "${YELLOW}⚠ Port 5432 (PostgreSQL): Not listening${NC}"
+    fi
+
+    echo ""
 }
 
 # ===========================================
