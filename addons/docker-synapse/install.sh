@@ -277,20 +277,30 @@ install_matrix() {
     # Check prerequisites
     check_prerequisites || exit 1
 
+    # Check if already installed (before any prompts)
+    if [[ -d "$MATRIX_BASE" ]]; then
+        # Detect existing installation type
+        local existing_type="unknown"
+        if [[ -f "$MATRIX_BASE/data/traefik/acme.json" ]]; then
+            existing_type="Let's Encrypt (DuckDNS)"
+        elif [[ -f "$MATRIX_BASE/ssl/cert-full-chain.pem" ]]; then
+            existing_type="Private Key (Root Key)"
+        fi
+
+        print_message "warning" "Installation already exists: ${MATRIX_BASE}"
+        if [[ "$existing_type" != "unknown" ]]; then
+            print_message "warning" "Existing installation type: ${existing_type}"
+        fi
+        print_message "info" "This installer uses: Let's Encrypt (DuckDNS)"
+        echo ""
+        print_message "info" "Please use 'Uninstall Matrix' option first to remove the existing installation."
+        echo ""
+        read -rp "Press Enter to continue..."
+        exit 0
+    fi
+
     # Configure DuckDNS
     configure_duckdns
-
-    # Check if already installed
-    if [[ -d "$MATRIX_BASE" ]]; then
-        print_message "warning" "Installation directory already exists: ${MATRIX_BASE}"
-        if [[ "$(prompt_yes_no "Remove existing installation and continue?" "n")" != "yes" ]]; then
-            print_message "info" "Installation cancelled"
-            exit 0
-        fi
-        print_message "info" "Removing existing installation..."
-        cd "$MATRIX_BASE" 2>/dev/null && docker compose down --remove-orphans 2>/dev/null || true
-        rm -rf "$MATRIX_BASE"
-    fi
 
     # Update DuckDNS record
     print_message "info" "Updating DuckDNS record..."
