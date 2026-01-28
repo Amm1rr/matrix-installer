@@ -6,7 +6,7 @@
 ADDON_NAME="example"
 ADDON_NAME_MENU="Example Addon (NOT YET IMPLEMENTED)"
 ADDON_VERSION="0.1.0"
-ADDON_ORDER="60"
+ADDON_ORDER="50"
 ADDON_DESCRIPTION="Placeholder for future Synapse deployment module (NOT YET IMPLEMENTED)"
 ADDON_AUTHOR="Yours"
 ADDON_HIDDEN="true" # Hide this addon from the menu

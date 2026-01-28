@@ -4,9 +4,9 @@
 # ADDON METADATA
 # ===========================================
 ADDON_NAME="ansible-synapse"
-ADDON_NAME_MENU="Install Synapse (Ansible with Private Key)"
+ADDON_NAME_MENU="Install Docker Synapse (Private Key + Ansible)"
 ADDON_VERSION="0.1.0"
-ADDON_ORDER="30"
+ADDON_ORDER="20"
 ADDON_DESCRIPTION="Self-contained Ansible module for Synapse homeserver installation"
 ADDON_AUTHOR="Matrix Installer"
 ADDON_HIDDEN="false" # Hide this addon from the menu

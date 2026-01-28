@@ -8,7 +8,7 @@
 MATRIX_PLUS_NAME="Matrix Installer"
 MATRIX_PLUS_VERSION="0.1.0"
 MATRIX_PLUS_DESCRIPTION="Federation Key Manager"
-MATRIX_PLUS_BUILD_DATE="$(date +%Y-%m-%d)"
+MATRIX_PLUS_BUILD="Under Development"
 
 set -e
 set -u
@@ -1778,7 +1778,7 @@ initialize() {
     # Print banner (dynamic)
     local title="${MATRIX_PLUS_NAME} - ${MATRIX_PLUS_DESCRIPTION}"
     local version="Version ${MATRIX_PLUS_VERSION}"
-    local build="Build: ${MATRIX_PLUS_BUILD_DATE}"
+    local build="Build: ${MATRIX_PLUS_BUILD}"
     local box_width=58
 
     echo ""
