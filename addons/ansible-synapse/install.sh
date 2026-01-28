@@ -1099,6 +1099,18 @@ run_sudo_command() {
     fi
 }
 
+# Try command without sudo first, fall back to sudo if needed
+try_command() {
+    local cmd="$1"
+    local silent="${2:-false}"
+
+    if [[ "$silent" == "true" ]]; then
+        sh -c "$cmd" 2>/dev/null || sudo sh -c "$cmd" 2>/dev/null
+    else
+        sh -c "$cmd" 2>&1 || sudo sh -c "$cmd" 2>&1
+    fi
+}
+
 # ===========================================
 # STATUS CHECK
 # ===========================================
@@ -1106,7 +1118,7 @@ run_sudo_command() {
 check_status() {
     print_message "info" "Checking Matrix status..."
 
-    # Collect all information first
+    # Collect all information first (try without sudo first)
     local containers
     local services
     local matrix_dir
@@ -1114,22 +1126,30 @@ check_status() {
     local container_count=0
     local service_count=0
 
-    containers=$(run_sudo_command "docker ps --format '{{.Names}}' | grep '^matrix-' || echo ''" true)
-    container_count=$(echo "$containers" | grep -c "^matrix-" || true)
+    # Check /matrix directory first (no sudo needed for basic check)
+    if [[ -d "/matrix" ]]; then
+        matrix_dir="EXISTS"
+    else
+        matrix_dir="NOT_FOUND"
+    fi
 
-    services=$(run_sudo_command "systemctl list-units --type=service --state=running --all | grep '^matrix-' | wc -l" true)
-    service_count=$(echo "$services" | tr -d ' ')
+    # Only check Docker/systemd if /matrix exists
+    if [[ "$matrix_dir" == "EXISTS" ]]; then
+        containers=$(try_command "docker ps --format '{{.Names}}' | grep '^matrix-' || echo ''" true)
+        container_count=$(echo "$containers" | grep -c "^matrix-" || true)
 
-    matrix_dir=$(run_sudo_command "test -d /matrix && echo 'EXISTS' || echo 'NOT_FOUND'" true)
+        services=$(try_command "systemctl list-units --type=service --state=running --all 2>/dev/null | grep '^matrix-' | wc -l" true)
+        service_count=$(echo "$services" | tr -d ' ')
 
-    volumes=$(run_sudo_command "docker volume ls -q | grep '^matrix' || echo ''" true)
+        volumes=$(try_command "docker volume ls -q 2>/dev/null | grep '^matrix' || echo ''" true)
+    fi
 
     # Determine overall status
     local status=""
     local status_color=""
     local status_details=""
 
-    if [[ "$matrix_dir" != *"EXISTS"* ]]; then
+    if [[ "$matrix_dir" != "EXISTS" ]]; then
         status="NOT INSTALLED"
         status_color="${RED}"
         status_details="No Matrix installation found"
@@ -1153,14 +1173,14 @@ check_status() {
     echo -e "${status_color}  ${status_details}${NC}"
 
     # Only show details if Matrix is installed (directory exists)
-    if [[ "$matrix_dir" == *"EXISTS"* ]]; then
+    if [[ "$matrix_dir" == "EXISTS" ]]; then
         echo ""
         echo -e "${BLUE}=== Docker Containers ===${NC}"
 
         if [[ $container_count -eq 0 ]]; then
             print_message "warning" "No Matrix containers running"
         else
-            run_sudo_command "docker ps --format 'table {{.Names}}\t{{.Status}}\t{{.Ports}}' | grep -E 'matrix|NAMES'" || true
+            try_command "docker ps --format 'table {{.Names}}\t{{.Status}}\t{{.Ports}}' | grep -E 'matrix|NAMES'" || true
         fi
 
         echo ""
@@ -1169,7 +1189,7 @@ check_status() {
         if [[ $service_count -eq 0 ]] || [[ "$service_count" == "0" ]]; then
             print_message "warning" "No Matrix systemd services found"
         else
-            run_sudo_command "systemctl is-active matrix-* 2>/dev/null || true" | while read -r line; do
+            try_command "systemctl is-active 'matrix-*' 2>/dev/null || true" | while read -r line; do
                 if [[ -n "$line" ]]; then
                     echo "  $line"
                 fi
@@ -1182,7 +1202,7 @@ check_status() {
         print_message "success" "/matrix directory exists"
         echo ""
         echo "  Directory structure:"
-        run_sudo_command "ls -lh /matrix/ 2>/dev/null | head -20" || true
+        try_command "ls -lh /matrix/ 2>/dev/null | head -20" || true
 
         echo ""
         echo -e "${BLUE}=== Docker Volumes ===${NC}"
@@ -1190,7 +1210,7 @@ check_status() {
         if [[ -z "$volumes" ]]; then
             print_message "warning" "No Matrix volumes found"
         else
-            run_sudo_command "docker volume ls | grep matrix" || true
+            try_command "docker volume ls | grep matrix" || true
         fi
     fi
 

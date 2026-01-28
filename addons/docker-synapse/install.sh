@@ -467,8 +467,10 @@ check_status() {
     # Collect all information first
     local matrix_dir
     local compose_file
+    local acme_file
     local containers
     local container_count=0
+    local expected_containers=5  # traefik, postgres, synapse, synapse-admin, element
 
     # Check directory
     if [[ -d "$MATRIX_BASE" ]]; then
@@ -482,6 +484,13 @@ check_status() {
         compose_file="EXISTS"
     else
         compose_file="NOT_FOUND"
+    fi
+
+    # Check Let's Encrypt acme.json
+    if [[ -f "$MATRIX_BASE/data/traefik/acme.json" ]]; then
+        acme_file="EXISTS"
+    else
+        acme_file="NOT_FOUND"
     fi
 
     # Get containers
@@ -508,7 +517,11 @@ check_status() {
         status="INSTALLED (NOT RUNNING)"
         status_color="${YELLOW}"
         status_details="docker-compose.yml exists but no containers running"
-    elif [[ $container_count -gt 0 ]]; then
+    elif [[ $container_count -lt $expected_containers ]]; then
+        status="PARTIALLY RUNNING"
+        status_color="${YELLOW}"
+        status_details="${container_count}/${expected_containers} services running"
+    elif [[ $container_count -ge $expected_containers ]]; then
         status="RUNNING"
         status_color="${GREEN}"
         status_details="${container_count} service(s) running"
@@ -537,6 +550,25 @@ check_status() {
         else
             echo "  No services running"
         fi
+
+        # SSL Certificates Section
+        echo ""
+        print_message "info" "Let's Encrypt SSL:"
+        echo ""
+        if [[ "$acme_file" == "EXISTS" ]]; then
+            echo "  Certificate file: ${GREEN}✓ Found${NC} (data/traefik/acme.json)"
+        else
+            echo "  Certificate file: ${RED}✗ Not found${NC} (data/traefik/acme.json)"
+        fi
+
+        # Expected Services
+        echo ""
+        print_message "info" "Expected services ($expected_containers):"
+        echo "  - traefik (reverse proxy + Let's Encrypt)"
+        echo "  - postgres (database)"
+        echo "  - synapse (Matrix homeserver)"
+        echo "  - synapse-admin (admin interface)"
+        echo "  - element (web client)"
     fi
 
     echo ""

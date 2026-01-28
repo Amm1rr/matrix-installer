@@ -1356,8 +1356,14 @@ check_status() {
     # Collect all information first
     local matrix_dir
     local compose_file
+    local ssl_cert
+    local ssl_key
+    local ssl_ca
     local containers
     local container_count=0
+    local volumes
+    local volume_count=0
+    local expected_containers=4  # postgres, dendrite, element, nginx (element-copy is utility)
 
     # Check directory
     if [[ -d "$MATRIX_BASE" ]]; then
@@ -1373,12 +1379,32 @@ check_status() {
         compose_file="NOT_FOUND"
     fi
 
-    # Get containers
-    if [[ "$matrix_dir" == "EXISTS" ]] && cd "$MATRIX_BASE" 2>/dev/null; then
-        containers=$(docker compose ps --format '{{.Name}}' 2>/dev/null | grep -v '^$' || echo '')
-        container_count=$(echo "$containers" | grep -c '.' || echo 0)
-        cd - > /dev/null
+    # Check SSL certificate files
+    if [[ -f "$MATRIX_BASE/ssl/cert-full-chain.pem" ]]; then
+        ssl_cert="EXISTS"
+    else
+        ssl_cert="NOT_FOUND"
     fi
+
+    if [[ -f "$MATRIX_BASE/ssl/server.key" ]]; then
+        ssl_key="EXISTS"
+    else
+        ssl_key="NOT_FOUND"
+    fi
+
+    if [[ -f "$MATRIX_BASE/ssl/rootCA.crt" ]]; then
+        ssl_ca="EXISTS"
+    else
+        ssl_ca="NOT_FOUND"
+    fi
+
+    # Get zanjir- containers
+    containers=$(docker ps --format '{{.Names}}' 2>/dev/null | grep '^zanjir-' || echo '')
+    container_count=$(echo "$containers" | grep -c '^zanjir-' || echo 0)
+
+    # Get zanjir- volumes
+    volumes=$(docker volume ls --format '{{.Name}}' 2>/dev/null | grep '^zanjir-' || echo '')
+    volume_count=$(echo "$volumes" | grep -c '^zanjir-' || echo 0)
 
     # Determine overall status
     local status=""
@@ -1397,10 +1423,14 @@ check_status() {
         status="INSTALLED (NOT RUNNING)"
         status_color="${YELLOW}"
         status_details="docker-compose.yml exists but no containers running"
-    elif [[ $container_count -gt 0 ]]; then
+    elif [[ $container_count -lt $expected_containers ]]; then
+        status="PARTIALLY RUNNING"
+        status_color="${YELLOW}"
+        status_details="${container_count}/${expected_containers} services running"
+    elif [[ $container_count -ge $expected_containers ]]; then
         status="RUNNING"
         status_color="${GREEN}"
-        status_details="${container_count} service(s) running"
+        status_details="${container_count} container(s) running"
     fi
 
     # Show summary at top
@@ -1417,22 +1447,62 @@ check_status() {
         echo ""
 
         # Services Section
-        print_message "info" "Services:"
+        print_message "info" "Containers (zanjir- prefix):"
         echo ""
         if [[ $container_count -gt 0 ]]; then
-            cd "$MATRIX_BASE" 2>/dev/null || return 1
-            docker compose ps 2>/dev/null
-            cd - > /dev/null
-
-            # Show URLs
-            echo ""
-            print_message "info" "Access URLs:"
-            echo "  - Element Web: https://${SERVER_NAME}"
-            echo "  - Mobile Guide: https://${SERVER_NAME}/mobile_guide"
+            docker ps --filter "name=zanjir-" --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}" 2>/dev/null
         else
-            echo "  No services running"
-            print_message "info" "Start them with: cd $MATRIX_BASE && docker compose up -d"
+            echo "  No zanjir containers running"
         fi
+
+        # Volumes Section
+        echo ""
+        print_message "info" "Volumes (zanjir- prefix):"
+        echo ""
+        if [[ $volume_count -gt 0 ]]; then
+            echo "$volumes" | sed 's/^/  - /'
+            echo "  Total: ${volume_count} volume(s)"
+        else
+            echo "  No zanjir volumes found"
+        fi
+
+        # SSL Certificates Section
+        echo ""
+        print_message "info" "SSL Certificates (Private Key):"
+        echo ""
+        if [[ "$ssl_cert" == "EXISTS" ]]; then
+            echo "  Certificate: ${GREEN}✓ Found${NC} (ssl/cert-full-chain.pem)"
+        else
+            echo "  Certificate: ${RED}✗ Not found${NC} (ssl/cert-full-chain.pem)"
+        fi
+        if [[ "$ssl_key" == "EXISTS" ]]; then
+            echo "  Private Key: ${GREEN}✓ Found${NC} (ssl/server.key)"
+        else
+            echo "  Private Key: ${RED}✗ Not found${NC} (ssl/server.key)"
+        fi
+        if [[ "$ssl_ca" == "EXISTS" ]]; then
+            echo "  Root CA:     ${GREEN}✓ Found${NC} (ssl/rootCA.crt)"
+        else
+            echo "  Root CA:     ${RED}✗ Not found${NC} (ssl/rootCA.crt)"
+        fi
+
+        # Expected Services
+        echo ""
+        print_message "info" "Expected containers ($expected_containers):"
+        echo "  - zanjir-postgres (PostgreSQL database)"
+        echo "  - zanjir-dendrite (Matrix homeserver)"
+        echo "  - zanjir-element (Element Web client)"
+        echo "  - zanjir-nginx (nginx reverse proxy)"
+
+        # Expected Volumes
+        echo ""
+        print_message "info" "Expected volumes (6):"
+        echo "  - zanjir-postgres-data"
+        echo "  - zanjir-dendrite-media"
+        echo "  - zanjir-dendrite-jetstream"
+        echo "  - zanjir-dendrite-search"
+        echo "  - zanjir-web-data"
+        echo "  - zanjir-element-web"
     fi
 
     echo ""
