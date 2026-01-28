@@ -420,28 +420,105 @@ setup_synapse_user_and_db() {
     print_message "success" "Database configured"
 }
 
+# Create systemd service file for pip-installed Synapse
+create_synapse_systemd_service() {
+    print_message "info" "Creating systemd service for Synapse..."
+
+    local service_file="/etc/systemd/system/matrix-synapse.service"
+    local synapse_user="matrix-synapse"
+    local synapse_venv="/opt/synapse-venv"
+
+    sudo tee "$service_file" > /dev/null <<EOF
+[Unit]
+Description=Matrix Synapse homeserver
+After=network.target postgresql.service
+
+[Service]
+Type=notify
+NotifyAccess=all
+User=$synapse_user
+Group=$synapse_user
+WorkingDirectory=/var/lib/synapse
+ExecStart=$synapse_venv/bin/python -m synapse.app.homeserver --config-path=/etc/synapse/homeserver.yaml
+ExecReload=/bin/kill -HUP \$MAINPID
+Restart=always
+RestartSec=3
+Environment="PYTHONUNBUFFERED=1"
+Environment="PATH=$synapse_venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+    sudo systemctl daemon-reload
+    print_message "success" "Systemd service created"
+}
+
 install_synapse_package() {
     print_message "info" "Installing Synapse package..."
 
     case "$DETECTED_OS" in
         ubuntu)
-            # Add Matrix.org repository
-            print_message "info" "Adding Matrix.org package repository..."
+            # Install Synapse using pip in virtual environment
+            # Ubuntu 24.04+ has PEP 668 which requires venv for system-wide pip installs
+            print_message "info" "Installing Synapse via pip in virtual environment..."
 
-            if [[ ! -f /usr/share/keyrings/matrix-org-archive-keyring.gpg ]]; then
-                sudo wget -O /usr/share/keyrings/matrix-org-archive-keyring.gpg \
-                    https://packages.matrix.org/debian/matrix-org-archive-keyring.gpg
+            local synapse_venv="/opt/synapse-venv"
+
+            # Install build dependencies
+            sudo apt-get update -qq
+            sudo apt-get install -y python3-venv libssl-dev python3-dev \
+                libxml2-dev libpq-dev libffi-dev python3-setuptools build-essential
+
+            # Create virtual environment
+            print_message "info" "Creating virtual environment at $synapse_venv..."
+            if [[ -d "$synapse_venv" ]]; then
+                print_message "info" "Virtual environment already exists, skipping..."
+            else
+                sudo python3 -m venv "$synapse_venv" || {
+                    print_message "error" "Failed to create virtual environment"
+                    return 1
+                }
             fi
 
-            echo "deb [signed-by=/usr/share/keyrings/matrix-org-archive-keyring.gpg] \
-                https://packages.matrix.org/debian/ debian main" | \
-                sudo tee /etc/apt/sources.list.d/matrix-org.list > /dev/null
+            # Install synapse in virtual environment
+            print_message "info" "Installing matrix-synapse in virtual environment..."
+            sudo "$synapse_venv/bin/pip" install --upgrade "matrix-synapse[all]" || {
+                print_message "error" "Failed to install matrix-synapse"
+                return 1
+            }
 
-            sudo apt-get update -qq
-            sudo apt-get install -y matrix-synapse
+            # Create synapse user manually (since we're using pip)
+            if ! id "matrix-synapse" &>/dev/null; then
+                print_message "info" "Creating synapse user..."
+                sudo useradd --system --home /var/lib/synapse --create-home \
+                    --shell /usr/sbin/nologin matrix-synapse || {
+                    print_message "error" "Failed to create synapse user"
+                    return 1
+                }
+            fi
+
+            # Ensure the synapse directories exist with proper permissions
+            print_message "info" "Creating synapse directories..."
+            sudo mkdir -p /var/lib/synapse /var/log/synapse /etc/synapse
+            sudo chown -R matrix-synapse:matrix-synapse /var/lib/synapse /var/log/synapse /etc/synapse
+            sudo chmod 750 /var/lib/synapse /var/log/synapse
+            sudo chmod 755 /etc/synapse
+
+            # Create systemd service file for venv-installed synapse
+            create_synapse_systemd_service
+
+            # Verify synapse installation
+            if ! sudo -u matrix-synapse "$synapse_venv/bin/python" -c "import synapse" 2>/dev/null; then
+                print_message "error" "Synapse installation verification failed"
+                return 1
+            fi
             ;;
         arch)
-            sudo pacman -S --noconfirm synapse python-setuptools
+            sudo pacman -S --noconfirm synapse python-setuptools || {
+                print_message "error" "Failed to install synapse package"
+                return 1
+            }
             ;;
     esac
 
@@ -500,6 +577,14 @@ tls_private_key_path: \${config_dir}/${SERVER_NAME}.key
 # Federation settings for Root Key
 federation_verify_certificates: false
 trust_signed_third_party_certificates: false
+
+# Trusted key servers (accept insecurely for self-signed cert federation)
+trusted_key_servers:
+  - server_name: "matrix.org"
+    accept_keys_insecurely: true
+
+# Suppress key server warning when using custom certificates
+suppress_key_server_warning: true
 
 # Registration
 enable_registration: ${ENABLE_REGISTRATION}
@@ -560,16 +645,40 @@ setup_root_ca_certificates() {
 
     case "$DETECTED_OS" in
         ubuntu)
+            # Install ca-certificates package if needed
+            if ! dpkg -l | grep -q "^ii.*ca-certificates"; then
+                print_message "info" "Installing ca-certificates package..."
+                sudo apt-get install -y ca-certificates
+            fi
+
             # Copy to Debian trust store
             sudo mkdir -p /usr/local/share/ca-certificates
             sudo cp "$ROOT_CA" /usr/local/share/ca-certificates/matrix-root-ca.crt
-            sudo update-ca-certificates
+
+            # Use full path to avoid PATH issues
+            if [[ -x /usr/sbin/update-ca-certificates ]]; then
+                sudo /usr/sbin/update-ca-certificates
+            else
+                print_message "warning" "update-ca-certificates not found, Root Key may not be fully trusted"
+            fi
             ;;
         arch)
+            # Install ca-certificates package if needed
+            if ! pacman -Q ca-certificates &>/dev/null; then
+                print_message "info" "Installing ca-certificates package..."
+                sudo pacman -S --noconfirm ca-certificates
+            fi
+
             # Copy to Arch trust store
             sudo mkdir -p /etc/ca-certificates/trust-source/anchors
             sudo cp "$ROOT_CA" /etc/ca-certificates/trust-source/anchors/matrix-root-ca.crt
-            sudo trust extract-compat
+
+            # Use full path to avoid PATH issues
+            if [[ -x /usr/bin/trust ]]; then
+                sudo /usr/bin/trust extract-compat
+            else
+                print_message "warning" "trust command not found, Root Key may not be fully trusted"
+            fi
             ;;
     esac
 
@@ -601,24 +710,68 @@ install_element_web() {
     local install_dir="/var/www/element"
     local web_user="$(get_web_user)"
 
-    # Get latest version
+    # Get latest version with fallback
     local latest_version
-    latest_version=$(curl -s https://api.github.com/repos/element-hq/element-web/releases/latest | \
-                    grep '"tag_name"' | sed -E 's/.*"([^"]+)".*/\1/')
+    latest_version=$(curl -s https://api.github.com/repos/element-hq/element-web/releases/latest 2>/dev/null | \
+                    grep '"tag_name"' | sed -E 's/.*"([^"]+)".*/\1/' | head -1)
 
-    [[ -z "$latest_version" ]] && latest_version="v1.11.93"
+    # Use a known working version if API fails
+    [[ -z "$latest_version" ]] && latest_version="v1.12.9"
 
     print_message "info" "Downloading Element Web ${latest_version}..."
 
-    local download_url="https://github.com/element-hq/element-web/releases/download/${latest_version}/element-web-${latest_version}.tar.gz"
-
     sudo mkdir -p "$install_dir"
-
-    # Download and extract
     cd /tmp
-    curl -fL "$download_url" -o element-web.tar.gz
-    sudo tar -xzf element-web.tar.gz -C "$install_dir" --strip-components=1
-    rm -f element-web.tar.gz
+
+    # Correct URL format: element-v<version>.tar.gz (not element-web-v<version>.tar.gz)
+    local download_urls=(
+        "https://github.com/element-hq/element-web/releases/download/${latest_version}/element-${latest_version}.tar.gz"
+        "https://github.com/element-hq/element-web/releases/download/${latest_version}/element-web-${latest_version}.tar.gz"
+    )
+
+    local downloaded=false
+    local url_used=""
+
+    for url in "${download_urls[@]}"; do
+        if curl -fL "$url" -o element-web.tar.gz 2>/dev/null; then
+            downloaded=true
+            url_used="$url"
+            break
+        fi
+    done
+
+    if [[ "$downloaded" == "false" ]]; then
+        print_message "warning" "Failed to download Element Web"
+        print_message "info" "You can install Element Web manually from: https://github.com/element-hq/element-web"
+        print_message "info" "Or use the release URL directly and extract to $install_dir"
+        return 1
+    fi
+
+    print_message "info" "Downloaded from: $url_used"
+
+    # Extract and install
+    if sudo tar -xzf element-web.tar.gz -C "$install_dir" --strip-components=1 2>/dev/null; then
+        rm -f element-web.tar.gz
+    else
+        # Try without strip-components
+        rm -rf "$install_dir"/*
+        sudo tar -xzf element-web.tar.gz -C "$install_dir" 2>/dev/null
+        rm -f element-web.tar.gz
+
+        # If extraction created a subdirectory, move files up
+        local subdir
+        subdir=$(sudo find "$install_dir" -maxdepth 1 -type d \( -name "element-*" -o -name "element" \) 2>/dev/null | head -1)
+        if [[ -n "$subdir" ]]; then
+            sudo mv "${subdir}"/* "$install_dir"/ 2>/dev/null || true
+            sudo rmdir "$subdir" 2>/dev/null || true
+        fi
+    fi
+
+    # Check if files were extracted
+    if [[ ! -f "${install_dir}/index.html" ]]; then
+        print_message "warning" "Element Web installation incomplete - index.html not found"
+        return 1
+    fi
 
     # Configure
     sudo tee "${install_dir}/config.json" > /dev/null <<EOF
@@ -649,24 +802,64 @@ install_synapse_admin() {
     local install_dir="/var/www/synapse-admin"
     local web_user="$(get_web_user)"
 
-    # Get latest version
+    # Get latest version with fallback
     local latest_version
-    latest_version=$(curl -s https://api.github.com/repos/Awesome-Technologies/synapse-admin/releases/latest | \
-                    grep '"tag_name"' | sed -E 's/.*"([^"]+)".*/\1/')
+    latest_version=$(curl -s https://api.github.com/repos/Awesome-Technologies/synapse-admin/releases/latest 2>/dev/null | \
+                    grep '"tag_name"' | sed -E 's/.*"([^"]+)".*/\1/' | head -1)
 
+    # Use a known working version if API fails
     [[ -z "$latest_version" ]] && latest_version="v0.10.2"
 
     print_message "info" "Downloading Synapse Admin ${latest_version}..."
 
-    local download_url="https://github.com/Awesome-Technologies/synapse-admin/releases/download/${latest_version}/synapse-admin-${latest_version}.tar.gz"
-
     sudo mkdir -p "$install_dir"
-
-    # Download and extract
     cd /tmp
-    curl -fL "$download_url" -o synapse-admin.tar.gz
-    sudo tar -xzf synapse-admin.tar.gz -C "$install_dir" --strip-components=1
-    rm -f synapse-admin.tar.gz
+
+    # Try different download URL formats
+    local download_urls=(
+        "https://github.com/Awesome-Technologies/synapse-admin/releases/download/${latest_version}/synapse-admin-${latest_version}.tar.gz"
+        "https://github.com/Awesome-Technologies/synapse-admin/releases/download/${latest_version}/synapse-admin.tar.gz"
+        "https://github.com/Awesome-Technologies/synapse-admin/archive/refs/tags/${latest_version}.tar.gz"
+    )
+
+    local downloaded=false
+    for url in "${download_urls[@]}"; do
+        if curl -fL "$url" -o synapse-admin.tar.gz 2>/dev/null; then
+            downloaded=true
+            print_message "info" "Downloaded from: $url"
+            break
+        fi
+    done
+
+    if [[ "$downloaded" == "false" ]]; then
+        print_message "warning" "Failed to download Synapse Admin. Skipping..."
+        rm -f synapse-admin.tar.gz
+        return 1
+    fi
+
+    # Extract and install
+    if sudo tar -xzf synapse-admin.tar.gz -C "$install_dir" --strip-components=1 2>/dev/null; then
+        rm -f synapse-admin.tar.gz
+    else
+        # Try without strip-components
+        rm -rf "$install_dir"/*
+        sudo tar -xzf synapse-admin.tar.gz -C "$install_dir" 2>/dev/null
+        rm -f synapse-admin.tar.gz
+
+        # If extraction created a subdirectory, move files up
+        local subdir
+        subdir=$(sudo find "$install_dir" -maxdepth 1 -type d -name "synapse-admin*" 2>/dev/null | head -1)
+        if [[ -n "$subdir" ]]; then
+            sudo mv "${subdir}"/* "$install_dir"/ 2>/dev/null
+            sudo rmdir "$subdir" 2>/dev/null
+        fi
+    fi
+
+    # Check if files were extracted
+    if [[ ! -f "${install_dir}/index.html" ]]; then
+        print_message "warning" "Synapse Admin files not found. Installation may be incomplete."
+        return 1
+    fi
 
     # Set ownership
     sudo chown -R "${web_user}:${web_user}" "$install_dir"
@@ -686,21 +879,29 @@ enable_and_start_services() {
     # Start/restart services
     sudo systemctl restart postgresql
     sleep 3
-    sudo systemctl restart "$synapse_service"
 
-    # Wait for synapse to be ready
-    local max_wait=60
-    local waited=0
-    while [[ $waited -lt $max_wait ]]; do
-        if sudo systemctl is-active --quiet "$synapse_service"; then
-            print_message "success" "Synapse is running"
-            return 0
-        fi
-        sleep 2
-        waited=$((waited + 2))
-    done
+    # Try to start synapse
+    sudo systemctl restart "$synapse_service" 2>&1
 
-    print_message "warning" "Synapse may not be fully started yet. Check with: sudo systemctl status $synapse_service"
+    # Wait a bit and check if service is running
+    sleep 5
+
+    if sudo systemctl is-active --quiet "$synapse_service"; then
+        print_message "success" "Synapse is running"
+        return 0
+    fi
+
+    # Service failed to start - get detailed error
+    print_message "error" "Synapse service failed to start"
+    echo ""
+    echo "Service status:"
+    sudo systemctl status "$synapse_service" --no-pager -l 2>&1 | head -20 || true
+    echo ""
+    echo "Recent logs:"
+    sudo journalctl -u "$synapse_service" -n 30 --no-pager 2>&1 || true
+    echo ""
+
+    return 1
 }
 
 create_admin_user() {
@@ -710,12 +911,21 @@ create_admin_user() {
     print_message "info" "Creating admin user: $username"
 
     local synapse_service="$(get_synapse_service_name)"
+    local synapse_user="$(get_synapse_user)"
+
+    # Check if synapse user exists
+    if ! id "$synapse_user" &>/dev/null; then
+        print_message "error" "Synapse user '$synapse_user' does not exist"
+        print_message "info" "Install Synapse first"
+        return 1
+    fi
 
     # Wait for synapse to be ready
     local max_wait=30
     local waited=0
     while [[ $waited -lt $max_wait ]]; do
-        if sudo -u "$(get_synapse_user)" register_new_matrix_user \
+        # Try register_new_matrix_user from different locations
+        if sudo -u "$synapse_user" register_new_matrix_user \
             --server "$SERVER_NAME:8448" \
             --user "$username" \
             --password "$password" \
@@ -740,7 +950,8 @@ EOF
     done
 
     print_message "warning" "Failed to create admin user automatically"
-    print_message "info" "Create manually with: sudo -u $(get_synapse_user) register_new_matrix_user --server $SERVER_NAME:8448 --admin"
+    print_message "info" "Create manually with:"
+    print_message "info" "  sudo -u $synapse_user register_new_matrix_user --server $SERVER_NAME:8448 --admin"
     return 1
 }
 
@@ -956,13 +1167,249 @@ menu_create_admin_user() {
 # UNINSTALL FUNCTION
 # ===========================================
 
+# ===========================================
+# UNINSTALL OPTIONS
+# ===========================================
+
+show_uninstall_menu() {
+    echo ""
+    echo "╔══════════════════════════════════════════════════════════╗"
+    echo "║              Uninstall Options                           ║"
+    echo "╚══════════════════════════════════════════════════════════╝"
+    echo ""
+    echo "Select uninstall level:"
+    echo ""
+    echo "  1) Remove Synapse only (Recommended)"
+    echo "     - Keep PostgreSQL and system packages"
+    echo "     - Remove Synapse configs and data"
+    echo "     - Safe if other services use PostgreSQL"
+    echo ""
+    echo "  2) Remove Synapse + Database"
+    echo "     - Remove Synapse configs and data"
+    echo "     - Remove Synapse database and user"
+    echo "     - Keep PostgreSQL package and system"
+    echo ""
+    echo "  3) Complete Removal (Advanced)"
+    echo "     - Remove everything including PostgreSQL"
+    echo "     - WARNING: May affect other services!"
+    echo ""
+    echo "  0) Cancel"
+    echo ""
+}
+
 uninstall_synapse() {
     local synapse_service="$(get_synapse_service_name)"
+    local synapse_user="$(get_synapse_user)"
 
-    print_message "warning" "This will remove Synapse and all data"
+    # Check for any traces of Synapse installation (full or partial)
+    local has_synapse=false
+    local has_postgresql=false
+    local has_element=false
+    local has_synapse_admin=false
+    local has_configs=false
+
+    # Check Synapse package/service
+    if systemctl list-unit-files 2>/dev/null | grep -q "^${synapse_service}\.service"; then
+        has_synapse=true
+    fi
+
+    case "$DETECTED_OS" in
+        ubuntu)
+            if dpkg -l 2>/dev/null | grep -q "^ii.*matrix-synapse"; then
+                has_synapse=true
+            fi
+            if dpkg -l 2>/dev/null | grep -q "^ii.*postgresql"; then
+                has_postgresql=true
+            fi
+            ;;
+        arch)
+            if pacman -Q synapse &>/dev/null; then
+                has_synapse=true
+            fi
+            if pacman -Q postgresql &>/dev/null; then
+                has_postgresql=true
+            fi
+            ;;
+    esac
+
+    # Check for PostgreSQL via service
+    if systemctl list-unit-files 2>/dev/null | grep -q "^postgresql.service"; then
+        has_postgresql=true
+    fi
+
+    # Check for Element Web
+    if [[ -d "/var/www/element" ]]; then
+        has_element=true
+    fi
+
+    # Check for Synapse Admin
+    if [[ -d "/var/www/synapse-admin" ]]; then
+        has_synapse_admin=true
+    fi
+
+    # Check for Synapse configs
+    if [[ -d "/etc/synapse" ]] || [[ -d "/var/lib/synapse" ]]; then
+        has_configs=true
+    fi
+
+    # If nothing is found, return
+    if [[ "$has_synapse" == "false" ]] && [[ "$has_postgresql" == "false" ]] && \
+       [[ "$has_element" == "false" ]] && [[ "$has_synapse_admin" == "false" ]] && \
+       [[ "$has_configs" == "false" ]]; then
+        print_message "warning" "Matrix is not installed"
+        return 0
+    fi
+
+    # Show what was found
+    print_message "info" "Found traces of Matrix installation:"
+    [[ "$has_synapse" == "true" ]] && echo "  - Synapse package/service"
+    [[ "$has_postgresql" == "true" ]] && echo "  - PostgreSQL"
+    [[ "$has_element" == "true" ]] && echo "  - Element Web"
+    [[ "$has_synapse_admin" == "true" ]] && echo "  - Synapse Admin"
+    [[ "$has_configs" == "true" ]] && echo "  - Synapse configs/data"
     echo ""
 
-    if [[ "$(prompt_yes_no "Continue with uninstall?" "n")" != "yes" ]]; then
+    show_uninstall_menu
+    read -rp "Enter your choice: " choice
+
+    case "$choice" in
+        1)
+            uninstall_synapse_only "$synapse_service" "$synapse_user"
+            ;;
+        2)
+            uninstall_with_database "$synapse_service" "$synapse_user"
+            ;;
+        3)
+            uninstall_complete "$synapse_service" "$synapse_user"
+            ;;
+        0|q|exit)
+            print_message "info" "Uninstall cancelled"
+            return 0
+            ;;
+        *)
+            print_message "error" "Invalid option"
+            return 0
+            ;;
+    esac
+}
+
+# Remove Synapse only (keep PostgreSQL and system packages)
+uninstall_synapse_only() {
+    local synapse_service="$1"
+    local synapse_user="$2"
+
+    print_message "warning" "This will remove Synapse configuration and data"
+    print_message "info" "PostgreSQL and system packages will be kept"
+    echo ""
+
+    if [[ "$(prompt_yes_no "Continue?" "n")" != "yes" ]]; then
+        print_message "info" "Uninstall cancelled"
+        return 0
+    fi
+
+    # Stop Synapse service
+    print_message "info" "Stopping Synapse service..."
+    sudo systemctl stop "$synapse_service" 2>/dev/null || true
+    sudo systemctl disable "$synapse_service" 2>/dev/null || true
+
+    # Remove Synapse package (from repo)
+    print_message "info" "Removing Synapse package..."
+    case "$DETECTED_OS" in
+        ubuntu)
+            sudo apt-get remove --purge -y matrix-synapse 2>/dev/null || true
+            ;;
+        arch)
+            sudo pacman -Rns --noconfirm synapse 2>/dev/null || true
+            ;;
+    esac
+
+    # Remove pip-installed synapse if present
+    if command -v pip3 &>/dev/null; then
+        if pip3 show matrix-synapse &>/dev/null; then
+            print_message "info" "Removing pip-installed Synapse..."
+            sudo pip3 uninstall -y matrix-synapse 2>/dev/null || true
+        fi
+    fi
+
+    # Remove systemd service file
+    sudo rm -f /etc/systemd/system/matrix-synapse.service
+    sudo systemctl daemon-reload 2>/dev/null || true
+
+    # Remove Synapse configs and data
+    print_message "info" "Removing Synapse configuration and data..."
+    sudo rm -rf /etc/synapse
+    sudo rm -rf /var/lib/synapse
+    sudo rm -rf /var/log/synapse
+    sudo rm -rf /opt/synapse
+
+    # Remove web files
+    sudo rm -rf /var/www/element
+    sudo rm -rf /var/www/synapse-admin
+
+    # Remove Matrix.org repo (Ubuntu) - optional
+    if [[ "$DETECTED_OS" == "ubuntu" ]]; then
+        if [[ -f /etc/apt/sources.list.d/matrix-org.list ]]; then
+            if [[ "$(prompt_yes_no "Remove Matrix.org repository?" "n")" == "yes" ]]; then
+                sudo rm -f /etc/apt/sources.list.d/matrix-org.list
+                sudo rm -f /usr/share/keyrings/matrix-org-archive-keyring.gpg
+                print_message "info" "Repository removed"
+            fi
+        fi
+    fi
+
+    print_message "success" "Synapse removed (PostgreSQL kept intact)"
+}
+
+# Remove Synapse + Database (keep PostgreSQL package)
+uninstall_with_database() {
+    local synapse_service="$1"
+    local synapse_user="$2"
+
+    print_message "warning" "This will remove Synapse and its database"
+    print_message "info" "PostgreSQL package will be kept"
+    echo ""
+
+    if [[ "$(prompt_yes_no "Continue?" "n")" != "yes" ]]; then
+        print_message "info" "Uninstall cancelled"
+        return 0
+    fi
+
+    # First do synapse-only uninstall
+    uninstall_synapse_only "$synapse_service" "$synapse_user"
+
+    # Remove Synapse database and user
+    print_message "info" "Removing Synapse database and user..."
+
+    # Drop database
+    sudo -u postgres psql -c "DROP DATABASE IF EXISTS synapsedb;" 2>/dev/null || true
+
+    # Drop user
+    sudo -u postgres psql -c "DROP USER IF EXISTS synapse;" 2>/dev/null || true
+
+    print_message "success" "Synapse and database removed (PostgreSQL package kept)"
+}
+
+# Complete removal (including PostgreSQL package)
+uninstall_complete() {
+    local synapse_service="$1"
+    local synapse_user="$2"
+
+    print_message "warning" "========================================"
+    print_message "warning" "DANGER: Complete Removal"
+    print_message "warning" "========================================"
+    print_message "warning" "This will remove:"
+    print_message "warning" "  - Synapse package and configs"
+    print_message "warning" "  - Synapse database"
+    print_message "warning" "  - PostgreSQL package and ALL databases"
+    print_message "warning" "  - All data in /var/lib/postgresql"
+    print_message "warning" ""
+    print_message "warning" "If other services use PostgreSQL, they will break!"
+    echo ""
+
+    local confirm
+    confirm="$(prompt_user "Type 'COMPLETE' to confirm")"
+
+    if [[ "$confirm" != "COMPLETE" ]]; then
         print_message "info" "Uninstall cancelled"
         return 0
     fi
@@ -970,27 +1417,42 @@ uninstall_synapse() {
     # Stop services
     print_message "info" "Stopping services..."
     sudo systemctl stop "$synapse_service" 2>/dev/null || true
+    sudo systemctl disable "$synapse_service" 2>/dev/null || true
     sudo systemctl stop postgresql 2>/dev/null || true
+    sudo systemctl disable postgresql 2>/dev/null || true
 
-    # Remove packages
+    # Remove all packages
     print_message "info" "Removing packages..."
     case "$DETECTED_OS" in
         ubuntu)
-            sudo apt-get remove --purge -y matrix-synapse postgresql python3-psycopg2 2>/dev/null || true
+            sudo apt-get remove --purge -y matrix-synapse postgresql postgresql-contrib python3-psycopg2 2>/dev/null || true
             ;;
         arch)
             sudo pacman -Rns --noconfirm synapse postgresql python-psycopg2 2>/dev/null || true
             ;;
     esac
 
-    # Remove configs and data
-    print_message "info" "Removing configuration and data..."
+    # Remove pip-installed synapse if present
+    if command -v pip3 &>/dev/null; then
+        if pip3 show matrix-synapse &>/dev/null; then
+            print_message "info" "Removing pip-installed Synapse..."
+            sudo pip3 uninstall -y matrix-synapse 2>/dev/null || true
+        fi
+    fi
+
+    # Remove systemd service file
+    sudo rm -f /etc/systemd/system/matrix-synapse.service
+    sudo systemctl daemon-reload 2>/dev/null || true
+
+    # Remove all data
+    print_message "info" "Removing all data..."
     sudo rm -rf /etc/synapse
     sudo rm -rf /var/lib/synapse
     sudo rm -rf /var/lib/postgresql
     sudo rm -rf /var/www/element
     sudo rm -rf /var/www/synapse-admin
     sudo rm -rf /var/log/synapse
+    sudo rm -rf /opt/synapse
 
     # Remove Matrix.org repo (Ubuntu)
     if [[ "$DETECTED_OS" == "ubuntu" ]]; then
@@ -998,12 +1460,13 @@ uninstall_synapse() {
         sudo rm -f /usr/share/keyrings/matrix-org-archive-keyring.gpg
     fi
 
-    # Remove users
-    print_message "info" "Removing users..."
-    local synapse_user="$(get_synapse_user)"
+    # Remove system user
+    print_message "info" "Removing system user..."
     sudo userdel "$synapse_user" 2>/dev/null || true
 
-    print_message "success" "Uninstall completed"
+    print_message "success" "Complete removal finished"
+    print_message "warning" "PostgreSQL package has been removed"
+    print_message "info" "You may need to reinstall PostgreSQL if needed"
 }
 
 # ===========================================
@@ -1013,7 +1476,7 @@ uninstall_synapse() {
 show_menu() {
     echo ""
     echo "╔══════════════════════════════════════════════════════════╗"
-    echo "║           Synapse Native Installer                        ║"
+    echo "║           Synapse Native Installer                       ║"
     echo "║              Version ${ADDON_VERSION}                               ║"
     echo "║                                                          ║"
     echo "║       Native package-based Matrix homeserver             ║"
