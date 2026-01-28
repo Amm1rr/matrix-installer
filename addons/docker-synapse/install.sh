@@ -293,7 +293,7 @@ install_matrix() {
         fi
         print_message "info" "This installer uses: Let's Encrypt (DuckDNS)"
         echo ""
-        print_message "info" "Please use 'Uninstall Matrix' option first to remove the existing installation."
+        print_message "info" "Please uninstall the existing Matrix installation before continuing."
         echo ""
         read -rp "Press Enter to continue..."
         exit 0
