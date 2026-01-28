@@ -1075,7 +1075,8 @@ create_admin_user() {
     local username="${1:-admin}"
     local password="${2:-$(generate_password 16)}"
 
-    print_message "info" "Creating admin user: $username"
+    # Redirect all output to stderr except the final password echo
+    print_message "info" "Creating admin user: $username" >&2
 
     local synapse_user="$(get_synapse_user)"
     local synapse_venv="/opt/synapse-venv"
@@ -1084,29 +1085,30 @@ create_admin_user() {
 
     # Check if synapse user exists
     if ! id "$synapse_user" &>/dev/null; then
-        print_message "error" "Synapse user '$synapse_user' does not exist"
-        print_message "info" "Install Synapse first"
-        return 0
+        print_message "error" "Synapse user '$synapse_user' does not exist" >&2
+        print_message "info" "Install Synapse first" >&2
+        return 1
     fi
 
     # Check if config file exists
     if [[ ! -f "$config_file" ]]; then
-        print_message "error" "Config file not found: $config_file"
-        return 0
+        print_message "error" "Config file not found: $config_file" >&2
+        return 1
     fi
 
     # Check if register command exists
     if [[ ! -x "$register_cmd" ]]; then
-        print_message "error" "register_new_matrix_user not found at $register_cmd"
-        return 0
+        print_message "error" "register_new_matrix_user not found at $register_cmd" >&2
+        return 1
     fi
 
     # Create admin user using -c flag with config file
+    # Suppress all output from the register command
     if sudo -u "$synapse_user" PATH="$synapse_venv/bin:$PATH" "$register_cmd" \
         -c "$config_file" \
         -u "$username" \
         -p "$password" \
-        -a 2>&1; then
+        -a >/dev/null 2>&1; then
 
         # Save credentials
         cat > "${WORKING_DIR}/synapse-credentials.txt" <<EOF
@@ -1118,13 +1120,15 @@ Password: ${password}
 EOF
 
         chmod 600 "${WORKING_DIR}/synapse-credentials.txt"
-        print_message "success" "Admin user created. Credentials saved to synapse-credentials.txt"
+        print_message "success" "Admin user created. Credentials saved to synapse-credentials.txt" >&2
+        # Echo password for capture by caller (ONLY to stdout)
+        echo "$password"
         return 0
     else
-        print_message "warning" "Failed to create admin user"
-        print_message "info" "Create manually with:"
-        print_message "info" "  sudo -u $synapse_user $register_cmd -c $config_file -a"
-        return 0
+        print_message "warning" "Failed to create admin user" >&2
+        print_message "info" "Create manually with:" >&2
+        print_message "info" "  sudo -u $synapse_user $register_cmd -c $config_file -a" >&2
+        return 1
     fi
 }
 
@@ -1230,6 +1234,7 @@ print_installation_summary() {
     local synapse_service="$(get_synapse_service_name)"
     local admin_username="${1:-}"
     local admin_created="${2:-false}"
+    local admin_password="${3:-}"
 
     echo ""
     echo "╔══════════════════════════════════════════════════════════╗"
@@ -1325,6 +1330,7 @@ print_installation_summary() {
     if [[ "$admin_created" == "true" ]] && [[ -n "$admin_username" ]]; then
         echo -e "${BLUE}Admin User:${NC}"
         echo -e "  ${YELLOW}➜${NC} Username:    ${admin_username}"
+        echo -e "  ${YELLOW}➜${NC} Password:    ${admin_password}"
         echo -e "  ${YELLOW}➜${NC} Credentials: ${WORKING_DIR}/synapse-credentials.txt"
         echo ""
     fi
@@ -1440,9 +1446,11 @@ install_synapse() {
 
     # Create admin user
     local admin_created=false
+    local admin_password=""
     echo ""
     if [[ "$(prompt_yes_no "Create admin user now?" "y")" == "yes" ]]; then
-        if create_admin_user "$admin_username"; then
+        admin_password=$(create_admin_user "$admin_username")
+        if [[ $? -eq 0 && -n "$admin_password" ]]; then
             admin_created=true
         fi
     else
@@ -1450,7 +1458,7 @@ install_synapse() {
     fi
 
     # Print installation summary
-    print_installation_summary "$admin_username" "$admin_created"
+    print_installation_summary "$admin_username" "$admin_created" "$admin_password"
 
     return 0
 }
