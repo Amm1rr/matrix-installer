@@ -1329,9 +1329,9 @@ print_installation_summary() {
     # Admin user info
     if [[ "$admin_created" == "true" ]] && [[ -n "$admin_username" ]]; then
         echo -e "${BLUE}Admin User:${NC}"
-        echo -e "  ${YELLOW}➜${NC} Username:    ${admin_username}"
-        echo -e "  ${YELLOW}➜${NC} Password:    ${admin_password}"
-        echo -e "  ${YELLOW}➜${NC} Credentials: ${WORKING_DIR}/synapse-credentials.txt"
+        echo -e "  ${YELLOW}➜${NC} Username:      ${admin_username}"
+        echo -e "  ${YELLOW}➜${NC} Password:      ${admin_password}"
+        echo -e "  ${YELLOW}➜${NC} Credentials:   ${WORKING_DIR}/synapse-credentials.txt"
         echo ""
     fi
 
@@ -1636,14 +1636,14 @@ show_uninstall_menu() {
     echo "Select uninstall level:"
     echo ""
     echo "  1) Remove Synapse only (Recommended)"
-    echo "     - Keep PostgreSQL and system packages"
-    echo "     - Remove Synapse configs and data"
+    echo "     - Keep PostgreSQL and nginx"
+    echo "     - Remove Synapse venv, configs and data"
     echo "     - Safe if other services use PostgreSQL"
     echo ""
     echo "  2) Remove Synapse + Database"
-    echo "     - Remove Synapse configs and data"
+    echo "     - Remove Synapse venv, configs and data"
     echo "     - Remove Synapse database and user"
-    echo "     - Keep PostgreSQL package and system"
+    echo "     - Keep PostgreSQL package"
     echo ""
     echo "  3) Complete Removal (Advanced)"
     echo "     - Remove everything including PostgreSQL"
@@ -1665,24 +1665,22 @@ uninstall_synapse() {
     local has_configs=false
     local has_nginx=false
 
-    # Check Synapse package/service
+    # Check Synapse installation (venv or service)
     if systemctl list-unit-files 2>/dev/null | grep -q "^${synapse_service}\.service"; then
+        has_synapse=true
+    fi
+    # Check for venv installation
+    if [[ -d "/opt/synapse-venv" ]] || [[ -d "/opt/synapse" ]]; then
         has_synapse=true
     fi
 
     case "$DETECTED_OS" in
         ubuntu)
-            if dpkg -l 2>/dev/null | grep -q "^ii.*matrix-synapse"; then
-                has_synapse=true
-            fi
             if dpkg -l 2>/dev/null | grep -q "^ii.*postgresql"; then
                 has_postgresql=true
             fi
             ;;
         arch)
-            if pacman -Q synapse &>/dev/null; then
-                has_synapse=true
-            fi
             if pacman -Q postgresql &>/dev/null; then
                 has_postgresql=true
             fi
@@ -1726,7 +1724,7 @@ uninstall_synapse() {
 
     # Show what was found
     print_message "info" "Found traces of Matrix installation:"
-    [[ "$has_synapse" == "true" ]] && echo "  - Synapse package/service"
+    [[ "$has_synapse" == "true" ]] && echo "  - Synapse (venv/service)"
     [[ "$has_postgresql" == "true" ]] && echo "  - PostgreSQL"
     [[ "$has_element" == "true" ]] && echo "  - Element Web"
     [[ "$has_synapse_admin" == "true" ]] && echo "  - Synapse Admin"
@@ -1777,23 +1775,16 @@ uninstall_synapse_only() {
     sudo systemctl stop "$synapse_service" 2>/dev/null || true
     sudo systemctl disable "$synapse_service" 2>/dev/null || true
 
-    # Remove Synapse package (from repo)
-    print_message "info" "Removing Synapse package..."
-    case "$DETECTED_OS" in
-        ubuntu)
-            sudo apt-get remove --purge -y matrix-synapse 2>/dev/null || true
-            ;;
-        arch)
-            sudo pacman -Rns --noconfirm synapse 2>/dev/null || true
-            ;;
-    esac
+    # Remove Synapse virtual environment (pip installation)
+    if [[ -d "/opt/synapse-venv" ]]; then
+        print_message "info" "Removing Synapse virtual environment..."
+        sudo rm -rf /opt/synapse-venv
+    fi
 
-    # Remove pip-installed synapse if present
-    if command -v pip3 &>/dev/null; then
-        if pip3 show matrix-synapse &>/dev/null; then
-            print_message "info" "Removing pip-installed Synapse..."
-            sudo pip3 uninstall -y matrix-synapse 2>/dev/null || true
-        fi
+    # Remove old synapse directory if exists
+    if [[ -d "/opt/synapse" ]]; then
+        print_message "info" "Removing old Synapse directory..."
+        sudo rm -rf /opt/synapse
     fi
 
     # Remove systemd service file
@@ -1805,7 +1796,6 @@ uninstall_synapse_only() {
     sudo rm -rf /etc/synapse
     sudo rm -rf /var/lib/synapse
     sudo rm -rf /var/log/synapse
-    sudo rm -rf /opt/synapse
 
     # Remove web files
     sudo rm -rf /var/www/element
@@ -1829,17 +1819,6 @@ uninstall_synapse_only() {
                 sudo pacman -Rns --noconfirm nginx 2>/dev/null || true
                 ;;
         esac
-    fi
-
-    # Remove Matrix.org repo (Ubuntu) - optional
-    if [[ "$DETECTED_OS" == "ubuntu" ]]; then
-        if [[ -f /etc/apt/sources.list.d/matrix-org.list ]]; then
-            if [[ "$(prompt_yes_no "Remove Matrix.org repository?" "n")" == "yes" ]]; then
-                sudo rm -f /etc/apt/sources.list.d/matrix-org.list
-                sudo rm -f /usr/share/keyrings/matrix-org-archive-keyring.gpg
-                print_message "info" "Repository removed"
-            fi
-        fi
     fi
 
     print_message "success" "Synapse removed (PostgreSQL kept intact)"
@@ -1906,23 +1885,15 @@ uninstall_complete() {
     sudo systemctl stop postgresql 2>/dev/null || true
     sudo systemctl disable postgresql 2>/dev/null || true
 
-    # Remove all packages
-    print_message "info" "Removing packages..."
-    case "$DETECTED_OS" in
-        ubuntu)
-            sudo apt-get remove --purge -y matrix-synapse postgresql postgresql-contrib python3-psycopg2 2>/dev/null || true
-            ;;
-        arch)
-            sudo pacman -Rns --noconfirm synapse postgresql python-psycopg2 2>/dev/null || true
-            ;;
-    esac
+    # Remove Synapse virtual environment
+    if [[ -d "/opt/synapse-venv" ]]; then
+        print_message "info" "Removing Synapse virtual environment..."
+        sudo rm -rf /opt/synapse-venv
+    fi
 
-    # Remove pip-installed synapse if present
-    if command -v pip3 &>/dev/null; then
-        if pip3 show matrix-synapse &>/dev/null; then
-            print_message "info" "Removing pip-installed Synapse..."
-            sudo pip3 uninstall -y matrix-synapse 2>/dev/null || true
-        fi
+    # Remove old synapse directory if exists
+    if [[ -d "/opt/synapse" ]]; then
+        sudo rm -rf /opt/synapse
     fi
 
     # Remove systemd service file
@@ -1937,13 +1908,17 @@ uninstall_complete() {
     sudo rm -rf /var/www/element
     sudo rm -rf /var/www/synapse-admin
     sudo rm -rf /var/log/synapse
-    sudo rm -rf /opt/synapse
 
-    # Remove Matrix.org repo (Ubuntu)
-    if [[ "$DETECTED_OS" == "ubuntu" ]]; then
-        sudo rm -f /etc/apt/sources.list.d/matrix-org.list
-        sudo rm -f /usr/share/keyrings/matrix-org-archive-keyring.gpg
-    fi
+    # Remove PostgreSQL package
+    print_message "info" "Removing PostgreSQL package..."
+    case "$DETECTED_OS" in
+        ubuntu)
+            sudo apt-get remove --purge -y postgresql postgresql-contrib 2>/dev/null || true
+            ;;
+        arch)
+            sudo pacman -Rns --noconfirm postgresql 2>/dev/null || true
+            ;;
+    esac
 
     # Remove system user
     print_message "info" "Removing system user..."
