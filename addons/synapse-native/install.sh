@@ -469,29 +469,49 @@ install_synapse_package() {
             print_message "info" "Installing Synapse via pip in virtual environment..."
 
             local synapse_venv="/opt/synapse-venv"
+            local venv_exists=false
+            local synapse_installed=false
+
+            # Check if venv already exists and has synapse installed
+            if [[ -d "$synapse_venv" ]]; then
+                print_message "info" "Found existing virtual environment at $synapse_venv"
+                venv_exists=true
+
+                # Check if synapse is already installed in the venv
+                if "$synapse_venv/bin/python" -c "import synapse; print(synapse.__version__)" 2>/dev/null; then
+                    local installed_version=$("$synapse_venv/bin/python" -c "import synapse; print(synapse.__version__)" 2>/dev/null)
+                    print_message "success" "Synapse $installed_version already installed in venv"
+                    print_message "info" "Skipping download, using existing installation..."
+                    synapse_installed=true
+                else
+                    print_message "warning" "Venv exists but Synapse not properly installed"
+                    print_message "info" "Will reinstall Synapse in existing venv..."
+                fi
+            fi
 
             # Install build dependencies
             sudo apt-get update -qq
             sudo apt-get install -y python3-venv libssl-dev python3-dev \
                 libxml2-dev libpq-dev libffi-dev python3-setuptools build-essential
 
-            # Create virtual environment
-            print_message "info" "Creating virtual environment at $synapse_venv..."
-            if [[ -d "$synapse_venv" ]]; then
-                print_message "info" "Virtual environment already exists, skipping..."
-            else
+            # Create virtual environment if it doesn't exist
+            if [[ "$venv_exists" == "false" ]]; then
+                print_message "info" "Creating virtual environment at $synapse_venv..."
                 sudo python3 -m venv "$synapse_venv" || {
                     print_message "error" "Failed to create virtual environment"
                     return 1
                 }
             fi
 
-            # Install synapse in virtual environment
-            print_message "info" "Installing matrix-synapse in virtual environment..."
-            sudo "$synapse_venv/bin/pip" install --upgrade "matrix-synapse[all]" || {
-                print_message "error" "Failed to install matrix-synapse"
-                return 1
-            }
+            # Install synapse in virtual environment (only if not already installed)
+            if [[ "$synapse_installed" == "false" ]]; then
+                print_message "info" "Installing matrix-synapse in virtual environment..."
+                sudo "$synapse_venv/bin/pip" install --upgrade "matrix-synapse[all]" || {
+                    print_message "error" "Failed to install matrix-synapse"
+                    return 1
+                }
+                print_message "success" "Synapse installed successfully"
+            fi
 
             # Create synapse user manually (since we're using pip)
             if ! id "matrix-synapse" &>/dev/null; then
