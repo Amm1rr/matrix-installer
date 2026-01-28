@@ -867,6 +867,39 @@ EOF
 # ===========================================
 
 uninstall_matrix() {
+    # Check if installation exists first
+    if [[ ! -d "$MATRIX_BASE" ]]; then
+        print_message "warning" "Matrix is not installed"
+        return 0
+    fi
+
+    # Detect existing installation type
+    local existing_type="unknown"
+    if [[ -f "$MATRIX_BASE/ssl/cert-full-chain.pem" ]]; then
+        existing_type="private-key"
+    elif [[ -f "$MATRIX_BASE/data/traefik/acme.json" ]]; then
+        existing_type="letsencrypt"
+    fi
+
+    # Check if this addon can uninstall this installation
+    if [[ "$existing_type" == "letsencrypt" ]]; then
+        print_message "warning" "This addon can only uninstall Private Key (Root Key) installations."
+        print_message "info" "The existing installation appears to be: Let's Encrypt (DuckDNS)"
+        echo ""
+        print_message "info" "Please use the 'Install Docker Synapse (Let's Encrypt)' addon to uninstall."
+        echo ""
+        read -rp "Press Enter to continue..."
+        return 0
+    elif [[ "$existing_type" == "unknown" ]]; then
+        print_message "warning" "Unable to determine installation type."
+        print_message "info" "This addon can only uninstall Private Key (Root Key) installations."
+        echo ""
+        print_message "info" "Please verify the installation type and use the appropriate addon."
+        echo ""
+        read -rp "Press Enter to continue..."
+        return 0
+    fi
+
     print_message "warning" "This will:"
     echo "  - Stop all Matrix containers"
     echo "  - Remove containers and volumes"
@@ -875,11 +908,6 @@ uninstall_matrix() {
 
     if [[ "$(prompt_yes_no "Continue with uninstall?" "n")" != "yes" ]]; then
         print_message "info" "Uninstall cancelled"
-        return 0
-    fi
-
-    if [[ ! -d "$MATRIX_BASE" ]]; then
-        print_message "warning" "Matrix is not installed"
         return 0
     fi
 
