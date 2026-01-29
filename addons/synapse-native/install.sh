@@ -408,62 +408,134 @@ check_environment_variables() {
     # Prompt for server name
     SERVER_NAME="$(prompt_user "Server name (IP or domain)" "$(hostname -I | awk '{print $1}')")"
 
-    # Prompt for SSL certificate paths
     echo ""
-    echo "SSL Certificate Configuration"
-    echo "----------------------------"
-    echo "You need to provide SSL certificates for Synapse."
+    echo "This addon requires SSL certificates."
     echo ""
-    echo "Options:"
-    echo "  1) Use existing certificates"
-    echo "  2) Generate self-signed certificate (for testing)"
+    echo "Provide certificates directory, and I'll search for:"
+    echo "  - cert-full-chain.pem (server certificate chain)"
+    echo "  - server.crt (server certificate)"
+    echo "  - server.key (server private key)"
+    echo "  - rootCA.crt (Root CA certificate)"
+    echo "  - rootCA.key (Root CA private key)"
     echo ""
 
-    read -rp "Choose option [1/2]: " ssl_option
+    local certs_dir
+    certs_dir="$(prompt_user "Certificates directory (or press Enter for individual paths)" "")"
 
-    if [[ "$ssl_option" == "2" ]]; then
-        # Generate self-signed certificate
-        print_message "info" "Generating self-signed certificate..."
-        local cert_dir="/etc/synapse"
-        sudo mkdir -p "$cert_dir"
+    if [[ -n "$certs_dir" && -d "$certs_dir" ]]; then
+        # Search for files
+        local found_cert=""
+        local found_key=""
+        local found_ca=""
+        local found_ca_key=""
 
-        sudo openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
-            -keyout "${cert_dir}/${SERVER_NAME}.key" \
-            -out "${cert_dir}/${SERVER_NAME}.crt" \
-            -subj "/CN=${SERVER_NAME}" 2>/dev/null
+        # Search for server certificate (in provided directory)
+        [[ -f "$certs_dir/cert-full-chain.pem" ]] && found_cert="$certs_dir/cert-full-chain.pem"
+        [[ -z "$found_cert" && -f "$certs_dir/server.crt" ]] && found_cert="$certs_dir/server.crt"
 
-        SSL_CERT="${cert_dir}/${SERVER_NAME}.crt"
-        SSL_KEY="${cert_dir}/${SERVER_NAME}.key"
-        CERTS_DIR="$cert_dir"
-        ROOT_CA=""
+        # Search for server private key (in provided directory)
+        [[ -f "$certs_dir/server.key" ]] && found_key="$certs_dir/server.key"
 
-        print_message "success" "Self-signed certificate generated"
+        # Search for Root CA files (in provided directory, then up to 2 levels up)
+        if [[ ! -f "$certs_dir/rootCA.crt" ]]; then
+            # Try parent directory
+            local parent_dir="$(dirname "$certs_dir")"
+            [[ -f "$parent_dir/rootCA.crt" ]] && found_ca="$parent_dir/rootCA.crt"
+
+            # Try grandparent directory (2 levels up)
+            if [[ -z "$found_ca" ]]; then
+                local grandparent_dir="$(dirname "$parent_dir")"
+                [[ -f "$grandparent_dir/rootCA.crt" ]] && found_ca="$grandparent_dir/rootCA.crt"
+            fi
+        else
+            found_ca="$certs_dir/rootCA.crt"
+        fi
+
+        # Same for rootCA.key
+        if [[ ! -f "$certs_dir/rootCA.key" ]]; then
+            local parent_dir="$(dirname "$certs_dir")"
+            [[ -f "$parent_dir/rootCA.key" ]] && found_ca_key="$parent_dir/rootCA.key"
+
+            if [[ -z "$found_ca_key" ]]; then
+                local grandparent_dir="$(dirname "$parent_dir")"
+                [[ -f "$grandparent_dir/rootCA.key" ]] && found_ca_key="$grandparent_dir/rootCA.key"
+            fi
+        else
+            found_ca_key="$certs_dir/rootCA.key"
+        fi
+
+        # Report findings
+        [[ -n "$found_cert" ]] && print_message "success" "Found certificate: $found_cert"
+        [[ -n "$found_key" ]] && print_message "success" "Found private key: $found_key"
+        [[ -n "$found_ca" ]] && print_message "success" "Found Root CA: $found_ca"
+        [[ -n "$found_ca_key" ]] && print_message "success" "Found Root CA key: $found_ca_key"
+
+        echo ""
+
+        # Set found variables
+        [[ -n "$found_cert" ]] && SSL_CERT="$found_cert"
+        [[ -n "$found_key" ]] && SSL_KEY="$found_key"
+        [[ -n "$found_ca" ]] && ROOT_CA="$found_ca"
+
+        # Check for missing files and prompt
+        local missing_files=()
+        [[ -z "$SSL_CERT" ]] && missing_files+=("SSL_CERT")
+        [[ -z "$SSL_KEY" ]] && missing_files+=("SSL_KEY")
+        # ROOT_CA is optional
+
+        if [[ ${#missing_files[@]} -gt 0 ]]; then
+            print_message "info" "Some files were not found. Please provide paths:"
+            echo ""
+
+            [[ " ${missing_files[*]} " =~ " SSL_CERT " ]] && {
+                SSL_CERT="$(prompt_user "  Path to SSL certificate (cert-full-chain.pem or server.crt)" "/path/to/cert-full-chain.pem")"
+            }
+
+            [[ " ${missing_files[*]} " =~ " SSL_KEY " ]] && {
+                SSL_KEY="$(prompt_user "  Path to SSL private key (server.key)" "/path/to/server.key")"
+            }
+
+            # Prompt for Root CA if not found (optional)
+            if [[ -z "$ROOT_CA" ]]; then
+                ROOT_CA="$(prompt_user "  Path to Root CA certificate (rootCA.crt, optional - press Enter to skip)" "")"
+                [[ -z "$ROOT_CA" ]] && ROOT_CA=""
+            fi
+        fi
     else
-        # Use existing certificates
-        SSL_CERT="$(prompt_user "Path to SSL certificate file")"
-        SSL_KEY="$(prompt_user "Path to SSL private key file")"
-        CERTS_DIR="$(dirname "$SSL_CERT")"
+        # No directory provided (or invalid), prompt for all
+        echo "Please provide individual file paths:"
+        echo ""
 
-        # Validate files exist
-        if [[ ! -f "$SSL_CERT" ]]; then
-            print_message "error" "Certificate file not found: $SSL_CERT"
-            return 1
-        fi
-
-        if [[ ! -f "$SSL_KEY" ]]; then
-            print_message "error" "Private key file not found: $SSL_KEY"
-            return 1
-        fi
-
-        # Check for Root CA
-        ROOT_CA="$(prompt_user "Path to Root CA certificate (optional, press Enter to skip)")"
-        if [[ -z "$ROOT_CA" ]] || [[ ! -f "$ROOT_CA" ]]; then
-            ROOT_CA=""
-        fi
+        SSL_CERT="$(prompt_user "  Path to SSL certificate (cert-full-chain.pem or server.crt)" "/path/to/cert-full-chain.pem")"
+        SSL_KEY="$(prompt_user "  Path to SSL private key (server.key)" "/path/to/server.key")"
+        ROOT_CA="$(prompt_user "  Path to Root CA certificate (rootCA.crt, optional - press Enter to skip)" "")"
+        [[ -z "$ROOT_CA" ]] && ROOT_CA=""
     fi
 
+    CERTS_DIR="$(dirname "$SSL_CERT")"
     WORKING_DIR="$(pwd)"
-    print_message "success" "Configuration complete"
+
+    # Verify certificate files exist
+    if [[ ! -f "$SSL_CERT" ]]; then
+        print_message "error" "SSL certificate not found: $SSL_CERT"
+        return 1
+    fi
+
+    if [[ ! -f "$SSL_KEY" ]]; then
+        print_message "error" "SSL private key not found: $SSL_KEY"
+        return 1
+    fi
+
+    if [[ -n "$ROOT_CA" ]] && [[ ! -f "$ROOT_CA" ]]; then
+        print_message "error" "Root Key certificate not found: $ROOT_CA"
+        return 1
+    fi
+
+    print_message "success" "All environment variables verified"
+    print_message "info" "  SERVER_NAME: ${SERVER_NAME}"
+    print_message "info" "  SSL_CERT: ${SSL_CERT}"
+    print_message "info" "  SSL_KEY: ${SSL_KEY}"
+    [[ -n "$ROOT_CA" ]] && print_message "info" "  ROOT_CA: ${ROOT_CA}"
 
     return 0
 }
@@ -3006,7 +3078,7 @@ uninstall_synapse_only() {
         echo "╠══════════════════════════════════════════════════════════╣"
         echo "║  This will remove:                                       ║"
         echo "║    • Synapse configs and data                            ║"
-        echo "║    • Synapse system user ($synapse_user)                    ║"
+        echo "║    • Synapse system user ($synapse_user)                 ║"
         echo "║    • nginx configuration                                 ║"
         if [[ "$remove_venv" == "true" ]]; then
             echo "║    • Virtual environment (/opt/synapse-venv)             ║"
