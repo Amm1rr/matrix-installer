@@ -2152,22 +2152,37 @@ import_certificate() {
         chmod 644 "${target_dir}/servers/${server}/cert-full-chain.pem"
     done
 
-    print_message "success" "Import completed successfully!"
     echo ""
-    echo "  Imported Root CA to:"
-    echo "    ${target_dir}/"
+    echo "  ╔══════════════════════════════════════════════════════════╗"
+    echo "  ║                  Import Completed                        ║"
+    echo "  ╚══════════════════════════════════════════════════════════╝"
     echo ""
+
+    # Shorten target path for display
+    local target_display="$target_dir"
+    if [[ ${#target_display} -gt 50 ]]; then
+        target_display="...${target_display: -47}"
+    fi
+
+    echo -e "    ${BLUE}Location:${NC}  ${target_display}/"
+    echo ""
+    echo -e "    ${BLUE}Root CA:${NC}  ${root_ca_type}"
     if [[ "$has_root_ca_key" == "true" ]]; then
-        echo -e "  Type: ${GREEN}Full Root CA${NC} (with private key)"
-        echo "  New server certificates can be generated"
+        echo "       New server certificates can be generated"
     else
-        echo -e "  Type: ${ORANGE}Exported Root CA${NC} (certificate only)"
-        echo "  Existing server certificates can be used"
+        echo "       Existing server certificates can be used"
     fi
     echo ""
-    echo "  Imported servers:"
-    for server in "${found_servers[@]}"; do
-        echo "    - ${server}"
+    echo -e "    ${BLUE}Servers${NC} (${#found_servers[@]}):"
+    for i in "${!found_servers[@]}"; do
+        local server="${found_servers[$i]}"
+        if [[ $i -eq $((${#found_servers[@]} - 1)) ]] && [[ ${#found_servers[@]} -gt 1 ]]; then
+            echo "       └── ${server}"
+        elif [[ ${#found_servers[@]} -eq 1 ]]; then
+            echo "       └── ${server}"
+        else
+            echo "       ├── ${server}"
+        fi
     done
     echo ""
 
