@@ -1826,31 +1826,38 @@ uninstall_synapse() {
 }
 
 # Remove Synapse only (keep PostgreSQL and system packages)
+# Parameters: $1=synapse_service, $2=synapse_user, $3=remove_venv (optional), $4=skip_confirmation (optional), $5=remove_nginx_pkg (optional)
 uninstall_synapse_only() {
     local synapse_service="$1"
     local synapse_user="$2"
-    local remove_venv=false
+    local remove_venv="${3:-}"  # Empty means ask user, true/false means decided
+    local skip_confirmation="${4:-false}"
+    local remove_nginx_pkg="${5:-}"  # Empty means ask user
 
-    # Ask about removing virtual environment (only if it exists)
-    if [[ -d "/opt/synapse-venv" ]]; then
+    # Ask about removing virtual environment (only if not already specified and it exists)
+    if [[ -z "$remove_venv" ]] && [[ -d "/opt/synapse-venv" ]]; then
         echo ""
         echo "Found virtual environment at /opt/synapse-venv (~500MB)"
         echo "Keeping it will make next installation faster."
         echo ""
         if [[ "$(prompt_yes_no "Remove virtual environment?" "n")" == "yes" ]]; then
             remove_venv=true
+        else
+            remove_venv=false
         fi
     fi
 
-    # Show warning and ask for confirmation
-    echo ""
-    print_message "warning" "This will remove Synapse configuration and data"
-    print_message "info" "PostgreSQL and nginx will be kept"
-    echo ""
+    # Show warning and ask for confirmation (unless skipped)
+    if [[ "$skip_confirmation" != "true" ]]; then
+        echo ""
+        print_message "warning" "This will remove Synapse configuration and data"
+        print_message "info" "PostgreSQL and nginx will be kept"
+        echo ""
 
-    if [[ "$(prompt_yes_no "Continue?" "n")" != "yes" ]]; then
-        print_message "info" "Uninstall cancelled"
-        return 0
+        if [[ "$(prompt_yes_no "Continue?" "n")" != "yes" ]]; then
+            print_message "info" "Uninstall cancelled"
+            return 0
+        fi
     fi
 
     # Stop Synapse service
@@ -1894,8 +1901,17 @@ uninstall_synapse_only() {
     sudo rm -f /etc/nginx/sites-available/matrix
     sudo rm -rf /etc/nginx/ssl
 
-    # Ask about removing nginx package
-    if [[ "$(prompt_yes_no "Remove nginx package?" "n")" == "yes" ]]; then
+    # Ask about removing nginx package (only if not already decided)
+    if [[ -z "$remove_nginx_pkg" ]]; then
+        # Ask the user
+        if [[ "$(prompt_yes_no "Remove nginx package?" "n")" == "yes" ]]; then
+            remove_nginx_pkg=true
+        else
+            remove_nginx_pkg=false
+        fi
+    fi
+
+    if [[ "$remove_nginx_pkg" == "true" ]]; then
         case "$DETECTED_OS" in
             ubuntu)
                 sudo apt-get remove --purge -y nginx 2>/dev/null || true
@@ -1913,9 +1929,56 @@ uninstall_synapse_only() {
 uninstall_with_database() {
     local synapse_service="$1"
     local synapse_user="$2"
+    local remove_venv=""  # Empty means not decided yet
+    local remove_nginx_pkg=""  # Empty means not decided yet
 
-    print_message "warning" "This will remove Synapse and its database"
-    print_message "info" "PostgreSQL package and nginx will be kept"
+    # Ask about removing virtual environment (only if it exists)
+    if [[ -d "/opt/synapse-venv" ]]; then
+        echo ""
+        echo "Found virtual environment at /opt/synapse-venv (~500MB)"
+        echo "Keeping it will make next installation faster."
+        echo ""
+        if [[ "$(prompt_yes_no "Remove virtual environment?" "n")" == "yes" ]]; then
+            remove_venv=true
+        else
+            remove_venv=false
+        fi
+    fi
+
+    # Ask about removing nginx package
+    echo ""
+    if [[ "$(prompt_yes_no "Remove nginx package?" "n")" == "yes" ]]; then
+        remove_nginx_pkg=true
+    else
+        remove_nginx_pkg=false
+    fi
+
+    # Show summary
+    echo ""
+    echo "╔══════════════════════════════════════════════════════════╗"
+    echo "║            Uninstall Summary                             ║"
+    echo "╠══════════════════════════════════════════════════════════╣"
+    echo "║  This will remove:                                       ║"
+    echo "║    • Synapse configs and data                            ║"
+    echo "║    • Synapse database (synapsedb)                        ║"
+    echo "║    • Synapse user (synapse)                              ║"
+    echo "║    • nginx configuration                                 ║"
+    if [[ "$remove_venv" == "true" ]]; then
+        echo "║    • Virtual environment (/opt/synapse-venv)               ║"
+    fi
+    if [[ "$remove_nginx_pkg" == "true" ]]; then
+        echo "║    • nginx package                                         ║"
+    fi
+    echo "╠══════════════════════════════════════════════════════════╣"
+    echo "║  Will keep:                                              ║"
+    echo "║    • PostgreSQL package                                  ║"
+    if [[ "$remove_venv" == "false" ]] && [[ -d "/opt/synapse-venv" ]]; then
+        echo "║    • Virtual environment                                 ║"
+    fi
+    if [[ "$remove_nginx_pkg" == "false" ]]; then
+        echo "║    • nginx package                                       ║"
+    fi
+    echo "╚══════════════════════════════════════════════════════════╝"
     echo ""
 
     if [[ "$(prompt_yes_no "Continue?" "n")" != "yes" ]]; then
@@ -1923,8 +1986,8 @@ uninstall_with_database() {
         return 0
     fi
 
-    # First do synapse-only uninstall
-    uninstall_synapse_only "$synapse_service" "$synapse_user"
+    # Do synapse uninstall with skip_confirmation flag
+    uninstall_synapse_only "$synapse_service" "$synapse_user" "$remove_venv" "true" "$remove_nginx_pkg"
 
     # Remove Synapse database and user
     print_message "info" "Removing Synapse database and user..."
@@ -1936,6 +1999,8 @@ uninstall_with_database() {
     sudo -u postgres psql -c "DROP USER IF EXISTS synapse;" 2>/dev/null || true
 
     print_message "success" "Synapse and database removed (PostgreSQL package kept)"
+
+    pause
 }
 
 # Complete removal (including PostgreSQL package)
