@@ -339,10 +339,13 @@ install_prerequisites() {
 
     case "$DETECTED_OS" in
         ubuntu)
+            echo "  → Updating package lists..."
             sudo apt-get update -qq
+            echo "  → Installing: ${packages[*]}"
             sudo apt-get install -y "${packages[@]}"
             ;;
         arch)
+            echo "  → Installing: ${packages[*]}"
             sudo pacman -S --noconfirm "${packages[@]}"
             ;;
         *)
