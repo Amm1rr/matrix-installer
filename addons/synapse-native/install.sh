@@ -955,41 +955,54 @@ install_synapse_admin() {
     # Use a known working version if API fails
     [[ -z "$latest_version" ]] && latest_version="v0.10.2"
 
-    print_message "info" "Downloading Synapse Admin ${latest_version}..."
+    local tar_file="synapse-admin-${latest_version}.tar.gz"
+    local tar_path="${WORKING_DIR}/${tar_file}"
 
+    # Create install directory (needed for both cached and fresh downloads)
     sudo mkdir -p "$install_dir"
-    cd /tmp
 
-    # Try different download URL formats
-    local download_urls=(
-        "https://github.com/Awesome-Technologies/synapse-admin/releases/download/${latest_version}/synapse-admin-${latest_version}.tar.gz"
-        "https://github.com/Awesome-Technologies/synapse-admin/releases/download/${latest_version}/synapse-admin.tar.gz"
-        "https://github.com/Awesome-Technologies/synapse-admin/archive/refs/tags/${latest_version}.tar.gz"
-    )
+    # Check if tar.gz file already exists
+    if [[ -f "$tar_path" ]]; then
+        print_message "info" "Using cached Synapse Admin ${latest_version} from ${tar_path}"
+    else
+        # Download to working directory
+        print_message "info" "Downloading Synapse Admin ${latest_version}..."
 
-    local downloaded=false
-    for url in "${download_urls[@]}"; do
-        if curl -fL "$url" -o synapse-admin.tar.gz 2>/dev/null; then
-            downloaded=true
-            print_message "info" "Downloaded from: $url"
-            break
+        local download_urls=(
+            "https://github.com/Awesome-Technologies/synapse-admin/releases/download/${latest_version}/synapse-admin-${latest_version}.tar.gz"
+            "https://github.com/Awesome-Technologies/synapse-admin/releases/download/${latest_version}/synapse-admin.tar.gz"
+            "https://github.com/Awesome-Technologies/synapse-admin/archive/refs/tags/${latest_version}.tar.gz"
+        )
+
+        local downloaded=false
+        local url_used=""
+
+        cd "$WORKING_DIR"
+        for url in "${download_urls[@]}"; do
+            if curl -fL "$url" -o "$tar_file" 2>/dev/null; then
+                downloaded=true
+                url_used="$url"
+                break
+            fi
+        done
+
+        if [[ "$downloaded" == "false" ]]; then
+            print_message "warning" "Failed to download Synapse Admin. Skipping..."
+            rm -f "$tar_file"
+            return 1
         fi
-    done
 
-    if [[ "$downloaded" == "false" ]]; then
-        print_message "warning" "Failed to download Synapse Admin. Skipping..."
-        rm -f synapse-admin.tar.gz
-        return 1
+        print_message "success" "Downloaded from: $url_used"
+        print_message "info" "Cached at: ${tar_path}"
     fi
 
     # Extract and install
-    if sudo tar -xzf synapse-admin.tar.gz -C "$install_dir" --strip-components=1 2>/dev/null; then
-        rm -f synapse-admin.tar.gz
+    if sudo tar -xzf "$tar_path" -C "$install_dir" --strip-components=1 2>/dev/null; then
+        print_message "success" "Extracted to ${install_dir}"
     else
         # Try without strip-components
         rm -rf "$install_dir"/*
-        sudo tar -xzf synapse-admin.tar.gz -C "$install_dir" 2>/dev/null
-        rm -f synapse-admin.tar.gz
+        sudo tar -xzf "$tar_path" -C "$install_dir" 2>/dev/null
 
         # If extraction created a subdirectory, move files up
         local subdir
@@ -998,6 +1011,8 @@ install_synapse_admin() {
             sudo mv "${subdir}"/* "$install_dir"/ 2>/dev/null
             sudo rmdir "$subdir" 2>/dev/null
         fi
+
+        print_message "success" "Extracted to ${install_dir}"
     fi
 
     # Check if files were extracted
