@@ -68,6 +68,7 @@ MENU_CHOICE_NEW="N"
 MENU_RETURN_SUCCESS=0
 MENU_RETURN_NEW=1
 MENU_RETURN_BACK=3
+MENU_RETURN_EXPORT=4
 
 # ===========================================
 # PREREQUISITE CHECK FUNCTIONS
@@ -1022,11 +1023,16 @@ prompt_select_root_ca_from_certs() {
     done
 
     echo "  $MENU_SEPARATOR"
-    echo "  N) Create new Root Key    0) Back"
+    echo "  N) Create new Root Key    E) Export\\Import    0) Back"
     echo ""
 
     while true; do
-        read -rp "Select [1-$((index-1)), N=New, 0=Back]: " choice || true
+        read -rp "Select [1-$((index-1)), N=New, E=Export, 0=Back]: " choice || true
+
+        # Check for Export option first (before check_menu_choice_type)
+        if [[ "$choice" == "E" ]] || [[ "$choice" == "e" ]]; then
+            return $MENU_RETURN_EXPORT
+        fi
 
         # Check choice type
         check_menu_choice_type "$choice"
@@ -1493,17 +1499,17 @@ menu_with_root_key() {
 
         # Build footer options
         if [[ $num_root_cas -gt 1 ]]; then
-            echo -e "  ${BLUE}S) Switch${NC}    E) Export    N) New Root Key    0) Exit"
+            echo -e "  ${BLUE}S) Switch${NC}    E) Export\\Import    N) New Root Key    0) Exit"
         else
-            echo "  E) Export    N) New Root Key    0) Exit"
+            echo "  E) Export\\Import    N) New Root Key    0) Exit"
         fi
         echo ""
 
         # Build prompt text based on available options
         if [[ $num_root_cas -gt 1 ]]; then
-            read -rp "Enter your choice (1-${last_addon_index}, S=Switch, E=Export, N=New, 0=Exit): " choice || true
+            read -rp "Enter your choice (1-${last_addon_index}, S=Switch, E=Export\\Import, N=New, 0=Exit): " choice || true
         else
-            read -rp "Enter your choice (1-${last_addon_index}, E=Export, N=New, 0=Exit): " choice || true
+            read -rp "Enter your choice (1-${last_addon_index}, E=Export\\Import, N=New, 0=Exit): " choice || true
         fi
 
         case "$choice" in
@@ -1587,6 +1593,9 @@ menu_with_root_key() {
                         create_root_ca_from_menu
                         mapfile -t FOUND_ROOT_CAS < <(list_root_cas)
                         num_root_cas=${#FOUND_ROOT_CAS[@]}
+                    elif [[ $select_result -eq 4 ]]; then
+                        # User chose to Export/Import
+                        export_menu
                     fi
                     # If return code 3 (Back), just continue to re-display menu
                 else
@@ -1836,7 +1845,7 @@ menu_run_addon() {
 export_menu() {
     while true; do
         echo ""
-        print_menu_header "Export Menu"
+        print_menu_header "Export/Import Menu"
         echo ""
         echo "  1) Export Certificate"
         echo "  2) Import Certificate"
@@ -1850,13 +1859,13 @@ export_menu() {
 
         case "$choice" in
             1)
-                export_certificate
+                export_certificate || true
                 ;;
             2)
-                import_certificate
+                import_certificate || true
                 ;;
             3)
-                create_portable
+                create_portable || true
                 ;;
             0)
                 return 0
@@ -1869,6 +1878,13 @@ export_menu() {
 }
 
 export_certificate() {
+    # Check if Root CA is selected
+    if [[ -z "$ACTIVE_ROOT_CA_DIR" ]]; then
+        print_message "error" "No Root Key selected."
+        print_message "info" "Please select a Root Key from the main menu first."
+        return 1
+    fi
+
     # Get list of servers with certificates
     local servers
     mapfile -t servers < <(list_servers_with_certs)
@@ -2291,6 +2307,9 @@ main() {
                 # User chose to create new Root Key
                 create_root_ca_from_menu
                 mapfile -t FOUND_ROOT_CAS < <(list_root_cas)
+            elif [[ $select_result -eq 4 ]]; then
+                # User chose to Export/Import
+                export_menu
             fi
             # If return code 0 (auto-selected) or 3 (Back), just continue to menu_with_root_key
         fi
