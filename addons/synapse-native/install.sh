@@ -47,6 +47,9 @@ DETECTED_OS=""
 POSTGRES_PASSWORD=""
 REGISTRATION_SHARED_SECRET=""
 
+# Last admin password (for installation summary)
+LAST_ADMIN_PASSWORD=""
+
 # Installation options
 INSTALL_ELEMENT_WEB=true
 INSTALL_SYNAPSE_ADMIN=false
@@ -1172,9 +1175,10 @@ EOF
         fi
 
         chmod 600 "$cred_file"
+        print_message "info" "Password: $password" >&2
         print_message "success" "Admin user created. Credentials saved to synapse-credentials.txt" >&2
-        # Echo password for capture by caller (ONLY to stdout)
-        echo "$password"
+        # Store password for installation summary
+        LAST_ADMIN_PASSWORD="$password"
         return 0
     else
         print_message "warning" "Failed to create admin user" >&2
@@ -1498,11 +1502,10 @@ install_synapse() {
 
     # Create admin user
     local admin_created=false
-    local admin_password=""
     echo ""
     if [[ "$(prompt_yes_no "Create admin user now?" "y")" == "yes" ]]; then
-        admin_password=$(create_admin_user "$admin_username")
-        if [[ $? -eq 0 && -n "$admin_password" ]]; then
+        create_admin_user "$admin_username"
+        if [[ $? -eq 0 && -n "$LAST_ADMIN_PASSWORD" ]]; then
             admin_created=true
         fi
     else
@@ -1510,7 +1513,7 @@ install_synapse() {
     fi
 
     # Print installation summary
-    print_installation_summary "$admin_username" "$admin_created" "$admin_password"
+    print_installation_summary "$admin_username" "$admin_created" "$LAST_ADMIN_PASSWORD"
 
     return 0
 }
@@ -1657,7 +1660,6 @@ menu_create_admin_user() {
         password="$(prompt_user "Admin password (press Enter for auto-generated)")"
         if [[ -z "$password" ]]; then
             password="$(generate_password 16)"
-            print_message "info" "Auto-generated password: $password"
             break
         fi
 
