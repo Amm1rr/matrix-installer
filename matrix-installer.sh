@@ -1982,8 +1982,9 @@ import_certificate() {
     local source_dir
     source_dir="$(prompt_user "Enter path to exported certificate folder" "")"
 
-    # Clean input
+    # Clean input (remove control characters and trailing slash)
     source_dir="$(echo "$source_dir" | tr -d '[:cntrl:]')"
+    source_dir="${source_dir%/}"  # Remove trailing slash if present
 
     if [[ -z "$source_dir" ]]; then
         print_message "error" "Source path cannot be empty"
