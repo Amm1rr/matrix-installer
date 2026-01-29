@@ -1839,19 +1839,23 @@ export_menu() {
         print_menu_header "Export Menu"
         echo ""
         echo "  1) Export Certificate"
-        echo "  2) Create Portable"
+        echo "  2) Import Certificate"
+        echo "  3) Create Portable"
         echo ""
         echo "  $MENU_SEPARATOR"
         echo "  0) Back"
         echo ""
 
-        read -rp "Enter your choice (0-2): " choice || true
+        read -rp "Enter your choice (0-3): " choice || true
 
         case "$choice" in
             1)
                 export_certificate
                 ;;
             2)
+                import_certificate
+                ;;
+            3)
                 create_portable
                 ;;
             0)
@@ -1970,6 +1974,203 @@ export_certificate() {
     echo "  Exported files are in:"
     echo "    ${target_dir}/"
     echo ""
+}
+
+import_certificate() {
+    # Prompt for source folder path
+    echo ""
+    local source_dir
+    source_dir="$(prompt_user "Enter path to exported certificate folder" "")"
+
+    # Clean input
+    source_dir="$(echo "$source_dir" | tr -d '[:cntrl:]')"
+
+    if [[ -z "$source_dir" ]]; then
+        print_message "error" "Source path cannot be empty"
+        return 1
+    fi
+
+    # Validate source folder exists
+    if [[ ! -d "$source_dir" ]]; then
+        print_message "error" "Source folder does not exist: $source_dir"
+        return 1
+    fi
+
+    # Validate exported folder structure
+    local root_ca_cert="${source_dir}/rootCA.crt"
+    local servers_dir="${source_dir}/servers"
+
+    if [[ ! -f "$root_ca_cert" ]]; then
+        print_message "error" "Invalid export folder: rootCA.crt not found"
+        print_message "info" "Expected structure: <folder>/rootCA.crt"
+        return 1
+    fi
+
+    if [[ ! -d "$servers_dir" ]]; then
+        print_message "error" "Invalid export folder: servers/ directory not found"
+        print_message "info" "Expected structure: <folder>/servers/"
+        return 1
+    fi
+
+    # Check for at least one server folder with certificates
+    local found_servers=()
+    for server_dir in "${servers_dir}"/*/; do
+        if [[ -d "$server_dir" ]]; then
+            if [[ -f "${server_dir}/server.key" ]] && \
+               [[ -f "${server_dir}/server.crt" ]] && \
+               [[ -f "${server_dir}/cert-full-chain.pem" ]]; then
+                found_servers+=("$(basename "$server_dir")")
+            fi
+        fi
+    done
+
+    if [[ ${#found_servers[@]} -eq 0 ]]; then
+        print_message "error" "Invalid export folder: no valid server certificates found"
+        print_message "info" "Expected: servers/<server>/server.key, server.crt, cert-full-chain.pem"
+        return 1
+    fi
+
+    # Check if rootCA.key exists (Full Root CA)
+    local has_root_ca_key=false
+    if [[ -f "${source_dir}/rootCA.key" ]]; then
+        has_root_ca_key=true
+    fi
+
+    # Prompt for Root CA folder name with smart suggestion
+    local suggested_name
+    suggested_name="$(basename "$source_dir")"
+    local root_ca_name=""
+    while true; do
+        root_ca_name="$(prompt_user "Enter Root CA folder name" "$suggested_name")"
+        root_ca_name="$(echo "$root_ca_name" | tr -d '[:cntrl:]')"
+        if [[ -n "$root_ca_name" ]]; then
+            break
+        fi
+        echo "Root CA name cannot be empty."
+    done
+
+    # Check if destination already exists
+    local target_dir="${CERTS_DIR}/${root_ca_name}"
+    while [[ -d "$target_dir" ]]; do
+        print_message "warning" "Directory ${root_ca_name} already exists in certs/"
+        root_ca_name=""
+        while true; do
+            root_ca_name="$(prompt_user "Enter a different Root CA folder name" "")"
+            root_ca_name="$(echo "$root_ca_name" | tr -d '[:cntrl:]')"
+            if [[ -n "$root_ca_name" ]]; then
+                break
+            fi
+            echo "Root CA name cannot be empty."
+        done
+        target_dir="${CERTS_DIR}/${root_ca_name}"
+    done
+
+    # Show import summary
+    echo ""
+    echo "  ╔══════════════════════════════════════════════════════════╗"
+    echo "  ║                    Import Summary                        ║"
+    echo "  ╚══════════════════════════════════════════════════════════╝"
+    echo ""
+
+    # Shorten source path for display
+    local source_display="$source_dir"
+    if [[ ${#source_display} -gt 50 ]]; then
+        source_display="...${source_display: -47}"
+    fi
+
+    # Determine Root CA type display
+    local root_ca_type=""
+    if [[ "$has_root_ca_key" == "true" ]]; then
+        root_ca_type="${GREEN}Full${NC} (with private key)"
+    else
+        root_ca_type="${ORANGE}Exported${NC} (certificate only)"
+    fi
+
+    echo -e "    ${BLUE}Source:${NC}  ${source_display}/"
+    echo -e "    ${BLUE}Target:${NC}  certs/$(basename "$target_dir")/"
+    echo ""
+    echo -e "    ${BLUE}Root CA:${NC}  ${root_ca_type}"
+    echo "       ├─ Certificate:  [+] Present"
+    if [[ "$has_root_ca_key" == "true" ]]; then
+        echo "       └─ Private Key:   [+] Present"
+    else
+        echo "       └─ Private Key:  [-] Normal"
+    fi
+    echo ""
+    echo -e "    ${BLUE}Servers${NC} (${#found_servers[@]}):"
+    for i in "${!found_servers[@]}"; do
+        local server="${found_servers[$i]}"
+        if [[ $i -eq $((${#found_servers[@]} - 1)) ]] && [[ ${#found_servers[@]} -gt 1 ]]; then
+            echo "       └── ${server}"
+        elif [[ ${#found_servers[@]} -eq 1 ]]; then
+            echo "       └── ${server}"
+        else
+            echo "       ├── ${server}"
+        fi
+    done
+    echo ""
+
+    if [[ "$(prompt_yes_no "Proceed with import?" "y")" != "yes" ]]; then
+        print_message "info" "Import cancelled"
+        return 0
+    fi
+
+    # Create target directory
+    mkdir -p "$target_dir"
+
+    # Copy Root CA certificate
+    if ! cp "$root_ca_cert" "${target_dir}/rootCA.crt"; then
+        print_message "error" "Failed to copy Root CA certificate"
+        return 1
+    fi
+
+    # Copy Root CA private key if exists
+    if [[ "$has_root_ca_key" == "true" ]]; then
+        if ! cp "${source_dir}/rootCA.key" "${target_dir}/rootCA.key"; then
+            print_message "error" "Failed to copy Root CA private key"
+            return 1
+        fi
+    fi
+
+    # Copy servers folder
+    if ! cp -r "$servers_dir" "${target_dir}/servers"; then
+        print_message "error" "Failed to copy servers folder"
+        return 1
+    fi
+
+    # Set appropriate permissions
+    chmod 644 "${target_dir}/rootCA.crt"
+    if [[ "$has_root_ca_key" == "true" ]]; then
+        chmod 600 "${target_dir}/rootCA.key"
+    fi
+
+    # Set permissions on server files
+    for server in "${found_servers[@]}"; do
+        chmod 600 "${target_dir}/servers/${server}/server.key"
+        chmod 644 "${target_dir}/servers/${server}/server.crt"
+        chmod 644 "${target_dir}/servers/${server}/cert-full-chain.pem"
+    done
+
+    print_message "success" "Import completed successfully!"
+    echo ""
+    echo "  Imported Root CA to:"
+    echo "    ${target_dir}/"
+    echo ""
+    if [[ "$has_root_ca_key" == "true" ]]; then
+        echo -e "  Type: ${GREEN}Full Root CA${NC} (with private key)"
+        echo "  New server certificates can be generated"
+    else
+        echo -e "  Type: ${ORANGE}Exported Root CA${NC} (certificate only)"
+        echo "  Existing server certificates can be used"
+    fi
+    echo ""
+    echo "  Imported servers:"
+    for server in "${found_servers[@]}"; do
+        echo "    - ${server}"
+    done
+    echo ""
+
+    pause
 }
 
 create_portable() {
