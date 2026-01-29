@@ -30,6 +30,7 @@ ADDON_HIDDEN="false"
 ADDON_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 WORKING_DIR="${WORKING_DIR:-$(pwd)}"
 LOG_FILE="${WORKING_DIR}/synapse-native.log"
+CACHE_DIR="${ADDON_DIR}/cache"
 MATRIX_BASE="/opt/matrix-synapse"
 
 # Colors
@@ -855,13 +856,16 @@ install_element_web() {
     [[ -z "$latest_version" ]] && latest_version="v1.12.9"
 
     local tar_file="element-${latest_version}.tar.gz"
-    local tar_path="${WORKING_DIR}/${tar_file}"
+    local tar_path="${CACHE_DIR}/${tar_file}"
+
+    # Create cache directory if needed
+    mkdir -p "$CACHE_DIR"
 
     # Check if tar.gz file already exists
     if [[ -f "$tar_path" ]]; then
         print_message "info" "Using cached Element Web ${latest_version} from ${tar_path}"
     else
-        # Download to working directory
+        # Download to cache directory
         print_message "info" "Downloading Element Web ${latest_version}..."
 
         local download_urls=(
@@ -872,7 +876,7 @@ install_element_web() {
         local downloaded=false
         local url_used=""
 
-        cd "$WORKING_DIR"
+        cd "$CACHE_DIR"
         for url in "${download_urls[@]}"; do
             if curl -fL "$url" -o "$tar_file" 2>/dev/null; then
                 downloaded=true
@@ -956,7 +960,10 @@ install_synapse_admin() {
     [[ -z "$latest_version" ]] && latest_version="v0.10.2"
 
     local tar_file="synapse-admin-${latest_version}.tar.gz"
-    local tar_path="${WORKING_DIR}/${tar_file}"
+    local tar_path="${CACHE_DIR}/${tar_file}"
+
+    # Create cache directory if needed
+    mkdir -p "$CACHE_DIR"
 
     # Create install directory (needed for both cached and fresh downloads)
     sudo mkdir -p "$install_dir"
@@ -965,7 +972,7 @@ install_synapse_admin() {
     if [[ -f "$tar_path" ]]; then
         print_message "info" "Using cached Synapse Admin ${latest_version} from ${tar_path}"
     else
-        # Download to working directory
+        # Download to cache directory
         print_message "info" "Downloading Synapse Admin ${latest_version}..."
 
         local download_urls=(
@@ -977,7 +984,7 @@ install_synapse_admin() {
         local downloaded=false
         local url_used=""
 
-        cd "$WORKING_DIR"
+        cd "$CACHE_DIR"
         for url in "${download_urls[@]}"; do
             if curl -fL "$url" -o "$tar_file" 2>/dev/null; then
                 downloaded=true
