@@ -2109,6 +2109,8 @@ uninstall_complete() {
     print_message "success" "Complete removal finished"
     print_message "warning" "PostgreSQL package has been removed"
     print_message "info" "You may need to reinstall PostgreSQL if needed"
+
+    pause
 }
 
 # ===========================================
