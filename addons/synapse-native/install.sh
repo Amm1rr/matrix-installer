@@ -1651,12 +1651,7 @@ prompt_installation_mode() {
     echo "     - Direct download and install (no cache)"
     echo "     - Simple and fast"
     echo ""
-    echo "  2) Download Only (Build Cache)"
-    echo "     - Download all packages to cache"
-    echo "     - NO installation"
-    echo "     - Use on fast internet machine"
-    echo ""
-    echo "  3) Install from Cache (Offline)"
+    echo "  2) Install from Cache (Offline)"
     echo "     - Install from cached packages"
     echo "     - No internet required"
     echo ""
@@ -1672,12 +1667,7 @@ prompt_installation_mode() {
                 print_message "info" "Online mode: Direct download and install"
                 return 0
                 ;;
-            2|download)
-                INSTALLATION_MODE="download"
-                print_message "info" "Download mode: Will build cache for offline use"
-                return 0
-                ;;
-            3|offline|cache)
+            2|offline|cache)
                 INSTALLATION_MODE="offline"
                 # Ask for reinstall mode
                 echo ""
@@ -2364,18 +2354,6 @@ install_synapse() {
         return 0
     fi
 
-    # Download mode: just download and show summary, no installation
-    if [[ "$INSTALLATION_MODE" == "download" ]]; then
-        echo ""
-        download_all_packages
-        echo ""
-        print_message "info" "Cache building complete!"
-        print_message "info" "You can now run this script on an offline machine and choose 'Install from Cache'"
-        echo ""
-        pause
-        return 0
-    fi
-
     # For offline mode, check cache availability
     if [[ "$INSTALLATION_MODE" == "offline" ]]; then
         echo ""
@@ -2733,6 +2711,42 @@ menu_create_admin_user() {
     fi
 
     create_admin_user "$username" "$password"
+
+    pause
+}
+
+# ===========================================
+# DOWNLOAD CACHE MENU
+# ===========================================
+
+menu_download_cache() {
+    echo ""
+    echo "╔══════════════════════════════════════════════════════════╗"
+    echo "║              Download Cache (Build Offline Cache)        ║"
+    echo "╚══════════════════════════════════════════════════════════╝"
+    echo ""
+
+    # Show current cache status
+    show_cache_status
+
+    echo ""
+    echo "This will download all required packages to cache for offline installation."
+    echo ""
+    echo "Use this option on a machine with fast internet connection."
+    echo "Then copy the cache to an offline machine and use 'Install from Cache'."
+    echo ""
+
+    if [[ "$(prompt_yes_no "Proceed with download?" "y")" != "yes" ]]; then
+        print_message "info" "Download cancelled"
+        return 0
+    fi
+
+    echo ""
+    download_all_packages
+    echo ""
+    print_message "info" "Cache building complete!"
+    print_message "info" "You can now run this script on an offline machine and choose 'Install from Cache'"
+    echo ""
 
     pause
 }
@@ -3324,6 +3338,7 @@ show_menu() {
     echo "  2) Check Status"
     echo "  3) Create Admin User"
     echo "  4) Uninstall Matrix"
+    echo "  5) Download Cache (Build offline cache)"
     echo "  -----------------"
     echo "  0) Exit"
     echo ""
@@ -3366,6 +3381,9 @@ main() {
                 ;;
             4|uninstall)
                 uninstall_synapse
+                ;;
+            5|download|cache)
+                menu_download_cache
                 ;;
             0|exit|q)
                 print_message "info" "Exiting..."
