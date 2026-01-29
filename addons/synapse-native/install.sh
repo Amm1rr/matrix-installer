@@ -56,6 +56,9 @@ INSTALL_ELEMENT_WEB=true
 INSTALL_SYNAPSE_ADMIN=false
 ENABLE_REGISTRATION=true
 
+# Missing prerequisites (populated by check_prerequisites)
+MISSING_PREREQS=()
+
 set -e
 set -u
 set -o pipefail
@@ -232,54 +235,136 @@ get_synapse_data_dir() {
 # PREREQUISITES CHECK
 # ===========================================
 
+# Map command name to package name for detected OS
+get_package_for_command() {
+    local cmd="$1"
+    case "$DETECTED_OS" in
+        ubuntu)
+            case "$cmd" in
+                curl) echo "curl" ;;
+                openssl) echo "openssl" ;;
+                sudo) echo "sudo" ;;
+                systemctl) echo "systemd" ;;
+                *) echo "$cmd" ;;
+            esac
+            ;;
+        arch)
+            case "$cmd" in
+                curl) echo "curl" ;;
+                openssl) echo "openssl" ;;
+                sudo) echo "sudo" ;;
+                systemctl) echo "systemd" ;;
+                *) echo "$cmd" ;;
+            esac
+            ;;
+    esac
+}
+
+# Silent check - populates MISSING_PREREQS array
 check_prerequisites() {
     print_message "info" "Checking prerequisites..."
-
-    local missing=()
+    MISSING_PREREQS=()
 
     # Check systemd
     if ! command -v systemctl &> /dev/null; then
-        missing+=("systemd")
+        MISSING_PREREQS+=("systemd")
     else
         print_message "success" "systemd is available"
     fi
 
     # Check curl
     if ! command -v curl &> /dev/null; then
-        missing+=("curl")
+        MISSING_PREREQS+=("curl")
     else
         print_message "success" "curl is installed"
     fi
 
     # Check openssl
     if ! command -v openssl &> /dev/null; then
-        missing+=("openssl")
+        MISSING_PREREQS+=("openssl")
     else
         print_message "success" "openssl is installed"
     fi
 
     # Check for sudo
     if ! command -v sudo &> /dev/null; then
-        missing+=("sudo")
+        MISSING_PREREQS+=("sudo")
     else
         print_message "success" "sudo is installed"
     fi
 
-    if [[ ${#missing[@]} -gt 0 ]]; then
-        print_message "error" "Missing prerequisites: ${missing[*]}"
-        echo ""
-        echo "Install missing packages:"
-        echo "  Ubuntu/Debian: sudo apt-get install -y curl openssl sudo"
-        echo "  Arch/Manjaro:  sudo pacman -S curl openssl sudo"
+    # Return silently (check MISSING_PREREQS array for results)
+    [[ ${#MISSING_PREREQS[@]} -eq 0 ]]
+}
+
+# Prompt and install missing prerequisites
+prompt_install_prerequisites() {
+    if [[ ${#MISSING_PREREQS[@]} -eq 0 ]]; then
+        return 0
+    fi
+
+    echo ""
+    echo "╔══════════════════════════════════════════════════════════╗"
+    echo "║              Missing Prerequisites                       ║"
+    echo "╚══════════════════════════════════════════════════════════╝"
+    echo ""
+    echo "The following required packages are missing:"
+    echo ""
+    for dep in "${MISSING_PREREQS[@]}"; do
+        echo "  - $dep"
+    done
+    echo ""
+    echo "Detected OS: $DETECTED_OS"
+    echo ""
+
+    if [[ "$(prompt_yes_no "Install missing prerequisites now?" "y")" != "yes" ]]; then
+        print_message "error" "Cannot continue without required dependencies."
+        pause
         return 1
     fi
 
-    # Check if we have sudo privileges
+    install_prerequisites
+}
+
+# Install missing prerequisites
+install_prerequisites() {
+    print_message "info" "Installing prerequisites..."
+
+    local packages=()
+    for cmd in "${MISSING_PREREQS[@]}"; do
+        local pkg
+        pkg="$(get_package_for_command "$cmd")"
+        packages+=("$pkg")
+    done
+
+    case "$DETECTED_OS" in
+        ubuntu)
+            sudo apt-get update -qq
+            sudo apt-get install -y "${packages[@]}"
+            ;;
+        arch)
+            sudo pacman -S --noconfirm "${packages[@]}"
+            ;;
+        *)
+            print_message "error" "Unsupported OS: $DETECTED_OS"
+            print_message "info" "Please install manually: ${packages[*]}"
+            pause
+            return 1
+            ;;
+    esac
+
+    print_message "success" "Prerequisites installed"
+    pause
+    return 0
+}
+
+# Check if we have sudo privileges
+check_sudo_privileges() {
     if ! sudo -v &> /dev/null; then
         print_message "error" "This script requires sudo privileges"
+        pause
         return 1
     fi
-
     return 0
 }
 
@@ -2355,13 +2440,23 @@ show_menu() {
 
 main() {
     # Detect OS
-    detect_os || exit 1
+    detect_os || { pause; exit 1; }
 
-    # Check prerequisites
-    check_prerequisites || exit 1
+    # Check prerequisites (silent check)
+    if ! check_prerequisites; then
+        # Prompt and install missing prerequisites
+        if ! prompt_install_prerequisites; then
+            exit 1  # User cancelled or install failed
+        fi
+    fi
+
+    # Check sudo privileges
+    if ! check_sudo_privileges; then
+        exit 1
+    fi
 
     # Check environment variables (handles both modes)
-    check_environment_variables || exit 1
+    check_environment_variables || { pause; exit 1; }
 
     # Main menu loop
     while true; do
