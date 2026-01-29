@@ -2109,8 +2109,9 @@ install_apt_from_cache() {
     # Find matching .deb files in cache
     local packages_to_install=()
     for pkg in "${needed_packages[@]}"; do
-        # Find the .deb file (may have version suffix)
-        local deb_file=$(ls "$os_cache_dir"/${pkg}_*.deb 2>/dev/null | head -1)
+        # Find the .deb file (may have version suffix like gcc-13_*.deb or gcc_*.deb)
+        # Use find with regex to match both patterns: package_version_*.deb or package_*.deb
+        local deb_file=$(find "$os_cache_dir" -maxdepth 1 -type f \( -name "${pkg}_*.deb" -o -name "${pkg}-*_*.deb" \) 2>/dev/null | head -1)
         if [[ -n "$deb_file" && -f "$deb_file" ]]; then
             packages_to_install+=("$deb_file")
         else
