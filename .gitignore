@@ -4,5 +4,6 @@ matrix-docker-ansible-deploy/
 .claude/
 *.crt
 *.key
+*.pem
 *.srl
 *.log
