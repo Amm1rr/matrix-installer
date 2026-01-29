@@ -1143,16 +1143,30 @@ create_admin_user() {
         -p "$password" \
         -a >/dev/null 2>&1; then
 
-        # Save credentials
-        cat > "${WORKING_DIR}/synapse-credentials.txt" <<EOF
+        # Save credentials (append if file exists)
+        local cred_file="${WORKING_DIR}/synapse-credentials.txt"
+
+        if [[ -f "$cred_file" ]]; then
+            # File exists, append new user
+            echo "" >> "$cred_file"
+            echo "────────────────────────────────────────────────────────────" >> "$cred_file"
+            echo "Synapse Admin User Credentials" >> "$cred_file"
+            echo "==============================" >> "$cred_file"
+            echo "Server: https://${SERVER_NAME}:8448" >> "$cred_file"
+            echo "Username: ${username}" >> "$cred_file"
+            echo "Password: ${password}" >> "$cred_file"
+        else
+            # File doesn't exist, create new
+            cat > "$cred_file" <<EOF
 Synapse Admin User Credentials
 ==============================
 Server: https://${SERVER_NAME}:8448
 Username: ${username}
 Password: ${password}
 EOF
+        fi
 
-        chmod 600 "${WORKING_DIR}/synapse-credentials.txt"
+        chmod 600 "$cred_file"
         print_message "success" "Admin user created. Credentials saved to synapse-credentials.txt" >&2
         # Echo password for capture by caller (ONLY to stdout)
         echo "$password"
@@ -1161,7 +1175,7 @@ EOF
         print_message "warning" "Failed to create admin user" >&2
         print_message "info" "Create manually with:" >&2
         print_message "info" "  sudo -u $synapse_user $register_cmd -c $config_file -a" >&2
-        return 1
+        return 0
     fi
 }
 
