@@ -1497,6 +1497,7 @@ install_synapse() {
     if systemctl is-enabled --quiet "$synapse_service" 2>/dev/null; then
         print_message "error" "Synapse is already installed"
         print_message "info" "Use 'Check Status' or 'Uninstall' options"
+        pause
         return 1
     fi
 
@@ -1764,6 +1765,8 @@ check_status() {
     fi
 
     echo ""
+
+    pause
 }
 
 # ===========================================
