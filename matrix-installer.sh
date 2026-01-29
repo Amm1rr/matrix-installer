@@ -602,8 +602,9 @@ list_root_cas() {
             local root_ca_name
             root_ca_name="$(basename "$dir")"
 
-            # Skip if not a Root CA directory (must have rootCA.key)
-            if [[ -f "${dir}/rootCA.key" ]] && [[ -f "${dir}/rootCA.crt" ]]; then
+            # Accept as Root CA directory if it has rootCA.crt
+            # (with or without rootCA.key - we'll distinguish later)
+            if [[ -f "${dir}/rootCA.crt" ]]; then
                 root_cas+=("$root_ca_name")
             fi
         fi
@@ -613,6 +614,18 @@ list_root_cas() {
     if [[ ${#root_cas[@]} -gt 0 ]]; then
         printf '%s\n' "${root_cas[@]}"
     fi
+}
+
+# Check if a Root CA is exported (read-only, without private key)
+# Returns: 0 if exported (no key), 1 if full (has key)
+is_root_ca_exported() {
+    local root_ca_dir="$1"
+
+    if [[ ! -f "${root_ca_dir}/rootCA.key" ]]; then
+        return 0  # Exported (read-only)
+    fi
+
+    return 1  # Full (has private key)
 }
 
 detect_root_ca_files_next_to_script() {
@@ -955,6 +968,8 @@ prompt_select_root_ca_from_certs() {
         local subject="Unknown"
         local expiry="Unknown"
         local days="Unknown"
+        local type_label="Full"
+        local type_color=""
 
         if [[ -f "$root_ca_cert" ]]; then
             subject=$(openssl x509 -in "$root_ca_cert" -noout -subject 2>/dev/null | grep -o 'CN=[^,]*' | cut -d'=' -f2)
@@ -980,13 +995,23 @@ prompt_select_root_ca_from_certs() {
             fi
         fi
 
+        # Check if this is an exported Root CA (no private key)
+        if is_root_ca_exported "$root_ca_dir"; then
+            type_label="Exported"
+            type_color="${ORANGE}"
+        else
+            type_label="Full"
+            type_color="${GREEN}"
+        fi
+
         # Format: align columns nicely
         local num_display="$index)"
         local name_display="${root_ca_name}"
         local subject_display="Subject: ${subject}"
         local days_display="Exp: ${days} days"
+        local type_display="Type: ${type_label}"
 
-        printf "  %-2s  %-12s  %-20s  %-12s\n" "$num_display" "$name_display" "$subject_display" "$days_display"
+        printf "  %-2s  %-12s  %-20s  %-12s  ${type_color}%-10s${NC}\n" "$num_display" "$name_display" "$subject_display" "$days_display" "$type_label"
         ((index++))
     done
 
@@ -1113,8 +1138,19 @@ ssl_manager_generate_server_cert() {
     print_message "info" "Using Root Key: $(basename "$root_ca_dir")"
 
     # Check Root Key exists
-    if [[ ! -f "${root_ca_dir}/rootCA.key" ]] || [[ ! -f "${root_ca_dir}/rootCA.crt" ]]; then
-        print_message "error" "Root Key not found in ${root_ca_dir}"
+    if [[ ! -f "${root_ca_dir}/rootCA.key" ]]; then
+        if [[ -f "${root_ca_dir}/rootCA.crt" ]]; then
+            print_message "error" "Cannot generate certificates: Root Key private key is missing."
+            print_message "info" "This appears to be an exported Root Key (certificate only)."
+            print_message "info" "Use a Full Root Key with the private key to generate new server certificates."
+        else
+            print_message "error" "Root Key not found in ${root_ca_dir}"
+        fi
+        return 1
+    fi
+
+    if [[ ! -f "${root_ca_dir}/rootCA.crt" ]]; then
+        print_message "error" "Root Key certificate not found in ${root_ca_dir}"
         return 1
     fi
 
@@ -1386,6 +1422,12 @@ menu_with_root_key() {
         echo "  === Main Menu ==="
         echo ""
 
+        # Check if this is an exported Root CA (before displaying menu)
+        local is_exported_ca=false
+        if is_root_ca_exported "$ACTIVE_ROOT_CA_DIR"; then
+            is_exported_ca=true
+        fi
+
         # Get and display Root Key info
         local ca_info
         ca_info=$(get_root_ca_info "$ACTIVE_ROOT_CA_DIR" 2>/dev/null)
@@ -1408,11 +1450,23 @@ menu_with_root_key() {
                 esac
             done <<< "$ca_info"
 
-            echo -e "  Root Key: ${BLUE}$(basename "$ACTIVE_ROOT_CA_DIR")${NC} | Exp: $ca_days days | $ca_country"
+            # Check if this is an exported Root CA
+            local ca_type_label="Full"
+            local ca_type_color="${GREEN}"
+            if is_root_ca_exported "$ACTIVE_ROOT_CA_DIR"; then
+                ca_type_label="Exported"
+                ca_type_color="${ORANGE}"
+            fi
+
+            echo -e "  Root Key: ${BLUE}$(basename "$ACTIVE_ROOT_CA_DIR")${NC} | ${ca_type_color}${ca_type_label}${NC} | Exp: $ca_days days | $ca_country"
         fi
 
         echo ""
-        echo "  1) Generate server certificate"
+        if [[ "$is_exported_ca" == "true" ]]; then
+            echo -e "  1) Generate server certificate ${ORANGE}[Unavailable]${NC}"
+        else
+            echo "  1) Generate server certificate"
+        fi
 
         # Add addon options to menu
         if [[ ${#addons[@]} -gt 0 ]]; then
@@ -1450,6 +1504,22 @@ menu_with_root_key() {
             1)
                 # Generate server certificate
                 echo ""
+
+                # Check if this is an exported Root CA (no private key)
+                if is_root_ca_exported "$ACTIVE_ROOT_CA_DIR"; then
+                    print_message "error" "Cannot generate new server certificates with an exported Root Key."
+                    print_message "info" "This Root Key was exported without the private key for security reasons."
+                    echo ""
+                    echo "  Exported Root Keys can only:"
+                    echo "    - Install addons for existing servers"
+                    echo "    - Export certificates for backup/transfer"
+                    echo ""
+                    echo "  To generate new server certificates, you need:"
+                    echo "    - A Full Root Key (with private key)"
+                    echo "    - Or create a new Root Key with option N"
+                    echo ""
+                    continue
+                fi
 
                 local detected_ip
                 detected_ip="$(get_detected_ip)"
