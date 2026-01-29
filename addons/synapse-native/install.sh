@@ -136,6 +136,11 @@ prompt_yes_no() {
     done
 }
 
+pause() {
+    echo ""
+    read -rp "Press Enter to continue..."
+}
+
 generate_password() {
     local length="${1:-32}"
     openssl rand -base64 48 | tr -d '/+' | cut -c1-"$length"
@@ -1664,6 +1669,8 @@ menu_create_admin_user() {
     done
 
     create_admin_user "$username" "$password"
+
+    pause
 }
 
 # ===========================================
