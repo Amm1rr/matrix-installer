@@ -599,6 +599,7 @@ install_synapse_package() {
                 print_message "info" "Creating virtual environment at $synapse_venv..."
                 sudo python3 -m venv "$synapse_venv" || {
                     print_message "error" "Failed to create virtual environment"
+                    pause
                     return 1
                 }
             fi
@@ -608,6 +609,7 @@ install_synapse_package() {
                 print_message "info" "Installing matrix-synapse in virtual environment..."
                 sudo "$synapse_venv/bin/pip" install --upgrade "matrix-synapse[all]" || {
                     print_message "error" "Failed to install matrix-synapse"
+                    pause
                     return 1
                 }
                 print_message "success" "Synapse installed successfully"
@@ -619,6 +621,7 @@ install_synapse_package() {
                 sudo useradd --system --home /var/lib/synapse --create-home \
                     --shell /usr/sbin/nologin matrix-synapse || {
                     print_message "error" "Failed to create synapse user"
+                    pause
                     return 1
                 }
             fi
@@ -636,12 +639,14 @@ install_synapse_package() {
             # Verify synapse installation
             if ! sudo -u matrix-synapse "$synapse_venv/bin/python" -c "import synapse" 2>/dev/null; then
                 print_message "error" "Synapse installation verification failed"
+                pause
                 return 1
             fi
             ;;
         arch)
             sudo pacman -S --noconfirm synapse python-setuptools || {
                 print_message "error" "Failed to install synapse package"
+                pause
                 return 1
             }
             ;;
@@ -1123,6 +1128,7 @@ EOF
         print_message "success" "nginx configuration is valid"
     else
         print_message "error" "nginx configuration test failed"
+        pause
         return 1
     fi
 
@@ -1169,6 +1175,7 @@ enable_and_start_services() {
         sudo journalctl -u "$synapse_service" -n 30 --no-pager 2>&1 || true
         echo ""
 
+        pause
         return 1
     fi
 
