@@ -1433,17 +1433,17 @@ menu_with_root_key() {
 
         # Build footer options
         if [[ $num_root_cas -gt 1 ]]; then
-            echo -e "  ${BLUE}S) Switch${NC}    N) New Root Key    0) Exit"
+            echo -e "  ${BLUE}S) Switch${NC}    E) Export    N) New Root Key    0) Exit"
         else
-            echo "  N) New Root Key    0) Exit"
+            echo "  E) Export    N) New Root Key    0) Exit"
         fi
         echo ""
 
         # Build prompt text based on available options
         if [[ $num_root_cas -gt 1 ]]; then
-            read -rp "Enter your choice (1-${last_addon_index}, S=Switch, N=New, 0=Exit): " choice || true
+            read -rp "Enter your choice (1-${last_addon_index}, S=Switch, E=Export, N=New, 0=Exit): " choice || true
         else
-            read -rp "Enter your choice (1-${last_addon_index}, N=New, 0=Exit): " choice || true
+            read -rp "Enter your choice (1-${last_addon_index}, E=Export, N=New, 0=Exit): " choice || true
         fi
 
         case "$choice" in
@@ -1523,6 +1523,9 @@ menu_with_root_key() {
                 create_root_ca_from_menu
                 mapfile -t FOUND_ROOT_CAS < <(list_root_cas)
                 num_root_cas=${#FOUND_ROOT_CAS[@]}
+                ;;
+            [Ee])
+                export_menu
                 ;;
             0)
                 print_message "info" "Exiting..."
@@ -1747,6 +1750,154 @@ menu_run_addon() {
 
     # Return to menu after addon completes (don't exit)
     # Addons no longer take full control - user can return to main menu
+}
+
+# ===========================================
+# EXPORT MENU
+# ===========================================
+
+export_menu() {
+    while true; do
+        echo ""
+        print_menu_header "Export Menu"
+        echo ""
+        echo "  1) Export Certificate"
+        echo "  2) Create Portable"
+        echo ""
+        echo "  $MENU_SEPARATOR"
+        echo "  0) Back"
+        echo ""
+
+        read -rp "Enter your choice (0-2): " choice || true
+
+        case "$choice" in
+            1)
+                export_certificate
+                ;;
+            2)
+                create_portable
+                ;;
+            0)
+                return 0
+                ;;
+            *)
+                print_message "error" "Invalid choice"
+                ;;
+        esac
+    done
+}
+
+export_certificate() {
+    # Get list of servers with certificates
+    local servers
+    mapfile -t servers < <(list_servers_with_certs)
+
+    if [[ ${#servers[@]} -eq 0 ]]; then
+        print_message "error" "No server certificates found to export."
+        print_message "info" "Generate a server certificate first from the main menu."
+        return 1
+    fi
+
+    echo ""
+    print_message "info" "Servers with available certificates:"
+    echo ""
+    local index=1
+    for server in "${servers[@]}"; do
+        echo "  $index) $server"
+        ((index++))
+    done
+    echo ""
+
+    read -rp "Select server to export (1-$((index-1))): " choice || true
+
+    # Validate choice
+    if [[ ! "$choice" =~ ^[0-9]+$ ]] || [[ "$choice" -lt 1 ]] || [[ "$choice" -ge $index ]]; then
+        print_message "error" "Invalid choice"
+        return 1
+    fi
+
+    local selected_server="${servers[$((choice-1))]}"
+    local server_dir="${ACTIVE_ROOT_CA_DIR}/servers/${selected_server}"
+
+    # Prompt for destination folder
+    echo ""
+    local dest_dir
+    dest_dir="$(prompt_user "Enter destination folder path" "$HOME/exports")"
+
+    # Clean and validate destination path
+    dest_dir="$(echo "$dest_dir" | tr -d '[:cntrl:]')"
+
+    if [[ -z "$dest_dir" ]]; then
+        print_message "error" "Destination path cannot be empty"
+        return 1
+    fi
+
+    # Determine target directory
+    local target_dir="$dest_dir"
+    if [[ -d "$dest_dir" ]] && [[ -n "$(ls -A "$dest_dir" 2>/dev/null)" ]]; then
+        # Directory exists and is not empty, create subfolder
+        local timestamp
+        timestamp="$(date +%Y%m%d_%H%M%S)"
+        target_dir="${dest_dir}/${selected_server}_${timestamp}"
+    fi
+
+    # Show summary
+    echo ""
+    echo "  === Export Summary ==="
+    echo ""
+    echo "  Server certificate folder:"
+    echo "    ${server_dir}/"
+    echo "  Root CA certificate:"
+    echo "    ${ACTIVE_ROOT_CA_DIR}/rootCA.crt"
+    echo "  Target directory:"
+    echo "    ${target_dir}/"
+    echo ""
+    echo "  Export structure:"
+    echo "    ${target_dir}/"
+    echo "    ├── servers/"
+    echo "    │   └── ${selected_server}/"
+    echo "    │       ├── server.key"
+    echo "    │       ├── server.crt"
+    echo "    │       └── cert-full-chain.pem"
+    echo "    └── rootCA.crt"
+    echo ""
+
+    if [[ "$(prompt_yes_no "Proceed with export?" "y")" != "yes" ]]; then
+        print_message "info" "Export cancelled"
+        return 0
+    fi
+
+    # Create target directory structure
+    mkdir -p "${target_dir}/servers"
+
+    # Copy server folder
+    if ! cp -r "$server_dir" "${target_dir}/servers/${selected_server}"; then
+        print_message "error" "Failed to copy server certificate folder"
+        return 1
+    fi
+
+    # Copy Root CA certificate
+    if ! cp "${ACTIVE_ROOT_CA_DIR}/rootCA.crt" "${target_dir}/rootCA.crt"; then
+        print_message "error" "Failed to copy Root CA certificate"
+        return 1
+    fi
+
+    # Set appropriate permissions
+    chmod 600 "${target_dir}/servers/${selected_server}/server.key"
+    chmod 644 "${target_dir}/servers/${selected_server}/server.crt"
+    chmod 644 "${target_dir}/servers/${selected_server}/cert-full-chain.pem"
+    chmod 644 "${target_dir}/rootCA.crt"
+
+    print_message "success" "Export completed successfully!"
+    echo ""
+    echo "  Exported files are in:"
+    echo "    ${target_dir}/"
+    echo ""
+}
+
+create_portable() {
+    print_message "info" "Portable export feature is coming soon."
+    print_message "info" "This will create a self-contained archive with all necessary files."
 }
 
 # ===========================================
