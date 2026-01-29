@@ -1396,14 +1396,11 @@ EOF
 # ===========================================
 
 check_port_443() {
-    print_message "info" "Checking if port 443 is available..."
-
-    # Check if port 443 is in use
+    # Check if port 443 is in use (silent on success)
     local port_info
     port_info=$(sudo ss -tlnp 2>/dev/null | grep ":443 " || true)
 
     if [[ -z "$port_info" ]]; then
-        print_message "success" "Port 443 is available"
         return 0
     fi
 
@@ -1463,8 +1460,7 @@ check_port_443() {
                 print_message "info" "Checking port 443 again..."
                 port_info=$(sudo ss -tlnp 2>/dev/null | grep ":443 " || true)
                 if [[ -z "$port_info" ]]; then
-                    print_message "success" "Port 443 is now available"
-                    echo ""
+                    # Port is now available, continue silently
                     return 0
                 else
                     process_name=$(echo "$port_info" | head -1 | grep -oP 'users:\(\K[^)]+' | grep -oP '"\K[^"]+' | head -1)
@@ -1632,12 +1628,7 @@ install_synapse() {
 
     SERVER_NAME="$(prompt_user "Server name" "${SERVER_NAME:-$(hostname -I | awk '{print $1}')}")"
 
-    if [[ "$(prompt_yes_no "Enable user registration?" "y")" == "yes" ]]; then
-        ENABLE_REGISTRATION=true
-    else
-        ENABLE_REGISTRATION=false
-    fi
-
+    # Web component questions
     if [[ "$(prompt_yes_no "Install Element Web?" "y")" == "yes" ]]; then
         INSTALL_ELEMENT_WEB=true
     else
@@ -1650,17 +1641,29 @@ install_synapse() {
         INSTALL_SYNAPSE_ADMIN=false
     fi
 
-    # Ask about nginx (only if Element Web is being installed)
+    # Ask about nginx if either web component is being installed
     INSTALL_NGINX=false
-    if [[ "$INSTALL_ELEMENT_WEB" == true ]]; then
-        if [[ "$(prompt_yes_no "Install nginx for Element/Synapse Admin?" "y")" == "yes" ]]; then
+    if [[ "$INSTALL_ELEMENT_WEB" == true ]] || [[ "$INSTALL_SYNAPSE_ADMIN" == true ]]; then
+        if [[ "$(prompt_yes_no "Install nginx for web components?" "y")" == "yes" ]]; then
             INSTALL_NGINX=true
         fi
     fi
 
-    # Check port 443 if nginx is being installed
+    # Check port 443 if nginx is being installed (do this early)
+    local port_443_status="N/A"
     if [[ "$INSTALL_NGINX" == true ]]; then
-        check_port_443 || return 1
+        if check_port_443; then
+            port_443_status="Available"
+        else
+            return 1  # User cancelled or port not available
+        fi
+    fi
+
+    # Remaining configuration questions
+    if [[ "$(prompt_yes_no "Enable user registration?" "y")" == "yes" ]]; then
+        ENABLE_REGISTRATION=true
+    else
+        ENABLE_REGISTRATION=false
     fi
 
     local admin_username="$(prompt_user "Admin username" "admin")"
@@ -1672,6 +1675,9 @@ install_synapse() {
     echo "  Element Web: $INSTALL_ELEMENT_WEB"
     echo "  Synapse Admin: $INSTALL_SYNAPSE_ADMIN"
     echo "  nginx: $INSTALL_NGINX"
+    if [[ "$INSTALL_NGINX" == true ]]; then
+        echo "  Port 443: $port_443_status"
+    fi
     echo "  Admin: $admin_username"
     echo ""
 
