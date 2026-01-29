@@ -2153,8 +2153,9 @@ import_certificate() {
     done
 
     echo ""
+    echo ""
     echo "  ╔══════════════════════════════════════════════════════════╗"
-    echo "  ║                  Import Completed                        ║"
+    echo -e "  ║          ${GREEN}✓ Import Completed Successfully${NC}                 ║"
     echo "  ╚══════════════════════════════════════════════════════════╝"
     echo ""
 
