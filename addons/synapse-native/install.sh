@@ -1834,32 +1834,69 @@ uninstall_synapse_only() {
     local skip_confirmation="${4:-false}"
     local remove_nginx_pkg="${5:-}"  # Empty means ask user
 
-    # Ask about removing virtual environment (only if not already specified and it exists)
-    if [[ -z "$remove_venv" ]] && [[ -d "/opt/synapse-venv" ]]; then
-        echo ""
-        echo "Found virtual environment at /opt/synapse-venv (~500MB)"
-        echo "Keeping it will make next installation faster."
-        echo ""
-        if [[ "$(prompt_yes_no "Remove virtual environment?" "n")" == "yes" ]]; then
-            remove_venv=true
-        else
-            remove_venv=false
-        fi
-    fi
-
-    # Show warning and ask for confirmation (unless skipped)
+    # ===========================================
+    # PHASE 1: Ask all questions (unless skipped)
+    # ===========================================
     if [[ "$skip_confirmation" != "true" ]]; then
+        # Ask about removing virtual environment (only if it exists)
+        if [[ -z "$remove_venv" ]] && [[ -d "/opt/synapse-venv" ]]; then
+            echo ""
+            echo "Found virtual environment at /opt/synapse-venv (~500MB)"
+            echo "Keeping it will make next installation faster."
+            echo ""
+            if [[ "$(prompt_yes_no "Remove virtual environment?" "n")" == "yes" ]]; then
+                remove_venv=true
+            else
+                remove_venv=false
+            fi
+        fi
+
+        # Ask about removing nginx package
         echo ""
-        print_message "warning" "This will remove Synapse configuration and data"
-        print_message "info" "PostgreSQL and nginx will be kept"
+        if [[ -z "$remove_nginx_pkg" ]]; then
+            if [[ "$(prompt_yes_no "Remove nginx package?" "n")" == "yes" ]]; then
+                remove_nginx_pkg=true
+            else
+                remove_nginx_pkg=false
+            fi
+        fi
+
+        # Show summary
+        echo ""
+        echo "╔══════════════════════════════════════════════════════════╗"
+        echo "║            Uninstall Summary                             ║"
+        echo "╠══════════════════════════════════════════════════════════╣"
+        echo "║  This will remove:                                       ║"
+        echo "║    • Synapse configs and data                            ║"
+        echo "║    • nginx configuration                                 ║"
+        if [[ "$remove_venv" == "true" ]]; then
+            echo "║    • Virtual environment (/opt/synapse-venv)               ║"
+        fi
+        if [[ "$remove_nginx_pkg" == "true" ]]; then
+            echo "║    • nginx package                                         ║"
+        fi
+        echo "╠══════════════════════════════════════════════════════════╣"
+        echo "║  Will keep:                                              ║"
+        echo "║    • PostgreSQL database                                 ║"
+        if [[ "$remove_venv" == "false" ]] && [[ -d "/opt/synapse-venv" ]]; then
+            echo "║    • Virtual environment                                 ║"
+        fi
+        if [[ "$remove_nginx_pkg" == "false" ]]; then
+            echo "║    • nginx package                                       ║"
+        fi
+        echo "╚══════════════════════════════════════════════════════════╝"
         echo ""
 
+        # Final confirmation
         if [[ "$(prompt_yes_no "Continue?" "n")" != "yes" ]]; then
             print_message "info" "Uninstall cancelled"
             return 0
         fi
     fi
 
+    # ===========================================
+    # PHASE 2: Execute uninstall (no prompts)
+    # ===========================================
     # Stop Synapse service
     print_message "info" "Stopping Synapse service..."
     sudo systemctl stop "$synapse_service" 2>/dev/null || true
@@ -1901,16 +1938,6 @@ uninstall_synapse_only() {
     sudo rm -f /etc/nginx/sites-available/matrix
     sudo rm -rf /etc/nginx/ssl
 
-    # Ask about removing nginx package (only if not already decided)
-    if [[ -z "$remove_nginx_pkg" ]]; then
-        # Ask the user
-        if [[ "$(prompt_yes_no "Remove nginx package?" "n")" == "yes" ]]; then
-            remove_nginx_pkg=true
-        else
-            remove_nginx_pkg=false
-        fi
-    fi
-
     if [[ "$remove_nginx_pkg" == "true" ]]; then
         case "$DETECTED_OS" in
             ubuntu)
@@ -1923,6 +1950,11 @@ uninstall_synapse_only() {
     fi
 
     print_message "success" "Synapse removed (PostgreSQL kept intact)"
+
+    # Pause only when not called from another function
+    if [[ "$skip_confirmation" != "true" ]]; then
+        pause
+    fi
 }
 
 # Remove Synapse + Database (keep PostgreSQL package)
