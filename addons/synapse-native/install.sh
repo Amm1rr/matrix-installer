@@ -165,8 +165,6 @@ generate_password() {
 # ===========================================
 
 detect_os() {
-    print_message "info" "Detecting operating system..."
-
     unset ID ID_LIKE
     [[ -f /etc/os-release ]] && source /etc/os-release
 
@@ -269,35 +267,26 @@ get_package_for_command() {
 
 # Silent check - populates MISSING_PREREQS array
 check_prerequisites() {
-    print_message "info" "Checking prerequisites..."
     MISSING_PREREQS=()
 
     # Check systemd
     if ! command -v systemctl &> /dev/null; then
         MISSING_PREREQS+=("systemd")
-    else
-        print_message "success" "systemd is available"
     fi
 
     # Check curl
     if ! command -v curl &> /dev/null; then
         MISSING_PREREQS+=("curl")
-    else
-        print_message "success" "curl is installed"
     fi
 
     # Check openssl
     if ! command -v openssl &> /dev/null; then
         MISSING_PREREQS+=("openssl")
-    else
-        print_message "success" "openssl is installed"
     fi
 
     # Check for sudo
     if ! command -v sudo &> /dev/null; then
         MISSING_PREREQS+=("sudo")
-    else
-        print_message "success" "sudo is installed"
     fi
 
     # Return silently (check MISSING_PREREQS array for results)
