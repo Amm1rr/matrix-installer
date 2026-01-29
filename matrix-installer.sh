@@ -1882,6 +1882,7 @@ export_certificate() {
     if [[ -z "$ACTIVE_ROOT_CA_DIR" ]]; then
         print_message "error" "No Root Key selected."
         print_message "info" "Please select a Root Key from the main menu first."
+        pause
         return 1
     fi
 
@@ -1892,6 +1893,7 @@ export_certificate() {
     if [[ ${#servers[@]} -eq 0 ]]; then
         print_message "error" "No server certificates found to export."
         print_message "info" "Generate a server certificate first from the main menu."
+        pause
         return 1
     fi
 
@@ -1910,6 +1912,7 @@ export_certificate() {
     # Validate choice
     if [[ ! "$choice" =~ ^[0-9]+$ ]] || [[ "$choice" -lt 1 ]] || [[ "$choice" -ge $index ]]; then
         print_message "error" "Invalid choice"
+        pause
         return 1
     fi
 
@@ -1926,6 +1929,7 @@ export_certificate() {
 
     if [[ -z "$dest_dir" ]]; then
         print_message "error" "Destination path cannot be empty"
+        pause
         return 1
     fi
 
@@ -1961,6 +1965,7 @@ export_certificate() {
 
     if [[ "$(prompt_yes_no "Proceed with export?" "y")" != "yes" ]]; then
         print_message "info" "Export cancelled"
+        pause
         return 0
     fi
 
@@ -1970,12 +1975,14 @@ export_certificate() {
     # Copy server folder
     if ! cp -r "$server_dir" "${target_dir}/servers/${selected_server}"; then
         print_message "error" "Failed to copy server certificate folder"
+        pause
         return 1
     fi
 
     # Copy Root CA certificate
     if ! cp "${ACTIVE_ROOT_CA_DIR}/rootCA.crt" "${target_dir}/rootCA.crt"; then
         print_message "error" "Failed to copy Root CA certificate"
+        pause
         return 1
     fi
 
@@ -1990,6 +1997,8 @@ export_certificate() {
     echo "  Exported files are in:"
     echo "    ${target_dir}/"
     echo ""
+
+    pause
 }
 
 import_certificate() {
@@ -2004,12 +2013,14 @@ import_certificate() {
 
     if [[ -z "$source_dir" ]]; then
         print_message "error" "Source path cannot be empty"
+        pause
         return 1
     fi
 
     # Validate source folder exists
     if [[ ! -d "$source_dir" ]]; then
         print_message "error" "Source folder does not exist: $source_dir"
+        pause
         return 1
     fi
 
@@ -2020,12 +2031,14 @@ import_certificate() {
     if [[ ! -f "$root_ca_cert" ]]; then
         print_message "error" "Invalid export folder: rootCA.crt not found"
         print_message "info" "Expected structure: <folder>/rootCA.crt"
+        pause
         return 1
     fi
 
     if [[ ! -d "$servers_dir" ]]; then
         print_message "error" "Invalid export folder: servers/ directory not found"
         print_message "info" "Expected structure: <folder>/servers/"
+        pause
         return 1
     fi
 
@@ -2044,6 +2057,7 @@ import_certificate() {
     if [[ ${#found_servers[@]} -eq 0 ]]; then
         print_message "error" "Invalid export folder: no valid server certificates found"
         print_message "info" "Expected: servers/<server>/server.key, server.crt, cert-full-chain.pem"
+        pause
         return 1
     fi
 
@@ -2129,6 +2143,7 @@ import_certificate() {
 
     if [[ "$(prompt_yes_no "Proceed with import?" "y")" != "yes" ]]; then
         print_message "info" "Import cancelled"
+        pause
         return 0
     fi
 
@@ -2138,6 +2153,7 @@ import_certificate() {
     # Copy Root CA certificate
     if ! cp "$root_ca_cert" "${target_dir}/rootCA.crt"; then
         print_message "error" "Failed to copy Root CA certificate"
+        pause
         return 1
     fi
 
@@ -2145,6 +2161,7 @@ import_certificate() {
     if [[ "$has_root_ca_key" == "true" ]]; then
         if ! cp "${source_dir}/rootCA.key" "${target_dir}/rootCA.key"; then
             print_message "error" "Failed to copy Root CA private key"
+            pause
             return 1
         fi
     fi
@@ -2152,6 +2169,7 @@ import_certificate() {
     # Copy servers folder
     if ! cp -r "$servers_dir" "${target_dir}/servers"; then
         print_message "error" "Failed to copy servers folder"
+        pause
         return 1
     fi
 
