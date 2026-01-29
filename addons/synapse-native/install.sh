@@ -1677,6 +1677,49 @@ check_status() {
     fi
 
     echo ""
+    echo "────────────────────────────────────────────────────────────"
+    echo ""
+
+    # Access URLs
+    echo -e "${BLUE}Access URLs:${NC}"
+    echo -e "  ${GREEN}➜${NC} Synapse:       https://${SERVER_NAME}:8448"
+    if systemctl is-active --quiet nginx 2>/dev/null; then
+        if [[ -d "/var/www/element" ]]; then
+            echo -e "  ${GREEN}➜${NC} Element Web:   https://${SERVER_NAME}/element"
+        fi
+        if [[ -d "/var/www/synapse-admin" ]]; then
+            echo -e "  ${GREEN}➜${NC} Synapse Admin: https://${SERVER_NAME}/synapse-admin"
+        fi
+    fi
+
+    echo ""
+
+    # Credentials
+    local cred_file="${WORKING_DIR}/synapse-credentials.txt"
+    if [[ -f "$cred_file" ]]; then
+        echo -e "${BLUE}Admin User:${NC}"
+        echo -e "  ${YELLOW}➜${NC} Credentials:   ${cred_file}"
+    fi
+
+    echo ""
+
+    # Service Management
+    echo -e "${BLUE}Service Management:${NC}"
+    echo -e "  ${GRAY}➜${NC} sudo systemctl status postgresql"
+    echo -e "  ${GRAY}➜${NC} sudo systemctl status ${synapse_service}"
+    if systemctl is-enabled --quiet nginx 2>/dev/null; then
+        echo -e "  ${GRAY}➜${NC} sudo systemctl status nginx"
+    fi
+
+    echo ""
+
+    # Log file
+    local log_file="${WORKING_DIR}/synapse-native.log"
+    if [[ -f "$log_file" ]]; then
+        echo -e "${BLUE}Log file:${NC} ${log_file}"
+    fi
+
+    echo ""
 
     # Port status check
     echo "────────────────────────────────────────────────────────────"
