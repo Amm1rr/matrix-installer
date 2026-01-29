@@ -2039,15 +2039,44 @@ uninstall_with_database() {
 uninstall_complete() {
     local synapse_service="$1"
     local synapse_user="$2"
+    local remove_venv=""
+    local remove_nginx_pkg=""
+
+    # Ask about removing virtual environment (only if it exists)
+    if [[ -d "/opt/synapse-venv" ]]; then
+        echo ""
+        echo "Found virtual environment at /opt/synapse-venv (~500MB)"
+        echo "Keeping it will make next installation faster."
+        echo ""
+        if [[ "$(prompt_yes_no "Remove virtual environment?" "n")" == "yes" ]]; then
+            remove_venv=true
+        else
+            remove_venv=false
+        fi
+    fi
+
+    # Ask about removing nginx package
+    echo ""
+    if [[ "$(prompt_yes_no "Remove nginx package?" "n")" == "yes" ]]; then
+        remove_nginx_pkg=true
+    else
+        remove_nginx_pkg=false
+    fi
 
     print_message "warning" "========================================"
     print_message "warning" "DANGER: Complete Removal"
     print_message "warning" "========================================"
     print_message "warning" "This will remove:"
-    print_message "warning" "  - Synapse package and configs"
+    print_message "warning" "  - Synapse configs and data"
     print_message "warning" "  - Synapse database"
     print_message "warning" "  - PostgreSQL package and ALL databases"
     print_message "warning" "  - All data in /var/lib/postgresql"
+    if [[ "$remove_venv" == "true" ]]; then
+        print_message "warning" "  - Virtual environment (/opt/synapse-venv)"
+    fi
+    if [[ "$remove_nginx_pkg" == "true" ]]; then
+        print_message "warning" "  - nginx package"
+    fi
     print_message "warning" ""
     print_message "warning" "If other services use PostgreSQL, they will break!"
     echo ""
@@ -2066,11 +2095,15 @@ uninstall_complete() {
     sudo systemctl disable "$synapse_service" 2>/dev/null || true
     sudo systemctl stop postgresql 2>/dev/null || true
     sudo systemctl disable postgresql 2>/dev/null || true
+    sudo systemctl stop nginx 2>/dev/null || true
+    sudo systemctl disable nginx 2>/dev/null || true
 
-    # Remove Synapse virtual environment
-    if [[ -d "/opt/synapse-venv" ]]; then
+    # Remove Synapse virtual environment if requested
+    if [[ "$remove_venv" == "true" ]]; then
         print_message "info" "Removing Synapse virtual environment..."
         sudo rm -rf /opt/synapse-venv
+    elif [[ -d "/opt/synapse-venv" ]]; then
+        print_message "info" "Keeping virtual environment for faster reinstall"
     fi
 
     # Remove old synapse directory if exists
@@ -2091,6 +2124,11 @@ uninstall_complete() {
     sudo rm -rf /var/www/synapse-admin
     sudo rm -rf /var/log/synapse
 
+    # Remove nginx configuration
+    sudo rm -f /etc/nginx/sites-enabled/matrix
+    sudo rm -f /etc/nginx/sites-available/matrix
+    sudo rm -rf /etc/nginx/ssl
+
     # Remove PostgreSQL package
     print_message "info" "Removing PostgreSQL package..."
     case "$DETECTED_OS" in
@@ -2102,12 +2140,28 @@ uninstall_complete() {
             ;;
     esac
 
+    # Remove nginx package if requested
+    if [[ "$remove_nginx_pkg" == "true" ]]; then
+        print_message "info" "Removing nginx package..."
+        case "$DETECTED_OS" in
+            ubuntu)
+                sudo apt-get remove --purge -y nginx 2>/dev/null || true
+                ;;
+            arch)
+                sudo pacman -Rns --noconfirm nginx 2>/dev/null || true
+                ;;
+        esac
+    fi
+
     # Remove system user
     print_message "info" "Removing system user..."
     sudo userdel "$synapse_user" 2>/dev/null || true
 
     print_message "success" "Complete removal finished"
     print_message "warning" "PostgreSQL package has been removed"
+    if [[ "$remove_nginx_pkg" == "true" ]]; then
+        print_message "warning" "nginx package has been removed"
+    fi
     print_message "info" "You may need to reinstall PostgreSQL if needed"
 
     pause
