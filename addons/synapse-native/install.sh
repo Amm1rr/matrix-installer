@@ -1670,6 +1670,20 @@ menu_create_admin_user() {
         print_message "error" "Passwords do not match"
     done
 
+    # Show confirmation before creating user
+    echo ""
+    echo "────────────────────────────────────────────────────────────"
+    echo "Summary:"
+    echo "  Username: $username"
+    echo "  Password: $password"
+    echo "────────────────────────────────────────────────────────────"
+    echo ""
+
+    if [[ "$(prompt_yes_no "Create admin user?" "y")" != "yes" ]]; then
+        print_message "info" "Cancelled"
+        return 0
+    fi
+
     create_admin_user "$username" "$password"
 
     pause
