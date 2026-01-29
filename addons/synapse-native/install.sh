@@ -843,8 +843,6 @@ configure_synapse_tls() {
 }
 
 install_element_web() {
-    print_message "info" "Installing Element Web from GitHub..."
-
     local install_dir="/var/www/element"
     local web_user="$(get_web_user)"
 
@@ -856,45 +854,52 @@ install_element_web() {
     # Use a known working version if API fails
     [[ -z "$latest_version" ]] && latest_version="v1.12.9"
 
-    print_message "info" "Downloading Element Web ${latest_version}..."
+    local tar_file="element-${latest_version}.tar.gz"
+    local tar_path="${WORKING_DIR}/${tar_file}"
 
-    sudo mkdir -p "$install_dir"
-    cd /tmp
+    # Check if tar.gz file already exists
+    if [[ -f "$tar_path" ]]; then
+        print_message "info" "Using cached Element Web ${latest_version} from ${tar_path}"
+    else
+        # Download to working directory
+        print_message "info" "Downloading Element Web ${latest_version}..."
 
-    # Correct URL format: element-v<version>.tar.gz (not element-web-v<version>.tar.gz)
-    local download_urls=(
-        "https://github.com/element-hq/element-web/releases/download/${latest_version}/element-${latest_version}.tar.gz"
-        "https://github.com/element-hq/element-web/releases/download/${latest_version}/element-web-${latest_version}.tar.gz"
-    )
+        local download_urls=(
+            "https://github.com/element-hq/element-web/releases/download/${latest_version}/element-${latest_version}.tar.gz"
+            "https://github.com/element-hq/element-web/releases/download/${latest_version}/element-web-${latest_version}.tar.gz"
+        )
 
-    local downloaded=false
-    local url_used=""
+        local downloaded=false
+        local url_used=""
 
-    for url in "${download_urls[@]}"; do
-        if curl -fL "$url" -o element-web.tar.gz 2>/dev/null; then
-            downloaded=true
-            url_used="$url"
-            break
+        cd "$WORKING_DIR"
+        for url in "${download_urls[@]}"; do
+            if curl -fL "$url" -o "$tar_file" 2>/dev/null; then
+                downloaded=true
+                url_used="$url"
+                break
+            fi
+        done
+
+        if [[ "$downloaded" == "false" ]]; then
+            print_message "warning" "Failed to download Element Web"
+            print_message "info" "You can install Element Web manually from: https://github.com/element-hq/element-web"
+            return 1
         fi
-    done
 
-    if [[ "$downloaded" == "false" ]]; then
-        print_message "warning" "Failed to download Element Web"
-        print_message "info" "You can install Element Web manually from: https://github.com/element-hq/element-web"
-        print_message "info" "Or use the release URL directly and extract to $install_dir"
-        return 1
+        print_message "success" "Downloaded from: $url_used"
+        print_message "info" "Cached at: ${tar_path}"
     fi
 
-    print_message "info" "Downloaded from: $url_used"
-
     # Extract and install
-    if sudo tar -xzf element-web.tar.gz -C "$install_dir" --strip-components=1 2>/dev/null; then
-        rm -f element-web.tar.gz
+    sudo mkdir -p "$install_dir"
+
+    if sudo tar -xzf "$tar_path" -C "$install_dir" --strip-components=1 2>/dev/null; then
+        print_message "success" "Extracted to ${install_dir}"
     else
         # Try without strip-components
         rm -rf "$install_dir"/*
-        sudo tar -xzf element-web.tar.gz -C "$install_dir" 2>/dev/null
-        rm -f element-web.tar.gz
+        sudo tar -xzf "$tar_path" -C "$install_dir" 2>/dev/null
 
         # If extraction created a subdirectory, move files up
         local subdir
@@ -903,6 +908,8 @@ install_element_web() {
             sudo mv "${subdir}"/* "$install_dir"/ 2>/dev/null || true
             sudo rmdir "$subdir" 2>/dev/null || true
         fi
+
+        print_message "success" "Extracted to ${install_dir}"
     fi
 
     # Check if files were extracted
