@@ -391,6 +391,52 @@ install_postgresql() {
 
     print_message "success" "PostgreSQL installed"
 
+    # On Ubuntu, ensure a PostgreSQL cluster exists and is running
+    if [[ "$DETECTED_OS" == "ubuntu" ]]; then
+        # Check if any cluster is online
+        if ! pg_lsclusters 2>/dev/null | grep -q "online"; then
+            print_message "info" "No online PostgreSQL cluster found."
+
+            # Check if there's a corrupted cluster (exists but not online)
+            local corrupted_cluster=""
+            if command -v pg_lsclusters >/dev/null 2>&1; then
+                corrupted_cluster=$(pg_lsclusters 2>/dev/null | grep -v "online" | head -1 | awk '{print $1 " " $2}')
+            fi
+
+            if [[ -n "$corrupted_cluster" ]]; then
+                local pg_version=$(echo "$corrupted_cluster" | awk '{print $1}')
+                print_message "warning" "Found corrupted cluster: $corrupted_cluster"
+                print_message "info" "Dropping corrupted cluster..."
+                sudo pg_dropcluster "$pg_version" main --stop 2>/dev/null || true
+            fi
+
+            # Try to detect the installed version
+            local pg_version=""
+            if [[ -f /usr/bin/pg_config ]]; then
+                pg_version=$(/usr/bin/pg_config --version | awk '{print $2}' | cut -d. -f1)
+            fi
+
+            # Try common versions if detection failed
+            if [[ -z "$pg_version" ]]; then
+                for v in 16 15 14 13; do
+                    if dpkg -l "postgresql-$v" 2>/dev/null | grep -q "^ii"; then
+                        pg_version=$v
+                        break
+                    fi
+                done
+            fi
+
+            if [[ -n "$pg_version" ]]; then
+                print_message "info" "Creating PostgreSQL ${pg_version} cluster..."
+                sudo pg_createcluster "$pg_version" main --start || {
+                    print_message "error" "Failed to create PostgreSQL cluster"
+                    pause
+                    return 1
+                }
+            fi
+        fi
+    fi
+
     # Initialize database if needed (Arch)
     if [[ "$DETECTED_OS" == "arch" ]]; then
         if [[ ! -d /var/lib/postgres/data ]]; then
@@ -402,8 +448,36 @@ install_postgresql() {
 
     # Enable and start PostgreSQL
     print_message "info" "Starting PostgreSQL service..."
-    sudo systemctl enable postgresql
-    sudo systemctl start postgresql
+
+    # On Ubuntu, use pg_ctlcluster to start the specific cluster
+    if [[ "$DETECTED_OS" == "ubuntu" ]]; then
+        # Check cluster status first
+        if command -v pg_lsclusters >/dev/null 2>&1; then
+            print_message "info" "PostgreSQL clusters status:"
+            pg_lsclusters || true
+        fi
+
+        # Find available PostgreSQL versions and start the cluster
+        local pg_version=""
+        if [[ -f /usr/bin/pg_config ]]; then
+            pg_version=$(/usr/bin/pg_config --version | awk '{print $2}' | cut -d. -f1)
+        fi
+
+        # Try to start the cluster using pg_ctlcluster
+        if [[ -n "$pg_version" ]]; then
+            print_message "info" "Starting PostgreSQL cluster ${pg_version}-main..."
+            sudo pg_ctlcluster "$pg_version" main start || sudo systemctl start "postgresql@${pg_version}-main" || sudo systemctl start postgresql
+        else
+            # Fallback: try to find any cluster and start it
+            sudo pg_ctlcluster 16 main start 2>/dev/null || \
+            sudo pg_ctlcluster 15 main start 2>/dev/null || \
+            sudo pg_ctlcluster 14 main start 2>/dev/null || \
+            sudo systemctl start postgresql
+        fi
+    else
+        sudo systemctl enable postgresql
+        sudo systemctl start postgresql
+    fi
 
     # Wait for PostgreSQL to be ready
     local max_wait=30
@@ -418,6 +492,11 @@ install_postgresql() {
     done
 
     print_message "error" "PostgreSQL failed to start"
+    echo ""
+    sudo systemctl status postgresql --no-pager || true
+    echo ""
+    print_message "info" "Check logs with: sudo journalctl -u postgresql -n 50"
+    pause
     return 1
 }
 
@@ -1515,6 +1594,7 @@ install_synapse() {
     # Print installation summary
     print_installation_summary "$admin_username" "$admin_created" "$LAST_ADMIN_PASSWORD"
 
+    pause
     return 0
 }
 
