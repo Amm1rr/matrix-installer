@@ -2780,6 +2780,27 @@ cleanup_postgresql_cluster() {
     print_message "success" "PostgreSQL clusters cleaned up"
 }
 
+# Remove synapse system user (used by uninstall functions)
+remove_synapse_system_user() {
+    local synapse_user="$1"
+
+    if [[ -z "$synapse_user" ]]; then
+        synapse_user="$(get_synapse_user)"
+    fi
+
+    if id "$synapse_user" &>/dev/null; then
+        print_message "info" "Removing synapse system user ($synapse_user)..."
+        case "$DETECTED_OS" in
+            ubuntu)
+                sudo deluser --system "$synapse_user" 2>/dev/null || sudo userdel "$synapse_user" 2>/dev/null || true
+                ;;
+            arch)
+                sudo userdel "$synapse_user" 2>/dev/null || true
+                ;;
+        esac
+    fi
+}
+
 # ===========================================
 # UNINSTALL OPTIONS
 # ===========================================
@@ -2955,6 +2976,7 @@ uninstall_synapse_only() {
         echo "╠══════════════════════════════════════════════════════════╣"
         echo "║  This will remove:                                       ║"
         echo "║    • Synapse configs and data                            ║"
+        echo "║    • Synapse system user ($synapse_user)                    ║"
         echo "║    • nginx configuration                                 ║"
         if [[ "$remove_venv" == "true" ]]; then
             echo "║    • Virtual environment (/opt/synapse-venv)             ║"
@@ -3012,6 +3034,9 @@ uninstall_synapse_only() {
     sudo rm -rf /etc/synapse
     sudo rm -rf /var/lib/synapse
     sudo rm -rf /var/log/synapse
+
+    # Remove synapse system user
+    remove_synapse_system_user "$synapse_user"
 
     # Clean up PostgreSQL cluster
     cleanup_postgresql_cluster
@@ -3083,7 +3108,8 @@ uninstall_with_database() {
     echo "║  This will remove:                                       ║"
     echo "║    • Synapse configs and data                            ║"
     echo "║    • Synapse database (synapsedb)                        ║"
-    echo "║    • Synapse user (synapse)                              ║"
+    echo "║    • PostgreSQL user (synapse)                           ║"
+    echo "║    • Synapse system user ($synapse_user)                    ║"
     echo "║    • nginx configuration                                 ║"
     if [[ "$remove_venv" == "true" ]]; then
         echo "║    • Virtual environment (/opt/synapse-venv)               ║"
@@ -3162,6 +3188,7 @@ uninstall_complete() {
     print_message "warning" "This will remove:"
     print_message "warning" "  - Synapse configs and data"
     print_message "warning" "  - Synapse database"
+    print_message "warning" "  - Synapse system user ($synapse_user)"
     print_message "warning" "  - PostgreSQL package and ALL databases"
     print_message "warning" "  - All data in /var/lib/postgresql"
     if [[ "$remove_venv" == "true" ]]; then
@@ -3249,9 +3276,8 @@ uninstall_complete() {
         esac
     fi
 
-    # Remove system user
-    print_message "info" "Removing system user..."
-    sudo userdel "$synapse_user" 2>/dev/null || true
+    # Remove synapse system user
+    remove_synapse_system_user "$synapse_user"
 
     print_message "success" "Complete removal finished"
     print_message "warning" "PostgreSQL package has been removed"
