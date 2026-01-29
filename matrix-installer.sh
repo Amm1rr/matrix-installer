@@ -474,6 +474,12 @@ get_detected_ip() {
     echo "$ip"
 }
 
+# Pause and wait for user to press Enter
+pause() {
+    echo ""
+    read -rp "Press Enter to continue..."
+}
+
 # Print styled menu header
 print_menu_header() {
     local title="$1"
@@ -1518,6 +1524,7 @@ menu_with_root_key() {
                     echo "    - A Full Root Key (with private key)"
                     echo "    - Or create a new Root Key with option N"
                     echo ""
+                    pause
                     continue
                 fi
 
