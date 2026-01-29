@@ -31,7 +31,14 @@ ADDON_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 WORKING_DIR="${WORKING_DIR:-$(pwd)}"
 LOG_FILE="${WORKING_DIR}/synapse-native.log"
 CACHE_DIR="${ADDON_DIR}/cache"
+CACHE_APT_DIR="${CACHE_DIR}/apt"
+CACHE_PIP_DIR="${CACHE_DIR}/pip"
 MATRIX_BASE="/opt/matrix-synapse"
+
+# Installation mode: online (direct), download (build cache), or offline (from cache)
+INSTALLATION_MODE=""
+# Force reinstall: reinstall even if already installed (for offline mode)
+FORCE_REINSTALL=false
 
 # Colors
 RED='\033[0;31m'
@@ -466,15 +473,36 @@ check_environment_variables() {
 # ===========================================
 
 install_postgresql() {
+    # Skip installation in download mode
+    if [[ "$INSTALLATION_MODE" == "download" ]]; then
+        print_message "info" "Download mode: Skipping PostgreSQL installation"
+        return 0
+    fi
+
     print_message "info" "Installing PostgreSQL..."
 
     case "$DETECTED_OS" in
         ubuntu)
-            sudo apt-get update -qq
-            sudo apt-get install -y postgresql postgresql-contrib python3-psycopg2
+            if [[ "$INSTALLATION_MODE" == "offline" ]]; then
+                install_apt_from_cache || {
+                    print_message "error" "Failed to install PostgreSQL from cache"
+                    return 1
+                }
+            else
+                # Online mode: direct install
+                sudo apt-get update -qq
+                sudo apt-get install -y postgresql postgresql-contrib python3-psycopg2
+            fi
             ;;
         arch)
-            sudo pacman -S --noconfirm postgresql python-psycopg2
+            if [[ "$INSTALLATION_MODE" == "offline" ]]; then
+                install_apt_from_cache || {
+                    print_message "error" "Failed to install PostgreSQL from cache"
+                    return 1
+                }
+            else
+                sudo pacman -S --noconfirm postgresql python-psycopg2
+            fi
             ;;
     esac
 
@@ -657,6 +685,12 @@ install_synapse_package() {
             # Ubuntu 24.04+ has PEP 668 which requires venv for system-wide pip installs
             print_message "info" "Installing Synapse via pip in virtual environment..."
 
+            # Skip installation in download mode
+            if [[ "$INSTALLATION_MODE" == "download" ]]; then
+                print_message "info" "Download mode: Skipping Synapse installation"
+                return 0
+            fi
+
             local synapse_venv="/opt/synapse-venv"
             local venv_exists=false
             local synapse_installed=false
@@ -670,8 +704,14 @@ install_synapse_package() {
                 if "$synapse_venv/bin/python" -c "import synapse; print(synapse.__version__)" 2>/dev/null; then
                     local installed_version=$("$synapse_venv/bin/python" -c "import synapse; print(synapse.__version__)" 2>/dev/null)
                     print_message "success" "Synapse $installed_version already installed in venv"
-                    print_message "info" "Skipping download, using existing installation..."
-                    synapse_installed=true
+
+                    # Skip if not forcing reinstall
+                    if [[ "$FORCE_REINSTALL" != "true" ]]; then
+                        print_message "info" "Skipping installation, using existing..."
+                        synapse_installed=true
+                    else
+                        print_message "info" "Force reinstall: will reinstall from cache"
+                    fi
                 else
                     print_message "warning" "Venv exists but Synapse not properly installed"
                     print_message "info" "Will reinstall Synapse in existing venv..."
@@ -679,9 +719,20 @@ install_synapse_package() {
             fi
 
             # Install build dependencies
-            sudo apt-get update -qq
-            sudo apt-get install -y python3-venv libssl-dev python3-dev \
-                libxml2-dev libpq-dev libffi-dev python3-setuptools build-essential
+            if [[ "$INSTALLATION_MODE" == "offline" ]]; then
+                print_message "info" "Installing build dependencies from cache..."
+                # For offline mode, dependencies should be in the cache
+                # We'll use the cached packages
+                install_apt_from_cache || {
+                    print_message "warning" "Some dependencies may not be in cache"
+                    print_message "info" "Continuing with available packages..."
+                }
+            else
+                # Online mode: direct install
+                sudo apt-get update -qq
+                sudo apt-get install -y python3-venv libssl-dev python3-dev \
+                    libxml2-dev libpq-dev libffi-dev python3-setuptools build-essential
+            fi
 
             # Create virtual environment if it doesn't exist
             if [[ "$venv_exists" == "false" ]]; then
@@ -695,12 +746,22 @@ install_synapse_package() {
 
             # Install synapse in virtual environment (only if not already installed)
             if [[ "$synapse_installed" == "false" ]]; then
-                print_message "info" "Installing matrix-synapse in virtual environment..."
-                sudo "$synapse_venv/bin/pip" install --upgrade "matrix-synapse[all]" || {
-                    print_message "error" "Failed to install matrix-synapse"
-                    pause
-                    return 1
-                }
+                if [[ "$INSTALLATION_MODE" == "offline" ]]; then
+                    print_message "info" "Installing matrix-synapse from cache..."
+                    install_pip_from_cache || {
+                        print_message "error" "Failed to install matrix-synapse from cache"
+                        pause
+                        return 1
+                    }
+                else
+                    # Online mode: direct install
+                    print_message "info" "Installing matrix-synapse in virtual environment..."
+                    sudo "$synapse_venv/bin/pip" install --upgrade "matrix-synapse[all]" || {
+                        print_message "error" "Failed to install matrix-synapse"
+                        pause
+                        return 1
+                    }
+                fi
                 print_message "success" "Synapse installed successfully"
             fi
 
@@ -1127,15 +1188,36 @@ install_synapse_admin() {
 # ===========================================
 
 install_nginx() {
+    # Skip installation in download mode
+    if [[ "$INSTALLATION_MODE" == "download" ]]; then
+        print_message "info" "Download mode: Skipping nginx installation"
+        return 0
+    fi
+
     print_message "info" "Installing nginx web server..."
 
     case "$DETECTED_OS" in
         ubuntu)
-            sudo apt-get update -qq
-            sudo apt-get install -y nginx
+            if [[ "$INSTALLATION_MODE" == "offline" ]]; then
+                install_apt_from_cache || {
+                    print_message "error" "Failed to install nginx from cache"
+                    return 1
+                }
+            else
+                # Online mode: direct install
+                sudo apt-get update -qq
+                sudo apt-get install -y nginx
+            fi
             ;;
         arch)
-            sudo pacman -S --noconfirm nginx
+            if [[ "$INSTALLATION_MODE" == "offline" ]]; then
+                install_apt_from_cache || {
+                    print_message "error" "Failed to install nginx from cache"
+                    return 1
+                }
+            else
+                sudo pacman -S --noconfirm nginx
+            fi
             ;;
     esac
 
@@ -1482,6 +1564,622 @@ check_port_443() {
 }
 
 # ===========================================
+# CACHE MANAGEMENT FUNCTIONS
+# ===========================================
+
+# Show cache status
+show_cache_status() {
+    local apt_count=0
+    local pip_count=0
+    local web_count=0
+
+    # Count APT packages
+    case "$DETECTED_OS" in
+        ubuntu)
+            apt_count=$(ls -1 "${CACHE_APT_DIR}/ubuntu"/*.deb 2>/dev/null | wc -l)
+            ;;
+        arch)
+            apt_count=$(ls -1 "${CACHE_APT_DIR}/arch"/*.pkg.tar.* 2>/dev/null | wc -l)
+            ;;
+    esac
+
+    # Count PIP packages
+    pip_count=$(ls -1 "${CACHE_PIP_DIR}"/*.whl 2>/dev/null | wc -l)
+
+    # Count web tarballs
+    web_count=$(ls -1 "${CACHE_DIR}"/element-*.tar.gz "${CACHE_DIR}"/synapse-admin-*.tar.gz 2>/dev/null | wc -l)
+
+    echo ""
+    echo "Cache Status:"
+    if [[ $apt_count -gt 0 ]]; then
+        echo -e "  ${GREEN}✓${NC} APT packages: $apt_count"
+    else
+        echo -e "  ${YELLOW}⚠${NC} APT packages: Not cached"
+    fi
+
+    if [[ $pip_count -gt 0 ]]; then
+        echo -e "  ${GREEN}✓${NC} PIP packages: $pip_count"
+    else
+        echo -e "  ${YELLOW}⚠${NC} PIP packages: Not cached"
+    fi
+
+    if [[ $web_count -gt 0 ]]; then
+        echo -e "  ${GREEN}✓${NC} Web tarballs: $web_count"
+    else
+        echo -e "  ${YELLOW}⚠${NC} Web tarballs: Not cached"
+    fi
+    echo ""
+}
+
+# Prompt user for installation mode
+prompt_installation_mode() {
+    echo ""
+    echo "╔══════════════════════════════════════════════════════════╗"
+    echo "║              Installation Mode                           ║"
+    echo "╚══════════════════════════════════════════════════════════╝"
+
+    # Show current cache status
+    show_cache_status
+
+    echo "Select installation mode:"
+    echo ""
+    echo "  1) Online Install"
+    echo "     - Direct download and install (no cache)"
+    echo "     - Simple and fast"
+    echo ""
+    echo "  2) Download Only (Build Cache)"
+    echo "     - Download all packages to cache"
+    echo "     - NO installation"
+    echo "     - Use on fast internet machine"
+    echo ""
+    echo "  3) Install from Cache (Offline)"
+    echo "     - Install from cached packages"
+    echo "     - No internet required"
+    echo ""
+    echo "  0) Cancel"
+    echo ""
+
+    while true; do
+        read -rp "Enter your choice: " choice
+        case "$choice" in
+            1|online)
+                INSTALLATION_MODE="online"
+                FORCE_REINSTALL=false
+                print_message "info" "Online mode: Direct download and install"
+                return 0
+                ;;
+            2|download)
+                INSTALLATION_MODE="download"
+                print_message "info" "Download mode: Will build cache for offline use"
+                return 0
+                ;;
+            3|offline|cache)
+                INSTALLATION_MODE="offline"
+                # Ask for reinstall mode
+                echo ""
+                echo "Install mode:"
+                echo "  1) Smart [default] - Install only missing packages"
+                echo "  2) Fresh - Reinstall everything from cache"
+                echo ""
+                read -rp "Choose [1/2]: " subchoice
+                case "$subchoice" in
+                    2|fresh|reinstall)
+                        FORCE_REINSTALL=true
+                        print_message "info" "Fresh mode: Will reinstall everything"
+                        ;;
+                    *)
+                        FORCE_REINSTALL=false
+                        print_message "info" "Smart mode: Will skip already installed"
+                        ;;
+                esac
+                return 0
+                ;;
+            0|cancel|exit|q)
+                return 1
+                ;;
+            *)
+                print_message "error" "Invalid option: $choice"
+                ;;
+        esac
+    done
+}
+
+# Check if apt cache is available
+check_apt_cache_available() {
+    case "$DETECTED_OS" in
+        ubuntu)
+            [[ -d "${CACHE_APT_DIR}/ubuntu" ]] && [[ -n "$(ls -A ${CACHE_APT_DIR}/ubuntu/*.deb 2>/dev/null)" ]]
+            ;;
+        arch)
+            [[ -d "${CACHE_APT_DIR}/arch" ]] && [[ -n "$(ls -A ${CACHE_APT_DIR}/arch/*.pkg.tar.* 2>/dev/null)" ]]
+            ;;
+    esac
+}
+
+# Check if pip cache is available
+check_pip_cache_available() {
+    [[ -d "${CACHE_PIP_DIR}" ]] && [[ -n "$(ls -A ${CACHE_PIP_DIR}/*.whl 2>/dev/null)" ]]
+}
+
+# Check cache availability and show status
+check_cache_availability() {
+    print_message "info" "Checking cache availability..."
+
+    local apt_available=false
+    local pip_available=false
+    local web_available=false
+
+    # Check APT cache
+    if check_apt_cache_available; then
+        apt_available=true
+        local deb_count=$(ls -1 ${CACHE_APT_DIR}/${DETECTED_OS}/*.deb 2>/dev/null | wc -l)
+        print_message "success" "APT cache: Found $deb_count .deb files"
+    else
+        print_message "warning" "APT cache: Not available or empty"
+    fi
+
+    # Check pip cache
+    if check_pip_cache_available; then
+        pip_available=true
+        local wheel_count=$(ls -1 ${CACHE_PIP_DIR}/*.whl 2>/dev/null | wc -l)
+        print_message "success" "PIP cache: Found $wheel_count wheel files"
+    else
+        print_message "warning" "PIP cache: Not available or empty"
+    fi
+
+    # Check web tarballs
+    local element_count=$(ls -1 ${CACHE_DIR}/element-*.tar.gz 2>/dev/null | wc -l)
+    local admin_count=$(ls -1 ${CACHE_DIR}/synapse-admin-*.tar.gz 2>/dev/null | wc -l)
+    if [[ $element_count -gt 0 ]] || [[ $admin_count -gt 0 ]]; then
+        web_available=true
+        print_message "success" "Web cache: Element ($element_count), Synapse Admin ($admin_count)"
+    else
+        print_message "warning" "Web cache: Not available"
+    fi
+
+    # Return success if all caches are available
+    if [[ "$apt_available" == true ]] && [[ "$pip_available" == true ]] && [[ "$web_available" == true ]]; then
+        return 0
+    else
+        print_message "warning" "Some caches are missing. Offline installation may be incomplete."
+        return 1
+    fi
+}
+
+# Cache APT packages after installation
+cache_apt_packages() {
+    print_message "info" "Caching APT packages..."
+
+    local os_cache_dir="${CACHE_APT_DIR}/${DETECTED_OS}"
+    mkdir -p "$os_cache_dir"
+
+    # Temporarily disable exit on error for caching (non-critical operation)
+    set +e
+    local copied=0
+
+    case "$DETECTED_OS" in
+        ubuntu)
+            # Copy .deb files from apt cache
+            if [[ -d /var/cache/apt/archives ]]; then
+                # Check if there are any .deb files
+                local deb_count=$(ls -1 /var/cache/apt/archives/*.deb 2>/dev/null | wc -l)
+                if [[ $deb_count -eq 0 ]]; then
+                    print_message "warning" "APT cache is empty"
+                    print_message "info" "Downloading packages to cache..."
+                    # Download only required packages (not all dependencies)
+                    local packages="postgresql postgresql-contrib python3-psycopg2 python3-venv libssl-dev python3-dev libxml2-dev libpq-dev libffi-dev python3-setuptools gcc g++ make libc6-dev nginx"
+                    sudo apt-get download --dir="$os_cache_dir" $packages 2>/dev/null || {
+                        print_message "warning" "Some packages failed to download"
+                    }
+                    copied=$(ls -1 "$os_cache_dir"/*.deb 2>/dev/null | wc -l)
+                    if [[ $copied -gt 0 ]]; then
+                        print_message "success" "Downloaded $copied .deb files"
+                    fi
+                else
+                    # Copy existing cache
+                    for deb in /var/cache/apt/archives/*.deb; do
+                        [[ -f "$deb" ]] || continue
+                        local basename=$(basename "$deb")
+                        # Skip if already exists (to avoid duplicates)
+                        if [[ ! -f "${os_cache_dir}/${basename}" ]]; then
+                            sudo cp "$deb" "$os_cache_dir/" 2>/dev/null && {
+                                sudo chown "$USER:$USER" "${os_cache_dir}/${basename}" 2>/dev/null
+                                copied=$((copied + 1))
+                            }
+                        fi
+                    done
+                    if [[ $copied -gt 0 ]]; then
+                        print_message "success" "Cached $copied .deb files"
+                    else
+                        print_message "warning" "No new packages to cache"
+                    fi
+                fi
+            else
+                print_message "warning" "APT cache directory not found"
+            fi
+            ;;
+        arch)
+            # Copy package files from pacman cache
+            if [[ -d /var/cache/pacman/pkg ]]; then
+                local pkg_count=$(ls -1 /var/cache/pacman/pkg/*.pkg.tar.* 2>/dev/null | wc -l)
+                if [[ $pkg_count -eq 0 ]]; then
+                    print_message "warning" "Pacman cache is empty"
+                else
+                    for pkg in /var/cache/pacman/pkg/*.pkg.tar.*; do
+                        [[ -f "$pkg" ]] || continue
+                        local basename=$(basename "$pkg")
+                        if [[ ! -f "${os_cache_dir}/${basename}" ]]; then
+                            sudo cp "$pkg" "$os_cache_dir/" 2>/dev/null && {
+                                sudo chown "$USER:$USER" "${os_cache_dir}/${basename}" 2>/dev/null
+                                copied=$((copied + 1))
+                            }
+                        fi
+                    done
+                    if [[ $copied -gt 0 ]]; then
+                        print_message "success" "Cached $copied package files"
+                    else
+                        print_message "warning" "No new packages to cache"
+                    fi
+                fi
+            else
+                print_message "warning" "Pacman cache directory not found"
+            fi
+            ;;
+    esac
+
+    # Update .gitignore to exclude cache
+    if ! grep -q "^cache/" "${ADDON_DIR}/.gitignore" 2>/dev/null; then
+        echo "cache/" >> "${ADDON_DIR}/.gitignore"
+    fi
+
+    # Re-enable exit on error
+    set -e
+}
+
+# Cache pip packages after installation
+cache_pip_packages() {
+    print_message "info" "Caching pip packages..."
+
+    mkdir -p "$CACHE_PIP_DIR"
+
+    local synapse_venv="/opt/synapse-venv"
+
+    # Check if venv exists
+    if [[ ! -d "$synapse_venv" ]]; then
+        print_message "warning" "Virtual environment not found, skipping pip cache"
+        return 0
+    fi
+
+    # Temporarily disable exit on error for caching (non-critical operation)
+    set +e
+
+    # Download wheels to cache directory
+    # This downloads all packages that were installed
+    print_message "info" "Downloading Python packages to cache..."
+    if "$synapse_venv/bin/pip" download --dest "$CACHE_PIP_DIR" "matrix-synapse[all]" 2>/dev/null; then
+        local cached=$(ls -1 "$CACHE_PIP_DIR"/*.whl 2>/dev/null | wc -l)
+        print_message "success" "Cached $cached Python wheel files"
+    else
+        print_message "warning" "Failed to cache some Python packages"
+    fi
+
+    # Update .gitignore
+    if ! grep -q "^cache/" "${ADDON_DIR}/.gitignore" 2>/dev/null; then
+        echo "cache/" >> "${ADDON_DIR}/.gitignore"
+    fi
+
+    # Re-enable exit on error
+    set -e
+}
+
+# ===========================================
+# DOWNLOAD-ONLY FUNCTIONS (Build Cache)
+# ===========================================
+
+# Download APT packages to cache (without installing)
+download_apt_to_cache() {
+    print_message "info" "Downloading APT packages to cache..."
+
+    local os_cache_dir="${CACHE_APT_DIR}/${DETECTED_OS}"
+    mkdir -p "$os_cache_dir"
+
+    # Packages to download (build-essential components instead of meta-package)
+    local packages="postgresql postgresql-contrib python3-psycopg2 python3-venv libssl-dev python3-dev libxml2-dev libpq-dev libffi-dev python3-setuptools gcc g++ make libc6-dev nginx"
+
+    case "$DETECTED_OS" in
+        ubuntu)
+            print_message "info" "Downloading packages (this may take a while)..."
+            sudo apt-get download --dir="$os_cache_dir" $packages 2>/dev/null || {
+                print_message "warning" "Some packages failed to download"
+                return 1
+            }
+            local downloaded=$(ls -1 "$os_cache_dir"/*.deb 2>/dev/null | wc -l)
+            print_message "success" "Downloaded $cached .deb files"
+            ;;
+        arch)
+            print_message "info" "Downloading packages for Arch..."
+            for pkg in postgresql python-psycopg2 nginx python-setuptools; do
+                sudo pacman -Sw --noconfirm --cachedir="$os_cache_dir" "$pkg" 2>/dev/null || true
+            done
+            local downloaded=$(ls -1 "$os_cache_dir"/*.pkg.tar.* 2>/dev/null | wc -l)
+            print_message "success" "Downloaded $cached package files"
+            ;;
+    esac
+
+    # Update .gitignore
+    if ! grep -q "^cache/" "${ADDON_DIR}/.gitignore" 2>/dev/null; then
+        echo "cache/" >> "${ADDON_DIR}/.gitignore"
+    fi
+}
+
+# Download PIP packages to cache (without installing)
+download_pip_to_cache() {
+    print_message "info" "Downloading PIP packages to cache..."
+
+    mkdir -p "$CACHE_PIP_DIR"
+
+    # Use a temporary venv for downloading
+    local temp_venv="/tmp/synapse-download-venv-$$"
+
+    print_message "info" "Creating temporary venv for downloading..."
+    python3 -m venv "$temp_venv" || {
+        print_message "error" "Failed to create temporary venv"
+        return 1
+    }
+
+    print_message "info" "Downloading Python packages (this may take a while)..."
+    if "$temp_venv/bin/pip" download --dest "$CACHE_PIP_DIR" "matrix-synapse[all]" 2>/dev/null; then
+        local downloaded=$(ls -1 "$CACHE_PIP_DIR"/*.whl 2>/dev/null | wc -l)
+        print_message "success" "Downloaded $downloaded Python wheel files"
+    else
+        print_message "warning" "Some Python packages failed to download"
+        rm -rf "$temp_venv"
+        pause
+        return 1
+    fi
+
+    # Cleanup temp venv
+    rm -rf "$temp_venv"
+
+    # Update .gitignore
+    if ! grep -q "^cache/" "${ADDON_DIR}/.gitignore" 2>/dev/null; then
+        echo "cache/" >> "${ADDON_DIR}/.gitignore"
+    fi
+}
+
+# Download web tarballs to cache (without installing)
+download_web_to_cache() {
+    print_message "info" "Downloading web tarballs to cache..."
+
+    mkdir -p "$CACHE_DIR"
+    local total=0
+    local success=0
+
+    # Element Web
+    local latest_version
+    latest_version=$(curl -s https://api.github.com/repos/element-hq/element-web/releases/latest 2>/dev/null | \
+                    grep '"tag_name"' | sed -E 's/.*"([^"]+)".*/\1/' | head -1)
+    [[ -z "$latest_version" ]] && latest_version="v1.12.9"
+
+    local tar_file="element-${latest_version}.tar.gz"
+    local tar_path="${CACHE_DIR}/${tar_file}"
+
+    ((total++))
+    if [[ -f "$tar_path" ]]; then
+        print_message "info" "Element Web already cached: $tar_file"
+        ((success++))
+    else
+        print_message "info" "Downloading Element Web ${latest_version}..."
+        local download_urls=(
+            "https://github.com/element-hq/element-web/releases/download/${latest_version}/element-${latest_version}.tar.gz"
+            "https://github.com/element-hq/element-web/releases/download/${latest_version}/element-web-${latest_version}.tar.gz"
+        )
+        cd "$CACHE_DIR"
+        for url in "${download_urls[@]}"; do
+            if curl -fL "$url" -o "$tar_file" 2>/dev/null; then
+                print_message "success" "Downloaded Element Web"
+                ((success++))
+                break
+            fi
+        done
+    fi
+
+    # Synapse Admin
+    latest_version=$(curl -s https://api.github.com/repos/Awesome-Technologies/synapse-admin/releases/latest 2>/dev/null | \
+                    grep '"tag_name"' | sed -E 's/.*"([^"]+)".*/\1/' | head -1)
+    [[ -z "$latest_version" ]] && latest_version="v0.10.2"
+
+    tar_file="synapse-admin-${latest_version}.tar.gz"
+    tar_path="${CACHE_DIR}/${tar_file}"
+
+    ((total++))
+    if [[ -f "$tar_path" ]]; then
+        print_message "info" "Synapse Admin already cached: $tar_file"
+        ((success++))
+    else
+        print_message "info" "Downloading Synapse Admin ${latest_version}..."
+        local download_urls=(
+            "https://github.com/Awesome-Technologies/synapse-admin/releases/download/${latest_version}/synapse-admin-${latest_version}.tar.gz"
+            "https://github.com/Awesome-Technologies/synapse-admin/releases/download/${latest_version}/synapse-admin.tar.gz"
+        )
+        cd "$CACHE_DIR"
+        for url in "${download_urls[@]}"; do
+            if curl -fL "$url" -o "$tar_file" 2>/dev/null; then
+                print_message "success" "Downloaded Synapse Admin"
+                ((success++))
+                break
+            fi
+        done
+    fi
+
+    # Update .gitignore
+    if ! grep -q "^cache/" "${ADDON_DIR}/.gitignore" 2>/dev/null; then
+        echo "cache/" >> "${ADDON_DIR}/.gitignore"
+    fi
+
+    if [[ $success -eq $total ]]; then
+        print_message "success" "Web tarballs complete: $success/$total"
+    else
+        print_message "warning" "Some downloads failed: $success/$total"
+        return 1
+    fi
+}
+
+# Download all packages to cache (download mode)
+download_all_packages() {
+    print_message "info" "Building package cache for offline use..."
+    echo ""
+
+    local had_errors=false
+
+    download_apt_to_cache || had_errors=true
+    download_pip_to_cache || had_errors=true
+    download_web_to_cache || had_errors=true
+
+    echo ""
+    if [[ "$had_errors" == "true" ]]; then
+        print_message "warning" "Cache building completed with some warnings"
+    else
+        print_message "success" "Cache building complete!"
+    fi
+
+    # Show final cache status
+    show_cache_status
+
+    # Return success even if there were warnings
+    return 0
+}
+
+# Install APT packages from cache
+install_apt_from_cache() {
+    print_message "info" "Installing APT packages from cache..."
+
+    local os_cache_dir="${CACHE_APT_DIR}/${DETECTED_OS}"
+
+    if [[ ! -d "$os_cache_dir" ]]; then
+        print_message "error" "Cache directory not found: $os_cache_dir"
+        return 1
+    fi
+
+    # List of packages we actually need (not all dependencies)
+    # build-essential is a meta-package, so we list its components
+    local needed_packages=(
+        "postgresql"
+        "postgresql-contrib"
+        "python3-psycopg2"
+        "python3-venv"
+        "libssl-dev"
+        "python3-dev"
+        "libxml2-dev"
+        "libpq-dev"
+        "libffi-dev"
+        "python3-setuptools"
+        # build-essential components (instead of the meta-package)
+        "gcc"
+        "g++"
+        "make"
+        "libc6-dev"
+        "nginx"
+    )
+
+    # Find matching .deb files in cache
+    local packages_to_install=()
+    for pkg in "${needed_packages[@]}"; do
+        # Find the .deb file (may have version suffix)
+        local deb_file=$(ls "$os_cache_dir"/${pkg}_*.deb 2>/dev/null | head -1)
+        if [[ -n "$deb_file" && -f "$deb_file" ]]; then
+            packages_to_install+=("$deb_file")
+        else
+            print_message "warning" "Package not found in cache: $pkg"
+        fi
+    done
+
+    if [[ ${#packages_to_install[@]} -eq 0 ]]; then
+        print_message "error" "No required packages found in cache"
+        return 1
+    fi
+
+    print_message "info" "Found ${#packages_to_install[@]} required packages in cache"
+
+    case "$DETECTED_OS" in
+        ubuntu)
+            # Install only needed packages from cache
+            print_message "info" "Installing cached packages..."
+            if sudo dpkg -i "${packages_to_install[@]}" 2>/dev/null; then
+                # Fix any missing dependencies
+                print_message "info" "Fixing dependencies..."
+                sudo apt-get install -f -y 2>/dev/null || true
+                print_message "success" "Packages installed from cache"
+            else
+                print_message "error" "Failed to install packages from cache"
+                return 1
+            fi
+            ;;
+        arch)
+            # Install packages from cache
+            print_message "info" "Installing cached packages..."
+            for pkg in "${packages_to_install[@]}"; do
+                [[ -f "$pkg" ]] || continue
+                sudo pacman -U --noconfirm "$pkg" || print_message "warning" "Failed to install: $(basename "$pkg")"
+            done
+            print_message "success" "Packages installed from cache"
+            ;;
+    esac
+}
+
+# Install pip packages from cache
+install_pip_from_cache() {
+    print_message "info" "Installing pip packages from cache..."
+
+    if [[ ! -d "$CACHE_PIP_DIR" ]]; then
+        print_message "error" "Pip cache directory not found: $CACHE_PIP_DIR"
+        return 1
+    fi
+
+    local wheel_count=$(ls -1 "$CACHE_PIP_DIR"/*.whl 2>/dev/null | wc -l)
+    if [[ $wheel_count -eq 0 ]]; then
+        print_message "error" "No wheel files found in cache"
+        return 1
+    fi
+
+    print_message "info" "Found $wheel_count cached Python packages"
+
+    local synapse_venv="/opt/synapse-venv"
+
+    # Install from cache without accessing PyPI
+    print_message "info" "Installing Python packages from cache (offline mode)..."
+    if sudo "$synapse_venv/bin/pip" install --no-index --find-links="$CACHE_PIP_DIR" "matrix-synapse[all]"; then
+        print_message "success" "Python packages installed from cache"
+    else
+        print_message "error" "Failed to install Python packages from cache"
+        return 1
+    fi
+}
+
+# Cache all packages after successful installation
+cache_all_packages() {
+    print_message "info" "Building package cache for offline use..."
+    echo ""
+
+    local had_errors=false
+
+    cache_apt_packages || had_errors=true
+    cache_pip_packages || had_errors=true
+
+    echo ""
+    if [[ "$had_errors" == "true" ]]; then
+        print_message "warning" "Package cache completed with some warnings"
+        print_message "info" "Some packages may not be available for offline installation"
+    else
+        print_message "success" "Package cache complete"
+    fi
+    print_message "info" "Cache location: $CACHE_DIR"
+
+    # Return success even if there were warnings (caching is non-critical)
+    return 0
+}
+
+# ===========================================
 # INSTALLATION SUMMARY
 # ===========================================
 
@@ -1610,8 +2308,6 @@ print_installation_summary() {
 # ===========================================
 
 install_synapse() {
-    print_message "info" "Starting Synapse installation..."
-
     # Check for existing installation
     local synapse_service="$(get_synapse_service_name)"
     if systemctl is-enabled --quiet "$synapse_service" 2>/dev/null; then
@@ -1620,6 +2316,60 @@ install_synapse() {
         pause
         return 1
     fi
+
+    # Prompt for installation mode
+    if ! prompt_installation_mode; then
+        print_message "info" "Installation cancelled"
+        return 0
+    fi
+
+    # Download mode: just download and show summary, no installation
+    if [[ "$INSTALLATION_MODE" == "download" ]]; then
+        echo ""
+        download_all_packages
+        echo ""
+        print_message "info" "Cache building complete!"
+        print_message "info" "You can now run this script on an offline machine and choose 'Install from Cache'"
+        echo ""
+        pause
+        return 0
+    fi
+
+    # For offline mode, check cache availability
+    if [[ "$INSTALLATION_MODE" == "offline" ]]; then
+        echo ""
+        if ! check_cache_availability; then
+            echo ""
+            print_message "warning" "Cache is incomplete or missing"
+            echo ""
+            echo "Options:"
+            echo "  1) Continue anyway (may fail)"
+            echo "  2) Switch to online mode"
+            echo "  0) Cancel"
+            echo ""
+            read -rp "Enter your choice: " choice
+            case "$choice" in
+                1|continue)
+                    print_message "info" "Continuing with incomplete cache..."
+                    ;;
+                2|online)
+                    INSTALLATION_MODE="online"
+                    print_message "info" "Switched to online mode"
+                    ;;
+                0|cancel|exit|q)
+                    print_message "info" "Installation cancelled"
+                    return 0
+                    ;;
+                *)
+                    print_message "info" "Installation cancelled"
+                    return 0
+                    ;;
+            esac
+        fi
+        echo ""
+    fi
+
+    print_message "info" "Starting Synapse installation..."
 
     # Installation prompts
     echo ""
@@ -1671,6 +2421,7 @@ install_synapse() {
     echo ""
     echo "Configuration Summary:"
     echo "  Server: $SERVER_NAME"
+    echo "  Mode: $INSTALLATION_MODE"
     echo "  Registration: $ENABLE_REGISTRATION"
     echo "  Element Web: $INSTALL_ELEMENT_WEB"
     echo "  Synapse Admin: $INSTALL_SYNAPSE_ADMIN"
@@ -2126,7 +2877,7 @@ uninstall_synapse_only() {
         echo "║    • Synapse configs and data                            ║"
         echo "║    • nginx configuration                                 ║"
         if [[ "$remove_venv" == "true" ]]; then
-            echo "║    • Virtual environment (/opt/synapse-venv)               ║"
+            echo "║    • Virtual environment (/opt/synapse-venv)             ║"
         fi
         if [[ "$remove_nginx_pkg" == "true" ]]; then
             echo "║    • nginx package                                         ║"
