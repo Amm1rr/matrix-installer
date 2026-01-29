@@ -514,18 +514,41 @@ install_postgresql() {
         if ! pg_lsclusters 2>/dev/null | grep -q "online"; then
             print_message "info" "No online PostgreSQL cluster found."
 
-            # Check if there's a corrupted cluster (exists but not online)
-            local corrupted_cluster=""
+            # Check for any clusters (including corrupted ones)
             if command -v pg_lsclusters >/dev/null 2>&1; then
-                corrupted_cluster=$(pg_lsclusters 2>/dev/null | grep -v "online" | head -1 | awk '{print $1 " " $2}')
+                local all_clusters=$(pg_lsclusters 2>/dev/null | tail -n +2)
+                if [[ -n "$all_clusters" ]]; then
+                    print_message "warning" "Found existing cluster(s)"
+                    print_message "info" "Cleaning up all clusters..."
+
+                    # Try to drop all clusters properly first
+                    while IFS= read -r line; do
+                        if [[ -z "$line" ]]; then
+                            continue
+                        fi
+                        local pg_version=$(echo "$line" | awk '{print $1}')
+                        local cluster=$(echo "$line" | awk '{print $2}')
+
+                        print_message "info" "Dropping cluster ${pg_version}/${cluster}..."
+                        sudo pg_dropcluster "$pg_version" "$cluster" --stop 2>/dev/null || true
+                    done <<< "$all_clusters"
+                fi
             fi
 
-            if [[ -n "$corrupted_cluster" ]]; then
-                local pg_version=$(echo "$corrupted_cluster" | awk '{print $1}')
-                print_message "warning" "Found corrupted cluster: $corrupted_cluster"
-                print_message "info" "Dropping corrupted cluster..."
-                sudo pg_dropcluster "$pg_version" main --stop 2>/dev/null || true
-            fi
+            # Force remove ALL cluster directories for common versions
+            print_message "info" "Force cleaning cluster directories..."
+            for v in 16 15 14 13; do
+                local cluster_dir="/var/lib/postgresql/${v}/main"
+                if [[ -d "$cluster_dir" ]]; then
+                    print_message "info" "Removing $cluster_dir..."
+                    sudo rm -rf "$cluster_dir"
+                fi
+                # Also remove config directories
+                local conf_dir="/etc/postgresql/${v}/main"
+                if [[ -d "$conf_dir" ]]; then
+                    sudo rm -rf "$conf_dir"
+                fi
+            done
 
             # Try to detect the installed version
             local pg_version=""
@@ -547,6 +570,7 @@ install_postgresql() {
                 print_message "info" "Creating PostgreSQL ${pg_version} cluster..."
                 sudo pg_createcluster "$pg_version" main --start || {
                     print_message "error" "Failed to create PostgreSQL cluster"
+                    print_message "info" "Manual cleanup: sudo rm -rf /var/lib/postgresql/16/main && sudo pg_createcluster 16 main --start"
                     pause
                     return 1
                 }
@@ -2701,6 +2725,61 @@ menu_create_admin_user() {
 # ===========================================
 
 # ===========================================
+# POSTGRESQL CLUSTER CLEANUP
+# ===========================================
+
+# Clean up PostgreSQL cluster (used by uninstall functions)
+cleanup_postgresql_cluster() {
+    if [[ "$DETECTED_OS" != "ubuntu" ]]; then
+        return 0
+    fi
+
+    # Check if any clusters exist
+    if ! command -v pg_lsclusters >/dev/null 2>&1; then
+        return 0
+    fi
+
+    local clusters=$(pg_lsclusters 2>/dev/null | tail -n +2)
+    if [[ -z "$clusters" ]]; then
+        return 0
+    fi
+
+    print_message "info" "Cleaning up PostgreSQL clusters..."
+
+    # Drop all clusters
+    while IFS= read -r line; do
+        if [[ -z "$line" ]]; then
+            continue
+        fi
+        local version=$(echo "$line" | awk '{print $1}')
+        local cluster=$(echo "$line" | awk '{print $2}')
+
+        if [[ -n "$version" ]] && [[ -n "$cluster" ]]; then
+            print_message "info" "Dropping cluster ${version}/${cluster}..."
+            sudo pg_dropcluster "$version" "$cluster" --stop 2>/dev/null || true
+
+            # Force remove cluster directory if it still exists
+            local cluster_dir="/var/lib/postgresql/${version}/${cluster}"
+            if [[ -d "$cluster_dir" ]]; then
+                sudo rm -rf "$cluster_dir"
+            fi
+
+            # Remove config remnants
+            local conf_dir="/etc/postgresql/${version}/${cluster}"
+            if [[ -d "$conf_dir" ]]; then
+                sudo rm -f "${conf_dir}/postgresql.conf" 2>/dev/null || true
+                sudo rm -f "${conf_dir}/pg_hba.conf" 2>/dev/null || true
+                sudo rm -f "${conf_dir}/pg_ident.conf" 2>/dev/null || true
+                # Try to remove the directory if empty
+                sudo rmdir "$conf_dir" 2>/dev/null || true
+            fi
+        fi
+    done <<< "$clusters"
+
+    print_message "success" "PostgreSQL clusters cleaned up"
+}
+
+# ===========================================
 # UNINSTALL OPTIONS
 # ===========================================
 
@@ -2933,6 +3012,9 @@ uninstall_synapse_only() {
     sudo rm -rf /var/lib/synapse
     sudo rm -rf /var/log/synapse
 
+    # Clean up PostgreSQL cluster
+    cleanup_postgresql_cluster
+
     # Remove web files
     sudo rm -rf /var/www/element
     sudo rm -rf /var/www/synapse-admin
@@ -3037,6 +3119,9 @@ uninstall_with_database() {
     # Drop user
     sudo -u postgres psql -c "DROP USER IF EXISTS synapse;" 2>/dev/null || true
 
+    # Clean up PostgreSQL cluster
+    cleanup_postgresql_cluster
+
     print_message "success" "Synapse and database removed (PostgreSQL package kept)"
 
     pause
@@ -3121,6 +3206,9 @@ uninstall_complete() {
     # Remove systemd service file
     sudo rm -f /etc/systemd/system/matrix-synapse.service
     sudo systemctl daemon-reload 2>/dev/null || true
+
+    # Clean up PostgreSQL clusters before removing data
+    cleanup_postgresql_cluster
 
     # Remove all data
     print_message "info" "Removing all data..."
