@@ -1913,12 +1913,28 @@ download_apt_to_cache() {
     case "$DETECTED_OS" in
         ubuntu)
             print_message "info" "Downloading packages (this may take a while)..."
-            sudo apt-get download --dir="$os_cache_dir" $packages 2>/dev/null || {
-                print_message "warning" "Some packages failed to download"
-                return 1
-            }
+            # Track which packages fail to download
+            local failed_packages=()
+            local skipped_count=0
+            for pkg in $packages; do
+                # Check if package already exists (handles both pkg_*.deb and pkg-*_*.deb patterns)
+                if find "$os_cache_dir" -maxdepth 1 -type f \( -name "${pkg}_*.deb" -o -name "${pkg}-*_*.deb" \) | grep -q .; then
+                    ((skipped_count++))
+                    continue
+                fi
+                # Try to download
+                if ! sudo apt-get download --dir="$os_cache_dir" "$pkg" 2>/dev/null; then
+                    failed_packages+=("$pkg")
+                fi
+            done
             local downloaded=$(ls -1 "$os_cache_dir"/*.deb 2>/dev/null | wc -l)
-            print_message "success" "Downloaded $cached .deb files"
+            if [[ $skipped_count -gt 0 ]]; then
+                print_message "info" "Skipped $skipped_count already downloaded packages"
+            fi
+            if [[ ${#failed_packages[@]} -gt 0 ]]; then
+                print_message "warning" "Some packages failed to download: ${failed_packages[*]}"
+            fi
+            print_message "success" "Total cached: $downloaded .deb files"
             ;;
         arch)
             print_message "info" "Downloading packages for Arch..."
@@ -1926,7 +1942,7 @@ download_apt_to_cache() {
                 sudo pacman -Sw --noconfirm --cachedir="$os_cache_dir" "$pkg" 2>/dev/null || true
             done
             local downloaded=$(ls -1 "$os_cache_dir"/*.pkg.tar.* 2>/dev/null | wc -l)
-            print_message "success" "Downloaded $cached package files"
+            print_message "success" "Downloaded $downloaded package files"
             ;;
     esac
 
