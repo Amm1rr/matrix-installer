@@ -1,5 +1,6 @@
 certs/
 openspec/
+AGENTS.md
 matrix-docker-ansible-deploy/
 .claude/
 *.crt

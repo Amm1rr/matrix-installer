@@ -8,7 +8,7 @@
 MATRIX_PLUS_NAME="Matrix Installer"
 MATRIX_PLUS_VERSION="0.1.0"
 MATRIX_PLUS_DESCRIPTION="Federation Key Manager"
-MATRIX_PLUS_BUILD="Under Development"
+MATRIX_PLUS_BUILD="Alpha"
 
 set -e
 set -u
@@ -393,6 +393,66 @@ print_message() {
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] [$msg_type] $message" >> "$LOG_FILE"
 }
 
+# Clear the terminal screen
+clean_screen() {
+    clear
+}
+
+# Truncate string to max length with ... in the middle
+# Usage: truncate_string "string" "max_length"
+# Examples:
+#   "MatrixIR" "12" -> "MatrixIR"
+#   "10.239.191.69" "12" -> "10.2...91.69"
+#   "verylongname123" "15" -> "veryl...123"
+truncate_string() {
+    local str="$1"
+    local max_len="$2"
+
+    # If string is short enough, return as is
+    if [[ ${#str} -le $max_len ]]; then
+        echo "$str"
+        return
+    fi
+
+    # Calculate how many chars to keep from start and end
+    # Formula: start_chars = (max_len - 3) / 2
+    #          end_chars = max_len - 3 - start_chars
+    local start_chars=$(( (max_len - 3) / 2 ))
+    local end_chars=$(( max_len - 3 - start_chars ))
+
+    local first_part="${str:0:$start_chars}"
+    local last_part="${str: -$end_chars}"
+    echo "${first_part}...${last_part}"
+}
+
+# Print welcome header with title, version and build info
+print_welcome_header() {
+    local title="${MATRIX_PLUS_NAME} - ${MATRIX_PLUS_DESCRIPTION}"
+    local version="Version ${MATRIX_PLUS_VERSION}"
+    local build="Build: ${MATRIX_PLUS_BUILD}"
+    local box_width=58
+
+    echo ""
+    echo "╔══════════════════════════════════════════════════════════╗"
+    echo "║                                                          ║"
+
+    # Center title
+    local title_padding=$(( (box_width - ${#title}) / 2 ))
+    printf "║%*s%s%*s║\n" $title_padding "" "$title" $((box_width - title_padding - ${#title})) ""
+
+    # Center version
+    local version_padding=$(( (box_width - ${#version}) / 2 ))
+    printf "║%*s%s%*s║\n" $version_padding "" "$version" $((box_width - version_padding - ${#version})) ""
+
+    # Center build
+    local build_padding=$(( (box_width - ${#build}) / 2 ))
+    printf "║%*s%s%*s║\n" $build_padding "" "$build" $((box_width - build_padding - ${#build})) ""
+
+    echo "║                                                          ║"
+    echo "╚══════════════════════════════════════════════════════════╝"
+    echo ""
+}
+
 prompt_user() {
     local prompt="$1"
     local default="${2:-}"
@@ -438,7 +498,7 @@ prompt_yes_no() {
                 return 0
                 ;;
             *)
-                echo "Please answer yes or no."
+                echo "Please answer yes or no." >&2
                 ;;
         esac
     done
@@ -484,17 +544,308 @@ pause() {
 # Print styled menu header
 print_menu_header() {
     local title="$1"
+    local subtitle="${2:-}"
 
     echo ""
     echo "╔══════════════════════════════════════════════════════════╗"
     echo "║                                                          ║"
 
     local box_width=58
-    local title_padding=$(( (box_width - ${#title}) / 2 ))
-    printf "║%*s%s%*s║\n" $title_padding "" "$title" $((box_width - title_padding - ${#title})) ""
+    # Calculate visible width by removing ANSI color codes
+    local title_no_color="${title//$'\033'[[0-9;]*m/}"
+    local title_padding=$(( (box_width - ${#title_no_color}) / 2 ))
+
+    # Use printf %b to interpret escape sequences
+    printf "║%*s%b%*s║\n" $title_padding "" "$title" $((box_width - title_padding - ${#title_no_color})) ""
+
+    # Print subtitle if provided
+    if [[ -n "$subtitle" ]]; then
+        local subtitle_no_color="${subtitle//$'\033'[[0-9;]*m/}"
+        local subtitle_padding=$(( (box_width - ${#subtitle_no_color}) / 2 ))
+        printf "║%*s%b%*s║\n" $subtitle_padding "" "$subtitle" $((box_width - subtitle_padding - ${#subtitle_no_color})) ""
+    fi
 
     echo "║                                                          ║"
     echo "╚══════════════════════════════════════════════════════════╝"
+}
+
+# Print styled menu footer with options
+print_menu_footer() {
+    local options="$1"  # Comma-separated options: "back,new,export,switch"
+    local show_separator="${2:-true}"
+
+    if [[ "$show_separator" == "true" ]]; then
+        echo ""
+        echo "  $MENU_SEPARATOR"
+    fi
+
+    echo ""
+
+    # Build footer based on available options
+    local footer_parts=()
+
+    # Check for switch option (colored)
+    if [[ "$options" == *"switch"* ]]; then
+        footer_parts+=("${BLUE}S) Switch${NC}")
+    fi
+
+    # Check for export option
+    if [[ "$options" == *"export"* ]]; then
+        footer_parts+=("E) Export\\Import")
+    fi
+
+    # Check for new option
+    if [[ "$options" == *"new"* ]]; then
+        footer_parts+=("N) New Root Key")
+    fi
+
+    # Check for back option
+    if [[ "$options" == *"back"* ]]; then
+        footer_parts+=("Enter) Back")
+    fi
+
+    # Check for exit option
+    if [[ "$options" == *"exit"* ]]; then
+        footer_parts+=("Enter) Exit")
+    fi
+
+    # Join parts with "    " separator
+    local footer_text=""
+    local first=true
+    for part in "${footer_parts[@]}"; do
+        if [[ "$first" == "true" ]]; then
+            footer_text="  $part"
+            first=false
+        else
+            footer_text="${footer_text}    ${part}"
+        fi
+    done
+
+    # Print footer with color expansion
+    echo -e "$footer_text"
+    echo ""
+}
+
+# Generic menu builder function
+menu_show() {
+    local title="$1"
+    local -n items_array="$2"
+    local options="${3:-}"
+    local prompt_msg="${4:-}"
+    local separator_after="${5:-}"  # Add blank line after this item index (1-based)
+
+    # Display output goes to terminal (>&2), return value goes to stdout
+    echo "" >&2
+
+    # Print header if title provided
+    if [[ -n "$title" ]]; then
+        print_menu_header "$title" >&2
+    fi
+
+    # Display menu items
+    local index=1
+    for item in "${items_array[@]}"; do
+        # Parse item: label|value|color|badge
+        IFS='|' read -r label value color badge <<< "$item"
+
+        # Build display line
+        local display_line="  $index) ${label}"
+
+        # Apply color if specified
+        if [[ -n "$color" ]]; then
+            display_line="  $index) ${color}${label}${NC}"
+        fi
+
+        # Add badge if specified
+        if [[ -n "$badge" ]]; then
+            display_line="${display_line} ${badge}"
+        fi
+
+        echo -e "$display_line" >&2
+
+        # Add blank line after specified index
+        if [[ -n "$separator_after" ]] && [[ "$index" == "$separator_after" ]]; then
+            echo "" >&2
+        fi
+
+        ((index++))
+    done
+
+    # Print separator and footer if options provided
+    if [[ -n "$options" ]]; then
+        print_menu_footer "$options" "true" >&2
+    else
+        echo "" >&2
+    fi
+
+    # Build prompt message if not provided
+    if [[ -z "$prompt_msg" ]]; then
+        local last_index=$((index - 1))
+        prompt_msg="Enter your choice (1-${last_index}"
+
+        # Add special options to prompt
+        if [[ "$options" == *"back"* ]] || [[ "$options" == *"exit"* ]]; then
+            prompt_msg="${prompt_msg}, Enter=Back"
+        fi
+        if [[ "$options" == *"new"* ]]; then
+            prompt_msg="${prompt_msg}, N=New"
+        fi
+        if [[ "$options" == *"export"* ]]; then
+            prompt_msg="${prompt_msg}, E=Export"
+        fi
+        if [[ "$options" == *"switch"* ]]; then
+            prompt_msg="${prompt_msg}, S=Switch"
+        fi
+
+        prompt_msg="${prompt_msg}): "
+    fi
+
+    # Read user choice
+    while true; do
+        read -rp "$prompt_msg" choice || true
+
+        # Empty input is only "Back" if explicitly allowed in options
+        if [[ -z "$choice" ]]; then
+            if [[ "$options" == *"back"* ]] || [[ "$options" == *"exit"* ]]; then
+                return $MENU_RETURN_BACK
+            fi
+            # Otherwise, re-prompt (don't treat empty as Back)
+            continue
+        fi
+
+        # Check choice type
+        check_menu_choice_type "$choice"
+        local choice_type=$?
+
+        case $choice_type in
+            0)  # Back (user entered 0)
+                if [[ "$options" == *"back"* ]] || [[ "$options" == *"exit"* ]]; then
+                    return $MENU_RETURN_BACK
+                fi
+                ;;
+            1)  # New
+                if [[ "$options" == *"new"* ]]; then
+                    return $MENU_RETURN_NEW
+                fi
+                ;;
+            2)  # Numeric - validate range
+                if [[ "$choice" -ge 1 ]] && [[ "$choice" -le $((index - 1)) ]]; then
+                    # Return the selected item's value
+                    local selected_item="${items_array[$((choice - 1))]}"
+                    IFS='|' read -r label item_value color badge <<< "$selected_item"
+                    echo "$item_value"
+                    return 0
+                fi
+                ;;
+        esac
+
+        # Check for Export option (special case - not in check_menu_choice_type)
+        if [[ "$options" == *"export"* ]]; then
+            if [[ "$choice" == "E" ]] || [[ "$choice" == "e" ]]; then
+                return $MENU_RETURN_EXPORT
+            fi
+        fi
+
+        # Check for Switch option (special case)
+        if [[ "$options" == *"switch"* ]]; then
+            if [[ "$choice" == "S" ]] || [[ "$choice" == "s" ]]; then
+                echo "switch"
+                return 0
+            fi
+        fi
+
+        # Invalid choice
+        print_message "error" "Invalid choice"
+    done
+}
+
+# Unified summary display function
+print_summary() {
+    local title="$1"
+    local -n sections_array="$2"
+
+    # Calculate visible width by removing ANSI color codes
+    local title_no_color="${title//$'\033'[[0-9;]*m/}"
+    local title_width=${#title_no_color}
+    local padding=$(( 54 - title_width ))
+    local left_pad=$(( padding / 2 ))
+    local right_pad=$(( padding - left_pad ))
+
+    # Build padding strings
+    local left_padding=""
+    for ((i=0; i<left_pad; i++)); do left_padding+=" "; done
+    local right_padding=""
+    for ((i=0; i<right_pad; i++)); do right_padding+=" "; done
+
+    echo ""
+    echo "  ╔══════════════════════════════════════════════════════════╗"
+    echo -e "  ║  ${left_padding}${title}${right_padding}║"
+    echo "  ╚══════════════════════════════════════════════════════════╝"
+    echo ""
+
+    # Process each section
+    local section_index=0
+    local total_sections=${#sections_array[@]}
+
+    for section in "${sections_array[@]}"; do
+        IFS='|' read -r section_label item1 item2 item3 item4 item5 item6 <<< "$section"
+
+        # Check if item1 contains a tree structure marker (| character indicates multi-line tree)
+        if [[ -n "$item1" ]] && [[ "$item1" == *"|"*"|"* ]]; then
+            # Parse item1 as a tree structure string with | as line separator
+            echo -e "  ${BLUE}${section_label}:${NC}"
+            echo "  |"
+
+            # Split by | and print each line
+            local IFS='|'
+            read -ra tree_lines <<< "$item1"
+            for line in "${tree_lines[@]}"; do
+                # Trim leading whitespace
+                line="${line#"${line%%[![:space:]]*}"}"
+                if [[ -n "$line" ]]; then
+                    echo -e "  $line"
+                fi
+            done
+        elif [[ -n "$item2" ]]; then
+            # Multi-item section with tree structure
+            echo -e "  ${BLUE}${section_label}:${NC}"
+            echo "  |"
+
+            # Print first item
+            if [[ -n "$item1" ]]; then
+                echo -e "  +-- $item1"
+            fi
+
+            # Print middle items (if any)
+            local item_count=2
+            local item_var="item${item_count}"
+            while [[ -n "${!item_var}" ]]; do
+                local current_item="${!item_var}"
+                ((item_count++))
+                item_var="item${item_count}"
+
+                # Check if this is the last item
+                if [[ -z "${!item_var}" ]]; then
+                    echo -e "  \`-- $current_item"
+                else
+                    echo -e "  +-- $current_item"
+                fi
+            done
+        else
+            # Simple section with single item
+            echo -e "  ${BLUE}${section_label}:${NC}"
+            if [[ -n "$item1" ]]; then
+                echo -e "     $item1"
+            fi
+        fi
+
+        ((section_index++)) || true
+        if [[ $section_index -lt $total_sections ]]; then
+            echo ""
+        fi
+    done
+
+    echo ""
 }
 
 # Prompt for Root Key configuration (returns: org|country|state|city|days)
@@ -577,6 +928,8 @@ create_root_ca_from_menu() {
 
     if [[ "$(prompt_yes_no "Create Root Key with these settings?" "y")" == "yes" ]]; then
         ssl_manager_create_root_ca "$org_input"
+        # Pause to let user see the result
+        pause
     fi
 
     # Restore defaults
@@ -590,6 +943,67 @@ create_root_ca_from_menu() {
 # ===========================================
 # ROOT KEY HELPER FUNCTIONS
 # ===========================================
+
+# Display Root CA information in specified format
+display_root_ca_info() {
+    local root_ca_dir="$1"
+    local style="${2:-compact}"  # compact|detailed
+
+    if [[ ! -f "${root_ca_dir}/rootCA.crt" ]]; then
+        return 1
+    fi
+
+    # Get certificate info using existing function
+    local ca_info
+    ca_info=$(get_root_ca_info "$root_ca_dir" 2>/dev/null)
+
+    if [[ -z "$ca_info" ]]; then
+        return 1
+    fi
+
+    # Parse the info
+    local ca_subject="Matrix Root Key"
+    local ca_country="IR"
+    local ca_expiry="unknown"
+    local ca_days="unknown"
+
+    while IFS= read -r line; do
+        local key="${line%%=*}"
+        local value="${line#*=}"
+        case "$key" in
+            SUBJECT) ca_subject="$value" ;;
+            COUNTRY) ca_country="$value" ;;
+            EXPIRY_DATE) ca_expiry="$value" ;;
+            DAYS_REMAINING) ca_days="$value" ;;
+        esac
+    done <<< "$ca_info"
+
+    # Determine type (Full vs Imported)
+    local ca_type_label="Full"
+    local ca_type_color="${GREEN}"
+    if is_root_ca_imported "$root_ca_dir"; then
+        ca_type_label="Imported"
+        ca_type_color="${ORANGE}"
+    fi
+
+    # Display based on style
+    if [[ "$style" == "compact" ]]; then
+        # Single-line compact format
+        local ca_name
+        ca_name="$(basename "$root_ca_dir")"
+        echo -e "  Root Key: ${BLUE}${ca_name}${NC} | Subject: ${ca_subject} | ${ca_type_color}${ca_type_label}${NC} | Exp: ${ca_days} days | ${ca_country}"
+    elif [[ "$style" == "detailed" ]]; then
+        # Multi-line detailed format
+        local ca_name
+        ca_name="$(basename "$root_ca_dir")"
+        # Truncate name to 12 chars max with ... in middle if needed
+        local ca_name_display
+        ca_name_display="$(truncate_string "$ca_name" 12)"
+        printf "  %-2s  %-12s  %-20s  %-12s  ${ca_type_color}%-10s${NC}\n" "" "$ca_name_display" "Subject: ${ca_subject}" "Exp: ${ca_days} days" "$ca_type_label"
+    fi
+
+    return 0
+}
 
 get_active_root_ca_dir() {
     echo "$ACTIVE_ROOT_CA_DIR"
@@ -623,13 +1037,13 @@ list_root_cas() {
     fi
 }
 
-# Check if a Root CA is exported (read-only, without private key)
-# Returns: 0 if exported (no key), 1 if full (has key)
-is_root_ca_exported() {
+# Check if a Root CA is imported (read-only, without private key)
+# Returns: 0 if imported (no key), 1 if full (has key)
+is_root_ca_imported() {
     local root_ca_dir="$1"
 
     if [[ ! -f "${root_ca_dir}/rootCA.key" ]]; then
-        return 0  # Exported (read-only)
+        return 0  # Imported (read-only)
     fi
 
     return 1  # Full (has private key)
@@ -711,6 +1125,121 @@ list_servers_with_certs() {
     fi
 }
 
+# Prompt user to select a server from available certificates
+prompt_select_server() {
+    local allow_create="${1:-true}"
+    local prompt_msg="${2:-Select a server}"
+
+    # Get list of servers with certificates
+    local servers
+    mapfile -t servers < <(list_servers_with_certs)
+
+    # No servers - auto-prompt for new server
+    if [[ ${#servers[@]} -eq 0 ]]; then
+        local detected_ip
+        detected_ip="$(get_detected_ip)"
+        local new_server
+
+        while true; do
+            if [[ -n "$detected_ip" ]]; then
+                new_server="$(prompt_user "Enter server IP address or domain" "$detected_ip")"
+            else
+                new_server="$(prompt_user "Enter server IP address or domain" "")"
+            fi
+
+            if [[ -n "$new_server" ]]; then
+                break
+            fi
+            echo "Server name cannot be empty." >&2
+        done
+
+        # Generate certificate for new server (redirect logs to stderr to avoid capture)
+        if ! ssl_manager_generate_server_cert "$new_server" >&2; then
+            print_message "error" "Failed to generate server certificate" >&2
+            echo "" >&2
+            return 1
+        fi
+
+        echo "$new_server"
+        return 0
+    fi
+
+    # Single server - auto-select
+    if [[ ${#servers[@]} -eq 1 ]]; then
+        echo "" >&2
+        print_message "info" "Using existing certificate for: ${servers[0]}" >&2
+        echo "${servers[0]}"
+        return 0
+    fi
+
+    # Multiple servers - show selection menu
+    echo "" >&2
+    print_message "info" "Servers with available certificates:" >&2
+    local index=1
+    for server in "${servers[@]}"; do
+        echo "  $index) $server" >&2
+        ((index++))
+    done
+
+    # Add create new option if allowed
+    if [[ "$allow_create" == "true" ]]; then
+        echo "  $index) Create new server certificate" >&2
+    fi
+
+    echo "" >&2
+
+    local max_index=$index
+    if [[ "$allow_create" == "false" ]]; then
+        ((max_index--))
+    fi
+
+    while true; do
+        read -rp "Select server (1-$max_index): " choice || true
+
+        # Check choice type
+        check_menu_choice_type "$choice"
+        local choice_type=$?
+
+        case $choice_type in
+            0)  # Back
+                echo "" >&2
+                return 1
+                ;;
+            2)  # Numeric
+                if [[ "$choice" -ge 1 ]] && [[ "$choice" -lt $index ]]; then
+                    # Selected existing server
+                    echo "${servers[$((choice-1))]}"
+                    return 0
+                elif [[ "$choice" -eq $index ]] && [[ "$allow_create" == "true" ]]; then
+                    # Create new certificate
+                    local new_server
+                    local detected_ip
+                    detected_ip="$(get_detected_ip)"
+
+                    while true; do
+                        new_server="$(prompt_user "Enter server IP address or domain" "$detected_ip")"
+                        if [[ -n "$new_server" ]]; then
+                            break
+                        fi
+                        echo "Server name cannot be empty." >&2
+                    done
+
+                    if ! ssl_manager_generate_server_cert "$new_server" >&2; then
+                        print_message "error" "Failed to generate server certificate" >&2
+                        echo "" >&2
+                        return 1
+                    fi
+
+                    echo "$new_server"
+                    return 0
+                fi
+                ;;
+        esac
+
+        print_message "error" "Invalid choice"
+    done
+}
+
 # ===========================================
 # Root CA Information Functions
 # ===========================================
@@ -784,6 +1313,45 @@ get_root_ca_info() {
 # SSL MANAGER MODULE
 # ===========================================
 
+# Set appropriate permissions on certificate files
+set_cert_permissions() {
+    local cert_dir="$1"
+    local cert_type="${2:-auto}"  # auto|server|root_ca
+
+    # Auto-detect certificate type if not specified
+    if [[ "$cert_type" == "auto" ]]; then
+        if [[ -f "${cert_dir}/rootCA.key" ]] || [[ -f "${cert_dir}/rootCA.crt" ]]; then
+            cert_type="root_ca"
+        elif [[ -f "${cert_dir}/server.key" ]] || [[ -d "${cert_dir}/servers" ]]; then
+            cert_type="server"
+        fi
+    fi
+
+    if [[ "$cert_type" == "root_ca" ]]; then
+        # Root CA permissions
+        if [[ -f "${cert_dir}/rootCA.key" ]]; then
+            chmod 600 "${cert_dir}/rootCA.key"
+        fi
+        if [[ -f "${cert_dir}/rootCA.crt" ]]; then
+            chmod 644 "${cert_dir}/rootCA.crt"
+        fi
+        if [[ -f "${cert_dir}/rootCA.srl" ]]; then
+            chmod 644 "${cert_dir}/rootCA.srl"
+        fi
+    elif [[ "$cert_type" == "server" ]]; then
+        # Server certificate permissions
+        if [[ -f "${cert_dir}/server.key" ]]; then
+            chmod 600 "${cert_dir}/server.key"
+        fi
+        if [[ -f "${cert_dir}/server.crt" ]]; then
+            chmod 644 "${cert_dir}/server.crt"
+        fi
+        if [[ -f "${cert_dir}/cert-full-chain.pem" ]]; then
+            chmod 644 "${cert_dir}/cert-full-chain.pem"
+        fi
+    fi
+}
+
 ssl_manager_init() {
     # Create certs directory
     mkdir -p "$CERTS_DIR"
@@ -815,54 +1383,30 @@ prompt_select_root_ca_from_files() {
 
     echo ""
     print_message "info" "Multiple Root Key files found next to script:"
-    echo ""
 
-    # Display each Root Key file
-    local index=1
+    # Build menu items dynamically
+    local menu_items=()
     for base_name in "${found_files[@]}"; do
-        echo "  $index) ${base_name}.key"
-        ((index++))
+        menu_items+=("${base_name}.key|${base_name}|")
     done
+    menu_items+=("Skip and use Root Keys from certs/|skip|")
 
-    echo "  $MENU_SEPARATOR"
-    echo "  $index) Skip and use Root Keys from certs/"
-    echo "  0) Back to previous menu"
-    echo ""
+    # Show menu and get selection
+    local choice
+    choice=$(menu_show "" menu_items "back" "")
 
-    while true; do
-        read -rp "Select which Root Key to use (0-$index): " choice || true
-
-        # Handle empty input (Enter) as Skip
-        if [[ -z "$choice" ]]; then
+    case "$choice" in
+        skip|"")
+            # Empty choice means Back or skip
             SELECTED_ROOT_CA_BASE=""
             return 1  # Skip
-        fi
-
-        # Check choice type
-        check_menu_choice_type "$choice"
-        local choice_type=$?
-
-        case $choice_type in
-            0)  # Back
-                return $MENU_RETURN_BACK
-                ;;
-            1)  # New - not applicable here
-                print_message "error" "Invalid choice"
-                ;;
-            2)  # Numeric - validate range
-                if [[ "$choice" -ge 1 ]] && [[ "$choice" -lt $index ]]; then
-                    SELECTED_ROOT_CA_BASE="${found_files[$((choice-1))]}"
-                    return 0
-                elif [[ "$choice" -eq $index ]]; then
-                    SELECTED_ROOT_CA_BASE=""
-                    return 1  # Skip
-                fi
-                ;;
-        esac
-
-        # Invalid choice
-        print_message "error" "Invalid choice"
-    done
+            ;;
+        *)
+            # Selected a file
+            SELECTED_ROOT_CA_BASE="$choice"
+            return 0
+            ;;
+    esac
 }
 
 prompt_use_existing_root_ca() {
@@ -935,8 +1479,8 @@ prompt_use_existing_root_ca() {
         cp "${ROOT_CA_SOURCE_PATH}/${selected_base}.srl" "${new_root_ca_dir}/rootCA.srl"
     fi
 
-    chmod 600 "${new_root_ca_dir}/rootCA.key"
-    chmod 644 "${new_root_ca_dir}/rootCA.crt"
+    # Set permissions using helper function
+    set_cert_permissions "$new_root_ca_dir" "root_ca"
 
     # Set as active Root CA
     ACTIVE_ROOT_CA_DIR="$new_root_ca_dir"
@@ -945,17 +1489,105 @@ prompt_use_existing_root_ca() {
     return 0
 }
 
+# Show menu when no Root Keys exist (New/Export/Back options only)
+prompt_root_ca_empty_menu() {
+    echo ""
+    echo "  === Root Key Selection ==="
+    echo "  Root Key signs all server certificates for federation."
+    echo "  Choose one below or create a new one."
+    echo ""
+    echo -e "  ${ORANGE}No Root Keys found${NC}"
+    echo "  $MENU_SEPARATOR"
+    echo "  N) Create new Root Key    E) Export\\Import    Enter) Back"
+    echo ""
+
+    while true; do
+        read -rp "Select [N=New, E=Export, Enter=Back]: " choice || true
+
+        if [[ "$choice" == "E" ]] || [[ "$choice" == "e" ]]; then
+            clean_screen
+            return $MENU_RETURN_EXPORT
+        fi
+
+        check_menu_choice_type "$choice"
+        local choice_type=$?
+
+        case $choice_type in
+            0)  # Back
+                return $MENU_RETURN_BACK
+                ;;
+            1)  # New
+                return $MENU_RETURN_NEW
+                ;;
+            *)
+                print_message "error" "Invalid choice"
+                ;;
+        esac
+    done
+}
+
+# Show menu when single Root Key is invalid (New/Export/Back options only)
+prompt_root_ca_invalid_menu() {
+    local root_ca_name="$1"
+
+    print_message "error" "Imported Root Key has no server certificates"
+    print_message "info" "The Root Key is incomplete (missing servers/ folder)"
+    echo ""
+    echo "  === Root Key Selection ==="
+    echo -e "  ${ORANGE}1) ${root_ca_name} [Invalid - no server certificates]${NC}"
+    echo "  $MENU_SEPARATOR"
+    echo "  N) Create new Root Key    E) Export\\Import    Enter) Back"
+    echo ""
+
+    while true; do
+        read -rp "Select [N=New, E=Export, Enter=Back]: " choice || true
+
+        if [[ "$choice" == "E" ]] || [[ "$choice" == "e" ]]; then
+            clean_screen
+            return $MENU_RETURN_EXPORT
+        fi
+
+        check_menu_choice_type "$choice"
+        local choice_type=$?
+
+        case $choice_type in
+            0)  # Back
+                return $MENU_RETURN_BACK
+                ;;
+            1)  # New
+                return $MENU_RETURN_NEW
+                ;;
+            *)
+                print_message "error" "Invalid choice"
+                ;;
+        esac
+    done
+}
+
 prompt_select_root_ca_from_certs() {
     local root_cas=("$@")
 
     if [[ ${#root_cas[@]} -eq 0 ]]; then
-        return 1
+        prompt_root_ca_empty_menu
+        return $?
     fi
 
-    # If only one Root Key, auto-select it
+    # If only one Root Key, check if valid before auto-selecting
     if [[ ${#root_cas[@]} -eq 1 ]]; then
         local root_ca_name="${root_cas[0]}"
-        ACTIVE_ROOT_CA_DIR="${CERTS_DIR}/${root_ca_name}"
+        local root_ca_dir="${CERTS_DIR}/${root_ca_name}"
+
+        # Validate imported Root Key has servers
+        if is_root_ca_imported "$root_ca_dir"; then
+            mapfile -t servers < <(list_servers_with_certs "$root_ca_dir")
+            if [[ ${#servers[@]} -eq 0 ]]; then
+                # Invalid single Root Key - show menu
+                prompt_root_ca_invalid_menu "$root_ca_name"
+                return $?
+            fi
+        fi
+
+        ACTIVE_ROOT_CA_DIR="$root_ca_dir"
         return 0
     fi
 
@@ -965,72 +1597,44 @@ prompt_select_root_ca_from_certs() {
     echo "  Choose one below or create a new one."
     echo ""
 
-    # Display each Root Key with info
+    # Display each Root Key with info, marking invalid ones
     local index=1
+    local valid_indices=()
     for root_ca_name in "${root_cas[@]}"; do
         local root_ca_dir="${CERTS_DIR}/${root_ca_name}"
-        local root_ca_cert="${root_ca_dir}/rootCA.crt"
+        local is_invalid=false
 
-        # Get certificate info
-        local subject="Unknown"
-        local expiry="Unknown"
-        local days="Unknown"
-        local type_label="Full"
-        local type_color=""
-
-        if [[ -f "$root_ca_cert" ]]; then
-            subject=$(openssl x509 -in "$root_ca_cert" -noout -subject 2>/dev/null | grep -o 'CN=[^,]*' | cut -d'=' -f2)
-            subject="${subject:-${root_ca_name}}"
-
-            local expiry_date
-            expiry_date=$(openssl x509 -in "$root_ca_cert" -noout -enddate 2>/dev/null | cut -d'=' -f2)
-
-            if command -v date &> /dev/null && [[ -n "$expiry_date" ]]; then
-                local expiry_epoch
-                expiry_epoch=$(date -d "$expiry_date" +%s 2>/dev/null)
-                if [[ -n "$expiry_epoch" ]]; then
-                    local current_epoch
-                    current_epoch=$(date +%s)
-                    local seconds_diff=$((expiry_epoch - current_epoch))
-                    if [[ $seconds_diff -gt 0 ]]; then
-                        days=$((seconds_diff / 86400))
-                        expiry=$(date -d "$expiry_date" "+%Y-%m-%d" 2>/dev/null || echo "$expiry_date")
-                    else
-                        days="expired"
-                    fi
-                fi
+        # Check if imported Root Key has servers
+        if is_root_ca_imported "$root_ca_dir"; then
+            mapfile -t servers < <(list_servers_with_certs "$root_ca_dir")
+            if [[ ${#servers[@]} -eq 0 ]]; then
+                is_invalid=true
             fi
         fi
 
-        # Check if this is an exported Root CA (no private key)
-        if is_root_ca_exported "$root_ca_dir"; then
-            type_label="Exported"
-            type_color="${ORANGE}"
+        # Get the detailed info line and add number prefix
+        local info_output
+        info_output=$(display_root_ca_info "$root_ca_dir" "detailed")
+
+        if [[ "$is_invalid" == "true" ]]; then
+            echo -e "  ${ORANGE}${index}) ${info_output} [Invalid - no server certificates]${NC}"
         else
-            type_label="Full"
-            type_color="${GREEN}"
+            echo "  ${index}) ${info_output}"
+            valid_indices+=("$index")
         fi
-
-        # Format: align columns nicely
-        local num_display="$index)"
-        local name_display="${root_ca_name}"
-        local subject_display="Subject: ${subject}"
-        local days_display="Exp: ${days} days"
-        local type_display="Type: ${type_label}"
-
-        printf "  %-2s  %-12s  %-20s  %-12s  ${type_color}%-10s${NC}\n" "$num_display" "$name_display" "$subject_display" "$days_display" "$type_label"
         ((index++))
     done
 
     echo "  $MENU_SEPARATOR"
-    echo "  N) Create new Root Key    E) Export\\Import    0) Back"
+    echo "  N) Create new Root Key    E) Export\\Import    Enter) Back"
     echo ""
 
     while true; do
-        read -rp "Select [1-$((index-1)), N=New, E=Export, 0=Back]: " choice || true
+        read -rp "Select [1-${#root_cas[@]}, N=New, E=Export, Enter=Back]: " choice || true
 
         # Check for Export option first (before check_menu_choice_type)
         if [[ "$choice" == "E" ]] || [[ "$choice" == "e" ]]; then
+            clean_screen
             return $MENU_RETURN_EXPORT
         fi
 
@@ -1048,8 +1652,23 @@ prompt_select_root_ca_from_certs() {
             2)  # Numeric - validate range
                 if [[ "$choice" -ge 1 ]] && [[ "$choice" -le ${#root_cas[@]} ]]; then
                     local selected_root_ca="${root_cas[$((choice-1))]}"
-                    ACTIVE_ROOT_CA_DIR="${CERTS_DIR}/${selected_root_ca}"
+                    local selected_dir="${CERTS_DIR}/${selected_root_ca}"
+
+                    # Validate imported Root Key has servers
+                    if is_root_ca_imported "$selected_dir"; then
+                        mapfile -t servers < <(list_servers_with_certs "$selected_dir")
+                        if [[ ${#servers[@]} -eq 0 ]]; then
+                            print_message "error" "Cannot select incomplete imported Root Key"
+                            print_message "info" "The Root Key has no server certificates"
+                            print_message "info" "Please create a new Root Key or import a complete one"
+                            pause
+                            continue
+                        fi
+                    fi
+
+                    ACTIVE_ROOT_CA_DIR="$selected_dir"
                     print_message "success" "Selected Root Key: ${selected_root_ca}"
+                    clean_screen
                     return 0
                 fi
                 ;;&
@@ -1109,14 +1728,14 @@ ssl_manager_create_root_ca() {
 
     # Generate Root CA private key
     openssl genrsa -out rootCA.key 4096 2>/dev/null
-    chmod 600 rootCA.key
 
     # Generate Root CA certificate with v3_ca extensions
     openssl req -x509 -new -nodes -key rootCA.key -sha256 -days "$SSL_CA_DAYS" \
         -subj "/C=${SSL_COUNTRY}/ST=${SSL_STATE}/L=${SSL_CITY}/O=${SSL_ORG}/OU=${SSL_OU}/CN=${SSL_ORG}" \
         -out rootCA.crt 2>/dev/null
 
-    chmod 644 rootCA.crt
+    # Set permissions using helper function
+    set_cert_permissions "$new_root_ca_dir" "root_ca"
 
     # Set as active Root Key
     ACTIVE_ROOT_CA_DIR="$new_root_ca_dir"
@@ -1228,7 +1847,6 @@ EOF
 
     # Generate server private key
     openssl genrsa -out server.key 4096 2>/dev/null
-    chmod 600 server.key
 
     # Generate CSR
     openssl req -new -key server.key -out server.csr -config openssl.cnf 2>/dev/null
@@ -1242,7 +1860,9 @@ EOF
 
     # Create full chain
     cat server.crt "${root_ca_dir}/rootCA.crt" > cert-full-chain.pem
-    chmod 644 server.crt cert-full-chain.pem
+
+    # Set permissions using helper function
+    set_cert_permissions "$server_cert_dir" "server"
 
     # Cleanup
     rm -f server.csr openssl.cnf
@@ -1417,112 +2037,149 @@ menu_with_root_key() {
     local num_root_cas=${#FOUND_ROOT_CAS[@]}
 
     while true; do
-        # Build menu dynamically with addons
-        local addon_index_start=2
-        local last_addon_index=$((addon_index_start + ${#addons[@]} - 1))
+        # Clear screen for clean menu display
+        clean_screen
 
-        # If no addons, only option 1 is available
-        if [[ ${#addons[@]} -eq 0 ]]; then
-            last_addon_index=1
+        # Display welcome header
+        print_welcome_header
+
+        # Build menu items dynamically
+        local menu_items=()
+
+        # Check if this is an exported Root CA
+        local is_exported_ca=false
+        if is_root_ca_imported "$ACTIVE_ROOT_CA_DIR"; then
+            is_exported_ca=true
         fi
 
-        local switch_ca_option="S"
-        local new_ca_option="N"
-        local exit_option=0
+        # Add generate server certificate item
+        if [[ "$is_exported_ca" == "true" ]]; then
+            menu_items+=("Generate server certificate|generate||${ORANGE}[Unavailable]${NC}")
+        else
+            menu_items+=("Generate server certificate|generate|")
+        fi
 
+        # Add addon options to menu
+        for addon in "${addons[@]}"; do
+            local addon_name
+            addon_name="$(addon_loader_get_name "$addon")"
+            if [[ -n "$addon_name" ]]; then
+                # Use addon path as value for identification
+                menu_items+=("${addon_name}|${addon}|")
+            fi
+        done
+
+        # Build options string
+        local menu_options="new,export,exit"
+        if [[ $num_root_cas -gt 1 ]]; then
+            menu_options="switch,${menu_options}"
+        fi
+
+        # Display menu
         echo ""
         echo "  === Main Menu ==="
         echo ""
 
-        # Check if this is an exported Root CA (before displaying menu)
-        local is_exported_ca=false
-        if is_root_ca_exported "$ACTIVE_ROOT_CA_DIR"; then
-            is_exported_ca=true
-        fi
-
-        # Get and display Root Key info
-        local ca_info
-        ca_info=$(get_root_ca_info "$ACTIVE_ROOT_CA_DIR" 2>/dev/null)
-
-        if [[ -n "$ca_info" ]]; then
-            # Parse the info line by line
-            local ca_subject="Matrix Root Key"
-            local ca_country="IR"
-            local ca_expiry="unknown"
-            local ca_days="unknown"
-
-            while IFS= read -r line; do
-                local key="${line%%=*}"
-                local value="${line#*=}"
-                case "$key" in
-                    SUBJECT) ca_subject="$value" ;;
-                    COUNTRY) ca_country="$value" ;;
-                    EXPIRY_DATE) ca_expiry="$value" ;;
-                    DAYS_REMAINING) ca_days="$value" ;;
-                esac
-            done <<< "$ca_info"
-
-            # Check if this is an exported Root CA
-            local ca_type_label="Full"
-            local ca_type_color="${GREEN}"
-            if is_root_ca_exported "$ACTIVE_ROOT_CA_DIR"; then
-                ca_type_label="Exported"
-                ca_type_color="${ORANGE}"
-            fi
-
-            echo -e "  Root Key: ${BLUE}$(basename "$ACTIVE_ROOT_CA_DIR")${NC} | ${ca_type_color}${ca_type_label}${NC} | Exp: $ca_days days | $ca_country"
-        fi
-
+        # Display Root Key info using helper function
+        display_root_ca_info "$ACTIVE_ROOT_CA_DIR" "compact"
         echo ""
-        if [[ "$is_exported_ca" == "true" ]]; then
-            echo -e "  1) Generate server certificate ${ORANGE}[Unavailable]${NC}"
+
+        # Show menu and get selection
+        local choice
+        local prompt_text
+        if [[ $num_root_cas -gt 1 ]]; then
+            prompt_text="Enter your choice (1-${#menu_items[@]}, S=Switch, E=Export\\Import, N=New, 0=Exit): "
         else
-            echo "  1) Generate server certificate"
+            prompt_text="Enter your choice (1-${#menu_items[@]}, E=Export\\Import, N=New, 0=Exit): "
         fi
 
-        # Add addon options to menu
-        if [[ ${#addons[@]} -gt 0 ]]; then
-            echo ""
-            for i in "${!addons[@]}"; do
-                local addon_num=$((i + addon_index_start))
-                local addon_name
-                addon_name="$(addon_loader_get_name "${addons[$i]}")"
-                # Skip if addon name is empty
-                if [[ -n "$addon_name" ]]; then
-                    echo "  $addon_num) $addon_name"
-                fi
-            done
-        fi
+        # Display items manually since we need custom spacing
+        local index=1
+        for item in "${menu_items[@]}"; do
+            IFS='|' read -r label value color badge <<< "$item"
+            local display_line="  $index) ${label}"
+            if [[ -n "$color" ]]; then
+                display_line="  $index) ${color}${label}${NC}"
+            fi
+            if [[ -n "$badge" ]]; then
+                display_line="${display_line} ${badge}"
+            fi
+            echo -e "$display_line"
+            # Add blank line after first item (Generate server certificate)
+            if [[ $index -eq 1 ]]; then
+                echo ""
+            fi
+            ((index++))
+        done
 
         echo ""
         echo "  $MENU_SEPARATOR"
 
-        # Build footer options
+        # Display footer
         if [[ $num_root_cas -gt 1 ]]; then
+            echo ""
             echo -e "  ${BLUE}S) Switch${NC}    E) Export\\Import    N) New Root Key    0) Exit"
         else
+            echo ""
             echo "  E) Export\\Import    N) New Root Key    0) Exit"
         fi
         echo ""
 
-        # Build prompt text based on available options
-        if [[ $num_root_cas -gt 1 ]]; then
-            read -rp "Enter your choice (1-${last_addon_index}, S=Switch, E=Export\\Import, N=New, 0=Exit): " choice || true
-        else
-            read -rp "Enter your choice (1-${last_addon_index}, E=Export\\Import, N=New, 0=Exit): " choice || true
+        read -rp "$prompt_text" choice || true
+
+        # Handle special options first
+        if [[ "$choice" == "switch" ]] || [[ "$choice" == "S" ]] || [[ "$choice" == "s" ]]; then
+            if [[ $num_root_cas -gt 1 ]]; then
+                clean_screen
+                local select_result
+                prompt_select_root_ca_from_certs "${FOUND_ROOT_CAS[@]}" || select_result=$?
+                select_result="${select_result:-0}"
+                if [[ $select_result -eq 0 ]]; then
+                    print_message "success" "Switched to Root Key: $(basename "$ACTIVE_ROOT_CA_DIR")"
+                    mapfile -t FOUND_ROOT_CAS < <(list_root_cas)
+                    num_root_cas=${#FOUND_ROOT_CAS[@]}
+                elif [[ $select_result -eq 1 ]]; then
+                    create_root_ca_from_menu
+                    mapfile -t FOUND_ROOT_CAS < <(list_root_cas)
+                    num_root_cas=${#FOUND_ROOT_CAS[@]}
+                elif [[ $select_result -eq 4 ]]; then
+                    export_menu
+                fi
+            fi
+            continue
         fi
 
-        case "$choice" in
-            1)
+        if [[ "$choice" == "E" ]] || [[ "$choice" == "e" ]]; then
+            export_menu
+            continue
+        fi
+
+        if [[ "$choice" == "N" ]] || [[ "$choice" == "n" ]]; then
+            create_root_ca_from_menu
+            mapfile -t FOUND_ROOT_CAS < <(list_root_cas)
+            num_root_cas=${#FOUND_ROOT_CAS[@]}
+            continue
+        fi
+
+        if [[ "$choice" == "0" ]]; then
+            print_message "info" "Exiting..."
+            exit 0
+        fi
+
+        # Check if numeric
+        if [[ "$choice" =~ ^[0-9]+$ ]] && [[ "$choice" -ge 1 ]] && [[ "$choice" -le ${#menu_items[@]} ]]; then
+            local selected_item="${menu_items[$((choice-1))]}"
+            IFS='|' read -r label item_value color badge <<< "$selected_item"
+
+            if [[ "$item_value" == "generate" ]]; then
                 # Generate server certificate
                 echo ""
 
-                # Check if this is an exported Root CA (no private key)
-                if is_root_ca_exported "$ACTIVE_ROOT_CA_DIR"; then
-                    print_message "error" "Cannot generate new server certificates with an exported Root Key."
+                if [[ "$is_exported_ca" == "true" ]]; then
+                    print_message "info" "Cannot generate new server certificates with an exported Root Key."
                     print_message "info" "This Root Key was exported without the private key for security reasons."
                     echo ""
-                    echo "  Exported Root Keys can only:"
+                    echo "  Imported Root Keys can only:"
                     echo "    - Install addons for existing servers"
                     echo "    - Export certificates for backup/transfer"
                     echo ""
@@ -1545,7 +2202,6 @@ menu_with_root_key() {
                         server_input="$(prompt_user "Enter server IP address or domain" "")"
                     fi
 
-                    # Clean input (remove control characters)
                     server_input="$(echo "$server_input" | tr -d '[:cntrl:]')"
 
                     if [[ -n "$server_input" ]]; then
@@ -1554,104 +2210,65 @@ menu_with_root_key() {
                     echo "Server name cannot be empty. Please try again."
                 done
 
-                # Show summary and confirm
-                echo ""
-                echo "  === Certificate Summary ==="
-                echo ""
-                echo -e "  Root Key:      ${BLUE}$(basename "$ACTIVE_ROOT_CA_DIR")${NC}"
-
+                # Show summary and confirm using print_summary
                 local server_type="Domain"
                 if is_ip_address "$server_input"; then
                     server_type="IP Address"
                 fi
 
-                echo "  Server:        $server_input"
-                echo "  Type:          $server_type"
-                echo "  Certificate:   ${ACTIVE_ROOT_CA_DIR}/servers/${server_input}/"
-                echo "  Validity:      $SSL_CERT_DAYS days"
-                echo ""
+                local summary_sections=()
+                summary_sections+=("Root Key|${BLUE}$(basename "$ACTIVE_ROOT_CA_DIR")${NC}")
+                summary_sections+=("Server|${server_input}")
+                summary_sections+=("Type|${server_type}")
+                summary_sections+=("Certificate|${ACTIVE_ROOT_CA_DIR}/servers/${server_input}/")
+                summary_sections+=("Validity|${SSL_CERT_DAYS} days")
+
+                set +e
+                print_summary "Certificate Summary" summary_sections
+                set -e
 
                 if [[ "$(prompt_yes_no "Generate certificate now?" "y")" == "yes" ]]; then
                     SERVER_NAME="$server_input"
-                    ssl_manager_generate_server_cert "$SERVER_NAME"
+                    ssl_manager_generate_server_cert "$SERVER_NAME" || true
                 else
                     print_message "info" "Certificate generation cancelled"
                 fi
-                ;;
-            [Ss])
-                if [[ $num_root_cas -gt 1 ]]; then
-                    echo ""
-                    local select_result
-                    prompt_select_root_ca_from_certs "${FOUND_ROOT_CAS[@]}" || select_result=$?
-                    select_result="${select_result:-0}"
-                    if [[ $select_result -eq 0 ]]; then
-                        print_message "success" "Switched to Root Key: $(basename "$ACTIVE_ROOT_CA_DIR")"
-                        mapfile -t FOUND_ROOT_CAS < <(list_root_cas)
-                        num_root_cas=${#FOUND_ROOT_CAS[@]}
-                    elif [[ $select_result -eq 1 ]]; then
-                        # User chose to create new Root Key
-                        create_root_ca_from_menu
-                        mapfile -t FOUND_ROOT_CAS < <(list_root_cas)
-                        num_root_cas=${#FOUND_ROOT_CAS[@]}
-                    elif [[ $select_result -eq 4 ]]; then
-                        # User chose to Export/Import
-                        export_menu
-                    fi
-                    # If return code 3 (Back), just continue to re-display menu
-                else
-                    # Only one Root Key, create new
-                    create_root_ca_from_menu
-                    mapfile -t FOUND_ROOT_CAS < <(list_root_cas)
-                    num_root_cas=${#FOUND_ROOT_CAS[@]}
-                fi
-                ;;
-            [Nn])
-                create_root_ca_from_menu
-                mapfile -t FOUND_ROOT_CAS < <(list_root_cas)
-                num_root_cas=${#FOUND_ROOT_CAS[@]}
-                ;;
-            [Ee])
-                export_menu
-                ;;
-            0)
-                print_message "info" "Exiting..."
-                exit 0
-                ;;
-            *)
-                # Check if it's an addon choice (must be numeric first)
-                if [[ "$choice" =~ ^[0-9]+$ ]] && [[ "$choice" -ge $addon_index_start ]] && [[ "$choice" -le $last_addon_index ]]; then
-                    local selected_addon="${addons[$((choice - addon_index_start))]}"
-                    # Run addon with error handling - return to menu on failure
-                    set +e
-                    menu_run_addon "$selected_addon"
-                    local addon_result=$?
-                    set -e
-                    # If addon returned 1 (error), just continue to re-display menu
-                else
-                    print_message "error" "Invalid choice"
-                fi
-                ;;
-        esac
+                pause
+                continue
+            else
+                # It's an addon
+                set +e
+                menu_run_addon "$item_value" || true
+                set -e
+                pause
+                continue
+            fi
+        else
+            print_message "error" "Invalid choice"
+        fi
     done
 }
 
 menu_without_root_key() {
     while true; do
         echo ""
-        echo "╔══════════════════════════════════════════════════════════╗"
-        echo "║             ${MATRIX_PLUS_NAME} - Main Menu              ║"
-        echo "╚══════════════════════════════════════════════════════════╝"
+        print_menu_header "${MATRIX_PLUS_NAME} - Main Menu"
         echo ""
         echo -e "Root Key: ${ORANGE}Not Available${NC}"
-        echo ""
-        echo "  1) Generate new Root Key"
-        echo "  2) Exit"
-        echo ""
 
-        read -rp "Enter your choice (1-2): " choice || true
+        # Define menu items
+        local menu_items=(
+            "Generate new Root Key|generate|"
+            "Export/Import|export_import|"
+            "Exit|exit|"
+        )
+
+        # Show menu and get selection
+        local choice
+        choice=$(menu_show "" menu_items "" "Enter your choice (1-3): ")
 
         case "$choice" in
-            1)
+            generate)
                 if [[ "$(prompt_yes_no "This will create a new Root Key directory. Continue?" "y")" != "yes" ]]; then
                     continue
                 fi
@@ -1700,7 +2317,10 @@ menu_without_root_key() {
                 SSL_CITY="$old_city"
                 SSL_CA_DAYS="$old_days"
                 ;;
-            2)
+            export_import)
+                export_menu
+                ;;
+            exit)
                 print_message "info" "Exiting..."
                 exit 0
                 ;;
@@ -1719,107 +2339,13 @@ menu_run_addon() {
         return 1
     fi
 
-    # Get list of servers with certificates
-    local servers
-    mapfile -t servers < <(list_servers_with_certs)
+    # Use prompt_select_server helper (with create option for addons)
+    local selected_server
+    selected_server=$(prompt_select_server true "Select server for addon installation")
 
-    local selected_server=""
-
-    if [[ ${#servers[@]} -eq 0 ]]; then
-        # No servers with certificates
-        print_message "warning" "No server certificates found!"
-        echo ""
-        echo "You need to generate a server certificate before installing an addon."
-        echo ""
-
-        local detected_ip
-        detected_ip="$(get_detected_ip)"
-        local new_server
-
-        if [[ -n "$detected_ip" ]]; then
-            new_server="$(prompt_user "Enter server IP address or domain" "$detected_ip")"
-        else
-            while true; do
-                new_server="$(prompt_user "Enter server IP address or domain" "")"
-                if [[ -n "$new_server" ]]; then
-                    break
-                fi
-                echo "Server name cannot be empty. Please try again."
-            done
-        fi
-
-        if [[ "$(prompt_yes_no "Generate server certificate for $new_server now?" "y")" == "yes" ]]; then
-            if ! ssl_manager_generate_server_cert "$new_server"; then
-                print_message "error" "Failed to generate server certificate"
-                return 1
-            fi
-            selected_server="$new_server"
-        else
-            print_message "info" "Addon installation cancelled"
-            return 0
-        fi
-    elif [[ ${#servers[@]} -eq 1 ]]; then
-        # Only one server, use it
-        selected_server="${servers[0]}"
-        print_message "info" "Using existing certificate for: $selected_server"
-    else
-        # Multiple servers, let user choose
-        echo ""
-        print_message "info" "Servers with available certificates:"
-        local index=1
-        for server in "${servers[@]}"; do
-            echo "  $index) $server"
-            ((index++))
-        done
-        echo "  $index) Create new server certificate"
-        echo ""
-
-        read -rp "Select server (1-$index): " choice || true
-
-        # Check choice type first
-        check_menu_choice_type "$choice"
-        local choice_type=$?
-
-        case $choice_type in
-            0)  # Back - not applicable in this menu
-                print_message "error" "Invalid choice"
-                return 1
-                ;;
-            1)  # New - check for special value
-                # In this menu, the "new" option is the index value (not N)
-                if [[ "$choice" == "$MENU_CHOICE_NEW" ]] || [[ "$choice" == "${MENU_CHOICE_NEW,,}" ]]; then
-                    print_message "error" "Invalid choice"
-                    return 1
-                fi
-                ;;&
-            2)  # Numeric
-                if [[ "$choice" -ge 1 ]] && [[ "$choice" -lt $index ]]; then
-                    selected_server="${servers[$((choice-1))]}"
-                elif [[ "$choice" -eq $index ]]; then
-                    # Create new certificate
-                    local new_server
-                    local detected_ip
-                    detected_ip="$(get_detected_ip)"
-
-                    while true; do
-                        new_server="$(prompt_user "Enter server IP address or domain" "$detected_ip")"
-                        if [[ -n "$new_server" ]]; then
-                            break
-                        fi
-                        echo "Server name cannot be empty. Please try again."
-                    done
-
-                    if ! ssl_manager_generate_server_cert "$new_server"; then
-                        print_message "error" "Failed to generate server certificate"
-                        return 1
-                    fi
-                    selected_server="$new_server"
-                else
-                    print_message "error" "Invalid choice"
-                    return 1
-                fi
-                ;;
-        esac
+    # Check if user cancelled or error occurred
+    if [[ $? -ne 0 ]] || [[ -z "$selected_server" ]]; then
+        return 1
     fi
 
     # Set active server
@@ -1844,34 +2370,35 @@ menu_run_addon() {
 
 export_menu() {
     while true; do
-        echo ""
-        print_menu_header "Export/Import Menu"
-        echo ""
-        echo "  1) Export Certificate"
-        echo "  2) Import Certificate"
-        echo "  3) Create Portable"
-        echo ""
-        echo "  $MENU_SEPARATOR"
-        echo "  0) Back"
-        echo ""
+        # Clear screen for clean menu display
+        clean_screen
 
-        read -rp "Enter your choice (0-3): " choice || true
+        # Define menu items
+        local menu_items=(
+            "Export Certificate|export|"
+            "Import Certificate|import|"
+            "Create Portable|portable||${ORANGE}[under development]${NC}"
+        )
 
+        # Show menu and get selection
+        local choice
+        choice=$(menu_show "Export/Import Menu" menu_items "back" "") || true
+
+        # Empty choice means user pressed 0 or Enter for Back
+        if [[ -z "$choice" ]]; then
+            return 0
+        fi
+
+        # Handle the selection
         case "$choice" in
-            1)
+            export)
                 export_certificate || true
                 ;;
-            2)
+            import)
                 import_certificate || true
                 ;;
-            3)
+            portable)
                 create_portable || true
-                ;;
-            0)
-                return 0
-                ;;
-            *)
-                print_message "error" "Invalid choice"
                 ;;
         esac
     done
@@ -1897,26 +2424,17 @@ export_certificate() {
         return 1
     fi
 
-    echo ""
-    print_message "info" "Servers with available certificates:"
-    echo ""
-    local index=1
-    for server in "${servers[@]}"; do
-        echo "  $index) $server"
-        ((index++))
-    done
-    echo ""
+    # Use prompt_select_server helper (no create option for export)
+    local selected_server
+    selected_server=$(prompt_select_server false "Select server to export")
 
-    read -rp "Select server to export (1-$((index-1))): " choice || true
-
-    # Validate choice
-    if [[ ! "$choice" =~ ^[0-9]+$ ]] || [[ "$choice" -lt 1 ]] || [[ "$choice" -ge $index ]]; then
-        print_message "error" "Invalid choice"
+    # Check if user cancelled
+    if [[ $? -ne 0 ]] || [[ -z "$selected_server" ]]; then
+        print_message "info" "Export cancelled"
         pause
-        return 1
+        return 0
     fi
 
-    local selected_server="${servers[$((choice-1))]}"
     local server_dir="${ACTIVE_ROOT_CA_DIR}/servers/${selected_server}"
 
     # Prompt for destination folder
@@ -1942,26 +2460,27 @@ export_certificate() {
         target_dir="${dest_dir}/${selected_server}_${timestamp}"
     fi
 
-    # Show summary
-    echo ""
-    echo "  === Export Summary ==="
-    echo ""
-    echo "  Server certificate folder:"
-    echo "    ${server_dir}/"
-    echo "  Root CA certificate:"
-    echo "    ${ACTIVE_ROOT_CA_DIR}/rootCA.crt"
-    echo "  Target directory:"
-    echo "    ${target_dir}/"
-    echo ""
-    echo "  Export structure:"
-    echo "    ${target_dir}/"
-    echo "    ├── servers/"
-    echo "    │   └── ${selected_server}/"
-    echo "    │       ├── server.key"
-    echo "    │       ├── server.crt"
-    echo "    │       └── cert-full-chain.pem"
-    echo "    └── rootCA.crt"
-    echo ""
+    # Show summary using print_summary with tree structure
+    local summary_sections=()
+
+    # Build tree structure with proper line breaks
+    local tree_root="${target_dir}/"
+    local tree_line1="+-- servers/"
+    local tree_line2="|   \`-- ${selected_server}/"
+    local tree_line3="|       +-- server.key"
+    local tree_line4="|       +-- server.crt"
+    local tree_line5="|       \`-- cert-full-chain.pem"
+    local tree_line6="\`-- rootCA.crt"
+
+    # Combine tree lines with | separator for parsing
+    local tree_structure="${tree_root}|${tree_line1}|${tree_line2}|${tree_line3}|${tree_line4}|${tree_line5}|${tree_line6}"
+
+    summary_sections+=("Server certificate folder|${server_dir}/")
+    summary_sections+=("Root CA certificate|${ACTIVE_ROOT_CA_DIR}/rootCA.crt")
+    summary_sections+=("Target directory|${target_dir}/")
+    summary_sections+=("Export structure|$tree_structure")
+
+    print_summary "Export Summary" summary_sections
 
     if [[ "$(prompt_yes_no "Proceed with export?" "y")" != "yes" ]]; then
         print_message "info" "Export cancelled"
@@ -1986,11 +2505,9 @@ export_certificate() {
         return 1
     fi
 
-    # Set appropriate permissions
-    chmod 600 "${target_dir}/servers/${selected_server}/server.key"
-    chmod 644 "${target_dir}/servers/${selected_server}/server.crt"
-    chmod 644 "${target_dir}/servers/${selected_server}/cert-full-chain.pem"
-    chmod 644 "${target_dir}/rootCA.crt"
+    # Set appropriate permissions using helper function
+    set_cert_permissions "${target_dir}/servers/${selected_server}" "server"
+    set_cert_permissions "${target_dir}" "root_ca"
 
     print_message "success" "Export completed successfully!"
     echo ""
@@ -2002,64 +2519,69 @@ export_certificate() {
 }
 
 import_certificate() {
-    # Prompt for source folder path
-    echo ""
     local source_dir
-    source_dir="$(prompt_user "Enter path to exported certificate folder" "")"
-
-    # Clean input (remove control characters and trailing slash)
-    source_dir="$(echo "$source_dir" | tr -d '[:cntrl:]')"
-    source_dir="${source_dir%/}"  # Remove trailing slash if present
-
-    if [[ -z "$source_dir" ]]; then
-        print_message "error" "Source path cannot be empty"
-        pause
-        return 1
-    fi
-
-    # Validate source folder exists
-    if [[ ! -d "$source_dir" ]]; then
-        print_message "error" "Source folder does not exist: $source_dir"
-        pause
-        return 1
-    fi
-
-    # Validate exported folder structure
-    local root_ca_cert="${source_dir}/rootCA.crt"
-    local servers_dir="${source_dir}/servers"
-
-    if [[ ! -f "$root_ca_cert" ]]; then
-        print_message "error" "Invalid export folder: rootCA.crt not found"
-        print_message "info" "Expected structure: <folder>/rootCA.crt"
-        pause
-        return 1
-    fi
-
-    if [[ ! -d "$servers_dir" ]]; then
-        print_message "error" "Invalid export folder: servers/ directory not found"
-        print_message "info" "Expected structure: <folder>/servers/"
-        pause
-        return 1
-    fi
-
-    # Check for at least one server folder with certificates
+    local root_ca_cert
+    local servers_dir
     local found_servers=()
-    for server_dir in "${servers_dir}"/*/; do
-        if [[ -d "$server_dir" ]]; then
-            if [[ -f "${server_dir}/server.key" ]] && \
-               [[ -f "${server_dir}/server.crt" ]] && \
-               [[ -f "${server_dir}/cert-full-chain.pem" ]]; then
-                found_servers+=("$(basename "$server_dir")")
-            fi
-        fi
-    done
 
-    if [[ ${#found_servers[@]} -eq 0 ]]; then
-        print_message "error" "Invalid export folder: no valid server certificates found"
-        print_message "info" "Expected: servers/<server>/server.key, server.crt, cert-full-chain.pem"
-        pause
-        return 1
-    fi
+    # Loop until valid input is provided
+    while true; do
+        # Prompt for source folder path
+        echo ""
+        source_dir="$(prompt_user "Enter path to exported certificate folder (press Enter to cancel)" "")"
+
+        # Clean input (remove control characters and trailing slash)
+        source_dir="$(echo "$source_dir" | tr -d '[:cntrl:]')"
+        source_dir="${source_dir%/}"  # Remove trailing slash if present
+
+        if [[ -z "$source_dir" ]]; then
+            print_message "info" "Import cancelled"
+            return 0
+        fi
+
+        # Validate source folder exists
+        if [[ ! -d "$source_dir" ]]; then
+            print_message "error" "Source folder does not exist: $source_dir"
+            continue
+        fi
+
+        # Validate exported folder structure
+        root_ca_cert="${source_dir}/rootCA.crt"
+        servers_dir="${source_dir}/servers"
+
+        if [[ ! -f "$root_ca_cert" ]]; then
+            print_message "error" "Invalid export folder: rootCA.crt not found"
+            print_message "info" "Expected structure: <folder>/rootCA.crt"
+            continue
+        fi
+
+        if [[ ! -d "$servers_dir" ]]; then
+            print_message "error" "Invalid export folder: servers/ directory not found"
+            print_message "info" "Expected structure: <folder>/servers/"
+            continue
+        fi
+
+        # Check for at least one server folder with certificates
+        found_servers=()
+        for server_dir in "${servers_dir}"/*/; do
+            if [[ -d "$server_dir" ]]; then
+                if [[ -f "${server_dir}/server.key" ]] && \
+                   [[ -f "${server_dir}/server.crt" ]] && \
+                   [[ -f "${server_dir}/cert-full-chain.pem" ]]; then
+                    found_servers+=("$(basename "$server_dir")")
+                fi
+            fi
+        done
+
+        if [[ ${#found_servers[@]} -eq 0 ]]; then
+            print_message "error" "Invalid export folder: no valid server certificates found"
+            print_message "info" "Expected: servers/<server>/server.key, server.crt, cert-full-chain.pem"
+            continue
+        fi
+
+        # All validations passed, break the loop
+        break
+    done
 
     # Check if rootCA.key exists (Full Root CA)
     local has_root_ca_key=false
@@ -2096,13 +2618,7 @@ import_certificate() {
         target_dir="${CERTS_DIR}/${root_ca_name}"
     done
 
-    # Show import summary
-    echo ""
-    echo "  ╔══════════════════════════════════════════════════════════╗"
-    echo "  ║                    Import Summary                        ║"
-    echo "  ╚══════════════════════════════════════════════════════════╝"
-    echo ""
-
+    # Show import summary using print_summary
     # Shorten source path for display
     local source_display="$source_dir"
     if [[ ${#source_display} -gt 50 ]]; then
@@ -2114,32 +2630,42 @@ import_certificate() {
     if [[ "$has_root_ca_key" == "true" ]]; then
         root_ca_type="${GREEN}Full${NC} (with private key)"
     else
-        root_ca_type="${ORANGE}Exported${NC} (certificate only)"
+        root_ca_type="${ORANGE}Imported${NC} (certificate only)"
     fi
 
-    echo -e "    ${BLUE}Source:${NC}  ${source_display}/"
-    echo -e "    ${BLUE}Target:${NC}  certs/$(basename "$target_dir")/"
-    echo ""
-    echo -e "    ${BLUE}Root CA:${NC}  ${root_ca_type}"
-    echo "       ├─ Certificate:  [+] Present"
+    local summary_sections=()
+
+    # Add basic info
+    summary_sections+=("Source|${source_display}/")
+    summary_sections+=("Target|certs/$(basename "$target_dir")/")
+
+    # Add Root CA info with tree structure
+    local ca_cert_line="+- Certificate: [+] Present"
+    local ca_key_line="\`- Private Key: "
     if [[ "$has_root_ca_key" == "true" ]]; then
-        echo "       └─ Private Key:   [+] Present"
+        ca_key_line+="[+] Present"
     else
-        echo "       └─ Private Key:  [-] Normal"
+        ca_key_line+="[-] Normal"
     fi
-    echo ""
-    echo -e "    ${BLUE}Servers${NC} (${#found_servers[@]}):"
-    for i in "${!found_servers[@]}"; do
-        local server="${found_servers[$i]}"
-        if [[ $i -eq $((${#found_servers[@]} - 1)) ]] && [[ ${#found_servers[@]} -gt 1 ]]; then
-            echo "       └── ${server}"
-        elif [[ ${#found_servers[@]} -eq 1 ]]; then
-            echo "       └── ${server}"
-        else
-            echo "       ├── ${server}"
-        fi
-    done
-    echo ""
+    summary_sections+=("Root CA|$root_ca_type|${ca_cert_line}|${ca_key_line}")
+
+    # Add servers with tree structure (build dynamically)
+    if [[ ${#found_servers[@]} -gt 0 ]]; then
+        local server_tree="|  |"
+        for i in "${!found_servers[@]}"; do
+            local server="${found_servers[$i]}"
+            if [[ $i -eq $((${#found_servers[@]} - 1)) ]] && [[ ${#found_servers[@]} -gt 1 ]]; then
+                server_tree+="|  \`-- ${server}|"
+            elif [[ ${#found_servers[@]} -eq 1 ]]; then
+                server_tree+="|  \`-- ${server}|"
+            else
+                server_tree+="|  +-- ${server}|"
+            fi
+        done
+        summary_sections+=("Servers (${#found_servers[@]})|$server_tree")
+    fi
+
+    print_summary "Import Summary" summary_sections
 
     if [[ "$(prompt_yes_no "Proceed with import?" "y")" != "yes" ]]; then
         print_message "info" "Import cancelled"
@@ -2173,55 +2699,60 @@ import_certificate() {
         return 1
     fi
 
-    # Set appropriate permissions
-    chmod 644 "${target_dir}/rootCA.crt"
-    if [[ "$has_root_ca_key" == "true" ]]; then
-        chmod 600 "${target_dir}/rootCA.key"
-    fi
+    # Set appropriate permissions using helper function
+    set_cert_permissions "$target_dir" "root_ca"
 
     # Set permissions on server files
     for server in "${found_servers[@]}"; do
-        chmod 600 "${target_dir}/servers/${server}/server.key"
-        chmod 644 "${target_dir}/servers/${server}/server.crt"
-        chmod 644 "${target_dir}/servers/${server}/cert-full-chain.pem"
+        set_cert_permissions "${target_dir}/servers/${server}" "server"
     done
 
     echo ""
     echo ""
-    echo "  ╔══════════════════════════════════════════════════════════╗"
-    echo -e "  ║          ${GREEN}✓ Import Completed Successfully${NC}                 ║"
-    echo "  ╚══════════════════════════════════════════════════════════╝"
-    echo ""
 
-    # Shorten target path for display
+    # Build success summary
     local target_display="$target_dir"
     if [[ ${#target_display} -gt 50 ]]; then
         target_display="...${target_display: -47}"
     fi
 
-    echo -e "    ${BLUE}Location:${NC}  ${target_display}/"
-    echo ""
-    echo -e "    ${BLUE}Root CA:${NC}  ${root_ca_type}"
+    local success_sections=()
+
+    # Add location
+    success_sections+=("Location|${target_display}/")
+
+    # Add Root CA info
+    local ca_info_text="$root_ca_type"
     if [[ "$has_root_ca_key" == "true" ]]; then
-        echo "       New server certificates can be generated"
+        ca_info_text+="|New server certificates can be generated"
     else
-        echo "       Existing server certificates can be used"
+        ca_info_text+="|Existing server certificates can be used"
     fi
-    echo ""
-    echo -e "    ${BLUE}Servers${NC} (${#found_servers[@]}):"
-    for i in "${!found_servers[@]}"; do
-        local server="${found_servers[$i]}"
-        if [[ $i -eq $((${#found_servers[@]} - 1)) ]] && [[ ${#found_servers[@]} -gt 1 ]]; then
-            echo "       └── ${server}"
-        elif [[ ${#found_servers[@]} -eq 1 ]]; then
-            echo "       └── ${server}"
-        else
-            echo "       ├── ${server}"
-        fi
-    done
-    echo ""
+    success_sections+=("Root CA|$ca_info_text")
+
+    # Add servers with tree structure
+    if [[ ${#found_servers[@]} -gt 0 ]]; then
+        local server_tree="|"
+        for i in "${!found_servers[@]}"; do
+            local server="${found_servers[$i]}"
+            if [[ $i -eq $((${#found_servers[@]} - 1)) ]] && [[ ${#found_servers[@]} -gt 1 ]]; then
+                server_tree+="|\`-- ${server}|"
+            elif [[ ${#found_servers[@]} -eq 1 ]]; then
+                server_tree+="|\`-- ${server}|"
+            else
+                server_tree+="|+-- ${server}|"
+            fi
+        done
+        success_sections+=("Servers (${#found_servers[@]})|$server_tree")
+    fi
+
+    print_summary "${GREEN}✓ Import Completed Successfully${NC}" success_sections
 
     pause
+
+    # Set the imported Root CA as active and go to main menu
+    ACTIVE_ROOT_CA_DIR="$target_dir"
+    menu_with_root_key
 }
 
 create_portable() {
@@ -2255,31 +2786,8 @@ initialize() {
         local deps_status=$?
     fi
 
-    # Print banner (dynamic)
-    local title="${MATRIX_PLUS_NAME} - ${MATRIX_PLUS_DESCRIPTION}"
-    local version="Version ${MATRIX_PLUS_VERSION}"
-    local build="Build: ${MATRIX_PLUS_BUILD}"
-    local box_width=58
-
-    echo ""
-    echo "╔══════════════════════════════════════════════════════════╗"
-    echo "║                                                          ║"
-
-    # Center title
-    local title_padding=$(( (box_width - ${#title}) / 2 ))
-    printf "║%*s%s%*s║\n" $title_padding "" "$title" $((box_width - title_padding - ${#title})) ""
-
-    # Center version
-    local version_padding=$(( (box_width - ${#version}) / 2 ))
-    printf "║%*s%s%*s║\n" $version_padding "" "$version" $((box_width - version_padding - ${#version})) ""
-
-    # Center build
-    local build_padding=$(( (box_width - ${#build}) / 2 ))
-    printf "║%*s%s%*s║\n" $build_padding "" "$build" $((box_width - build_padding - ${#build})) ""
-
-    echo "║                                                          ║"
-    echo "╚══════════════════════════════════════════════════════════╝"
-    echo ""
+    # Print welcome header
+    print_welcome_header
 
     # Check dependencies and prompt to install if missing
     if [[ $deps_status -ne 0 ]]; then
@@ -2308,33 +2816,34 @@ main() {
         fi
     fi
 
-    # Step 2: Discover Root CAs in certs/ and show appropriate menu
+    # Step 2: Discover Root CAs in certs/ and show selection menu
     mapfile -t FOUND_ROOT_CAS < <(list_root_cas)
 
-    if [[ ${#FOUND_ROOT_CAS[@]} -gt 0 ]]; then
-        # Has Root CAs - may need to select one
-        if [[ ${#FOUND_ROOT_CAS[@]} -eq 1 ]] && [[ -z "$ACTIVE_ROOT_CA_DIR" ]]; then
-            # Auto-select single Root CA
-            ACTIVE_ROOT_CA_DIR="${CERTS_DIR}/${FOUND_ROOT_CAS[0]}"
-        elif [[ -z "$ACTIVE_ROOT_CA_DIR" ]]; then
-            # Multiple Root CAs and none selected - prompt user
-            local select_result
-            prompt_select_root_ca_from_certs "${FOUND_ROOT_CAS[@]}" || select_result=$?
-            select_result="${select_result:-0}"
-            if [[ $select_result -eq 1 ]]; then
-                # User chose to create new Root Key
-                create_root_ca_from_menu
-                mapfile -t FOUND_ROOT_CAS < <(list_root_cas)
-            elif [[ $select_result -eq 4 ]]; then
-                # User chose to Export/Import
-                export_menu
-            fi
-            # If return code 0 (auto-selected) or 3 (Back), just continue to menu_with_root_key
+    # Always show selection menu (handles empty list internally)
+    if [[ -z "$ACTIVE_ROOT_CA_DIR" ]]; then
+        local select_result
+        prompt_select_root_ca_from_certs "${FOUND_ROOT_CAS[@]}" || select_result=$?
+        select_result="${select_result:-0}"
+        if [[ $select_result -eq 1 ]]; then
+            # User chose to create new Root Key
+            create_root_ca_from_menu
+            mapfile -t FOUND_ROOT_CAS < <(list_root_cas)
+        elif [[ $select_result -eq 4 ]]; then
+            # User chose to Export/Import
+            export_menu
+        elif [[ $select_result -eq 3 ]]; then
+            # User pressed Back - no Root Key selected, exit
+            print_message "info" "No Root Key selected. Exiting."
+            exit 0
         fi
+    fi
+
+    # Only show main menu if we have an active Root CA
+    if [[ -n "$ACTIVE_ROOT_CA_DIR" ]]; then
         menu_with_root_key
     else
-        # No Root Keys found
-        menu_without_root_key
+        print_message "info" "No Root Key available. Exiting."
+        exit 0
     fi
 }
 
